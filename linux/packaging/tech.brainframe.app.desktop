@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=BrainFrame
+GenericName=Second Brain + E-Reader
+Comment=Open-source second brain + e-reader
+# Exec/Icon are plain names (no path): inside the AppImage they resolve against
+# the bundled binary and the installed hicolor icon. The AppImage runtime and
+# desktop integration rewrite Exec as needed on install.
+Exec=brainframe
+Icon=brainframe
+Terminal=false
+Categories=Office;Viewer;
+Keywords=notes;markdown;pdf;epub;annotation;knowledge;
+StartupWMClass=tech.brainframe.app

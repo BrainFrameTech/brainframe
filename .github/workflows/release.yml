@@ -1,0 +1,128 @@
+# Release packaging. Pushing a version tag (e.g. `v0.1.0`) builds the
+# distributable artifacts and attaches them to the tag's GitHub Release.
+#
+# Today only the Linux AppImage job is active. The other platforms are
+# scaffolded (commented) at the bottom — each needs signing material (Apple
+# Developer ID + notarization, an Android keystore, a Windows cert) before it
+# can be turned on. Uncomment a block once its secrets exist.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the Release and upload assets
+
+env:
+  FLUTTER_VERSION: 3.44.4 # keep in sync with the local toolchain / coverage.yml
+
+jobs:
+  linux-appimage:
+    name: Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      # Flutter Linux build deps + what linuxdeploy/appimagetool need. No
+      # libfuse2: the build runs the AppImage tools with APPIMAGE_EXTRACT_AND_RUN
+      # and the produced AppImage embeds the static type2-runtime, so neither
+      # FUSE 2 nor FUSE 3 is required here. See tool/appimage/build-appimage.sh.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build libgtk-3-dev clang cmake pkg-config \
+            patchelf desktop-file-utils file
+
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+      # The version in the artifact name comes from the tag (v0.1.0 → 0.1.0),
+      # falling back to the pubspec version for manual/local runs.
+      - name: Build AppImage
+        id: appimage
+        run: |
+          APPIMAGE_PATH="$(VERSION="${GITHUB_REF_NAME#v}" tool/appimage/build-appimage.sh)"
+          echo "path=$APPIMAGE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: ${{ steps.appimage.outputs.path }}
+          if-no-files-found: error
+
+      - name: Attach to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.appimage.outputs.path }}
+          fail_on_unmatched_files: true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Scaffolded platform jobs — deliberately disabled until signing material
+  # exists. Each is a starting point, not a finished job; wire secrets, verify
+  # locally, then uncomment. Left commented (rather than `if: false`) so they do
+  # not appear as perpetually-skipped checks.
+  #
+  # android:
+  #   name: Android (APK + AAB)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: subosito/flutter-action@v2
+  #       with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+  #     - uses: actions/setup-java@v4
+  #       with: { distribution: temurin, java-version: "17" }
+  #     # TODO: restore the upload keystore + key.properties from secrets
+  #     #   (secrets.ANDROID_KEYSTORE_BASE64, ANDROID_KEY_ALIAS, *_PASSWORD)
+  #     #   and point android/app signingConfigs at it.
+  #     - run: flutter pub get
+  #     - run: flutter build apk --release
+  #     - run: flutter build appbundle --release
+  #     # artifacts: build/app/outputs/flutter-apk/app-release.apk
+  #     #            build/app/outputs/bundle/release/app-release.aab
+  #
+  # windows:
+  #   name: Windows (zip / MSIX)
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: subosito/flutter-action@v2
+  #       with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+  #     - run: flutter pub get
+  #     - run: flutter build windows --release
+  #     # TODO: package build/windows/x64/runner/Release into a .zip, or use
+  #     #   msix (dart run msix:create) with a signing cert from secrets.
+  #
+  # macos:
+  #   name: macOS (dmg)
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: subosito/flutter-action@v2
+  #       with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+  #     - run: flutter pub get
+  #     - run: flutter build macos --release
+  #     # TODO: codesign with a Developer ID cert (secrets.MACOS_CERT_*),
+  #     #   staple after notarization (xcrun notarytool), then build a .dmg
+  #     #   (e.g. create-dmg). Unsigned builds are Gatekeeper-blocked.
+  #
+  # ios:
+  #   name: iOS (ipa)
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: subosito/flutter-action@v2
+  #       with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+  #     - run: flutter pub get
+  #     # TODO: install the distribution cert + provisioning profile from secrets
+  #     #   and provide ios/ExportOptions.plist.
+  #     - run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+  #     # artifact: build/ios/ipa/*.ipa

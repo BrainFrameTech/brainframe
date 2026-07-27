@@ -71,11 +71,18 @@ void applyMerge(List<Replica> replicas, MergeScenario scenario) {
 /// [peers] fixes the replica peerIDs (and thus every tiebreak). [clocks], if
 /// given, overrides per-replica base clocks (used by the skew cases).
 ///
-/// [confirmThenPin] marks cases whose [expected] value is crdt_lf's *observed*
-/// boundary behavior pinned as BrainFrame's expectation (not a load-bearing
-/// guarantee). If such a case goes red after a library bump it may be a
-/// deliberate change to absorb, not necessarily a bug — see the spec's
-/// "two kinds of pinned value".
+/// [confirmThenPin] classifies which of the spec's "two kinds of pinned value"
+/// this case is. It does **not** change the assertion — [expected] is always an
+/// exact match either way — it only appends a `[confirm-then-pin]` tag to the
+/// failure message, so a future red test *declares its own kind in the test
+/// output*, where a maintainer diagnosing the failure will actually see it:
+///   - **tagged** → [expected] is crdt_lf's *observed* boundary behavior, pinned
+///     as BrainFrame's expectation. A red after a library bump may be a
+///     deliberate change to absorb (re-pin it consciously), not necessarily a
+///     bug. (e.g. Case 1's specific winner `catdog` vs `dogcat`.)
+///   - **untagged** (default) → a load-bearing guarantee. A red is a suspected
+///     crdt_lf regression to escalate, never something to adapt BrainFrame to.
+///     (e.g. Case 4's emoji survival.)
 /// [skip], when non-null, marks the case as a known-failing requirement blocked
 /// on an external fix. The assertion still states what BrainFrame *requires*
 /// (never the library's wrong behavior); the reason documents why it cannot
@@ -102,6 +109,9 @@ void convergesTo(
       applyMerge(replicas, scenario);
 
       for (final r in replicas) {
+        // The assertion is an exact match regardless of [confirmThenPin]; the
+        // flag only tags the failure output with the pinned-value kind so a
+        // future red test says which response it needs. See the doc above.
         expect(
           r.text,
           expected,

@@ -63,6 +63,8 @@ dependencies:
   # Opens the About screen's Website (external browser) and Contact (mailto)
   # links via the platform handler. Cross-platform incl. Linux/flutter-pi.
   url_launcher: ^6.3.2
+  crdt_lf: ^3.4.2+1
+  hlc_dart: ^1.1.0+2
 
 dev_dependencies:
   flutter_test:

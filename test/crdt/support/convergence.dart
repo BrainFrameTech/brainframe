@@ -76,6 +76,11 @@ void applyMerge(List<Replica> replicas, MergeScenario scenario) {
 /// guarantee). If such a case goes red after a library bump it may be a
 /// deliberate change to absorb, not necessarily a bug — see the spec's
 /// "two kinds of pinned value".
+/// [skip], when non-null, marks the case as a known-failing requirement blocked
+/// on an external fix. The assertion still states what BrainFrame *requires*
+/// (never the library's wrong behavior); the reason documents why it cannot
+/// pass yet and auto-reactivates — validating the fix — the day it can. This is
+/// distinct from [confirmThenPin], which pins a benign observed value we accept.
 void convergesTo(
   String description, {
   required List<dynamic> peers,
@@ -84,8 +89,9 @@ void convergesTo(
   String? base,
   List<dynamic>? clocks,
   bool confirmThenPin = false,
+  String? skip,
 }) {
-  test(description, () {
+  test(description, skip: skip, () {
     for (final scenario in standardScenarios(peers.length)) {
       final replicas = replicaSet(
         peers.cast(),

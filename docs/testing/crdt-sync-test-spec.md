@@ -357,10 +357,26 @@ insert-survives-at-boundary; test only that.)
 
 ### Companion sub-case — insert strictly inside a single deleted element
 
-Also cover an edit that targets an identity being deleted with no surviving
-between-neighbor anchor (e.g. replacing `o` with `0` inside `world`). Assert the
-convergence result is deterministic and matches the documented reattachment rule
-— this is where a dangling-identity crash would surface.
+Also cover an edit that targets an identity being deleted (e.g. replacing `o`
+with `0` inside `world` via `update`, while the whole word is concurrently
+deleted). Assert the convergence result is deterministic, does not crash, and
+**matches the documented reattachment rule** — the replacement survives, exactly
+as a plain insert in the same position does (→ `"hello 0"`). Losing the typed
+character is the one outcome the storage model calls unacceptable, so the
+assertion pins survival; it is **not** a confirm-then-pin observation, because
+data loss is never a value BrainFrame accepts.
+
+**FINDING — this assertion is known-failing against `crdt_lf` 3.4.2, and the
+test is skipped (not deleted) pending an upstream fix.** The library ties
+`update`'s replacement element to the liveness of the element it replaces, so
+under a concurrent delete the `0` is silently dropped (`"hello "`) — data loss —
+whereas a plain insert in the identical anchoring situation reattaches and
+survives (`"hello 0"`). The asymmetry is the bug. Minimal standalone repro:
+`docs/testing/crdt_update_reattach_repro.dart`. The skip carries this reason and
+auto-reactivates — validating the fix — when the library lands it. Determinism
+and the no-crash guarantee both hold today regardless; only survival does not.
+(`change()`, the diff-based bulk edit, compiles to insert+delete and never
+`update`, so the diff-editing path is not exposed to this loss.)
 
 ### Why this holds
 

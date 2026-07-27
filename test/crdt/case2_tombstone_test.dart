@@ -33,26 +33,35 @@ void main() {
       confirmThenPin: true,
     );
 
-    // Companion — edit STRICTLY INSIDE a single deleted element, with no
-    // surviving between-neighbour anchor: B replaces the 'o' in "world" with
-    // '0' (an update = delete-old + insert-new) while A deletes all of "world".
+    // Companion — edit STRICTLY INSIDE a single deleted element: B replaces the
+    // 'o' in "world" with '0' (an update = delete-old + insert-new) while A
+    // deletes all of "world".
     //
-    // Observed: the replacement '0' is DISCARDED (its entire anchoring run is
-    // gone, so it has no living between-neighbour to reattach to) → "hello ".
-    // The load-bearing assertions here are: deterministic convergence and NO
-    // dangling-identity crash — both hold. That the replacement does not
-    // survive (whereas the between-elements insert above does) is an observed
-    // asymmetry surfaced to the human, not a silently-adopted rule.
+    // REQUIREMENT: the replacement must NOT be lost. Per the locked semantic a
+    // plain insert in this exact position survives and reattaches (→ "hello 0",
+    // verified), and update()'s internal insert must behave the same. Losing
+    // typed input is the one failure the storage model calls unacceptable, so
+    // this asserts survival, NOT the library's current output. It is not a
+    // confirm-then-pin observation — data loss is never a value we accept.
+    //
+    // KNOWN-FAILING (skip): crdt_lf 3.4.2 ties update()'s replacement to the
+    // liveness of the element it replaces, so under a concurrent delete the '0'
+    // is silently dropped → "hello " (data loss). Minimal repro:
+    // docs/testing/crdt_update_reattach_repro.dart. Un-skip when fixed upstream;
+    // the assertion then validates the fix. Deterministic convergence and the
+    // no-dangling-identity-crash guarantee both already hold regardless.
     convergesTo(
-      'update inside a fully-deleted run resolves deterministically, no crash',
+      'update inside a fully-deleted run preserves the replacement (no loss)',
       peers: [peerA, peerB],
       base: 'hello world',
       edit: (r) {
         r[0].note.delete(6, 5); // A deletes "world"
         r[1].note.update(7, '0'); // B: 'o' -> '0' inside "world"
       },
-      expected: 'hello ',
-      confirmThenPin: true,
+      expected: 'hello 0',
+      skip: 'BLOCKED on crdt_lf update() data-loss bug — replacement dropped '
+          'when its target is concurrently deleted. See '
+          'docs/testing/crdt_update_reattach_repro.dart. Un-skip when fixed.',
     );
   });
 }

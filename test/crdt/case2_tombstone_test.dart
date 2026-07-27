@@ -33,6 +33,26 @@ void main() {
       confirmThenPin: true,
     );
 
+    // Control — the SAME edit done by hand: B removes the 'o' and reinserts '0'
+    // via delete+insert (exactly update()'s own delete-old + insert-new recipe)
+    // while A concurrently deletes "world". The replacement SURVIVES (→
+    // "hello 0"), which proves survival is the correct outcome and isolates the
+    // companion's data loss to update() itself — not to editing a deleted run.
+    // It also guards the safe primitive path that change() (diff-based bulk
+    // edit) compiles to. This is the in-suite foil for the skipped companion.
+    convergesTo(
+      'manual delete+insert survives a concurrent delete (the update-safe path)',
+      peers: [peerA, peerB],
+      base: 'hello world',
+      edit: (r) {
+        r[0].note.delete(6, 5); // A deletes "world"
+        r[1].note.delete(7, 1); // B removes the 'o'...
+        r[1].note.insert(7, '0'); // ...and reinserts '0' by hand
+      },
+      expected: 'hello 0',
+      confirmThenPin: true,
+    );
+
     // Companion — edit STRICTLY INSIDE a single deleted element: B replaces the
     // 'o' in "world" with '0' (an update = delete-old + insert-new) while A
     // deletes all of "world".
@@ -46,9 +66,10 @@ void main() {
     //
     // KNOWN-FAILING (skip): crdt_lf 3.4.2 ties update()'s replacement to the
     // liveness of the element it replaces, so under a concurrent delete the '0'
-    // is silently dropped → "hello " (data loss). Minimal repro:
-    // docs/testing/crdt_update_reattach_repro.dart. Un-skip when fixed upstream;
-    // the assertion then validates the fix. Deterministic convergence and the
+    // is silently dropped → "hello " (data loss) — even though the equivalent
+    // hand-written delete+insert (the control test above) survives. Reported
+    // upstream as MattiaPispisa/crdt#113. Un-skip when fixed upstream; the
+    // assertion then validates the fix. Deterministic convergence and the
     // no-dangling-identity-crash guarantee both already hold regardless.
     convergesTo(
       'update inside a fully-deleted run preserves the replacement (no loss)',
@@ -59,9 +80,10 @@ void main() {
         r[1].note.update(7, '0'); // B: 'o' -> '0' inside "world"
       },
       expected: 'hello 0',
-      skip: 'BLOCKED on crdt_lf update() data-loss bug — replacement dropped '
-          'when its target is concurrently deleted. See '
-          'docs/testing/crdt_update_reattach_repro.dart. Un-skip when fixed.',
+      skip: 'BLOCKED on crdt_lf update() data-loss bug (MattiaPispisa/crdt#113) '
+          '— the replacement is dropped when its target is concurrently '
+          'deleted, though the equivalent manual delete+insert (control test '
+          'above) survives. Un-skip when fixed upstream.',
     );
   });
 }

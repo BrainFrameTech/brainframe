@@ -370,13 +370,16 @@ data loss is never a value BrainFrame accepts.
 test is skipped (not deleted) pending an upstream fix.** The library ties
 `update`'s replacement element to the liveness of the element it replaces, so
 under a concurrent delete the `0` is silently dropped (`"hello "`) — data loss —
-whereas a plain insert in the identical anchoring situation reattaches and
-survives (`"hello 0"`). The asymmetry is the bug. Minimal standalone repro:
-`docs/testing/crdt_update_reattach_repro.dart`. The skip carries this reason and
-auto-reactivates — validating the fix — when the library lands it. Determinism
-and the no-crash guarantee both hold today regardless; only survival does not.
-(`change()`, the diff-based bulk edit, compiles to insert+delete and never
-`update`, so the diff-editing path is not exposed to this loss.)
+whereas both a plain insert *and* an equivalent hand-written `delete`+`insert`
+in the identical situation reattach and survive (`"hello 0"`). That the manual
+`delete`+`insert` — `update`'s own recipe — survives is what isolates the fault
+to `update()` itself; the suite keeps that case as an active control test
+alongside the skipped one. Reported upstream as `MattiaPispisa/crdt#113`. The
+skip carries this reason and auto-reactivates — validating the fix — when the
+library lands it. Determinism and the no-crash guarantee both hold today
+regardless; only survival does not. (`change()`, the diff-based bulk edit,
+compiles to insert+delete and never `update`, so the diff-editing path is not
+exposed to this loss.)
 
 ### Why this holds
 

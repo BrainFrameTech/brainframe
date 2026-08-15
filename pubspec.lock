@@ -132,10 +132,18 @@ packages:
     dependency: "direct main"
     description:
       name: crdt_lf
-      sha256: "4fa2ae3227acbe6b67af778bc90b5e3e8f2cd0f4deb79fbee3437667b05a492c"
+      sha256: "738247beb2d408739d2ebc1e13be6fb75dfcc3cdd0d6be57e5b7841c271a0327"
       url: "https://pub.dev"
     source: hosted
-    version: "3.4.2+1"
+    version: "3.5.0"
+  crdt_lf_sqlite:
+    dependency: "direct main"
+    description:
+      name: crdt_lf_sqlite
+      sha256: "67c66ab78f4740843155270c7e5aafce1183e67877e000a75fb76e450bddd25f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.0+2"
   cross_file:
     dependency: transitive
     description:
@@ -516,6 +524,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.18.0"
+  native_toolchain_c:
+    dependency: transitive
+    description:
+      name: native_toolchain_c
+      sha256: f9c168717100ae6d9fee9ffb0be379bf1f8b26b0f6bcbd4fdddcd931993a6a72
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.19.2"
   objective_c:
     dependency: transitive
     description:
@@ -777,6 +793,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.10.2"
+  sqlite3:
+    dependency: "direct dev"
+    description:
+      name: sqlite3
+      sha256: "64b2c63c8232dd20d14b34105a81ebfd74320442e8451f836179ec89986aa478"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.5.1"
   stack_trace:
     dependency: transitive
     description:

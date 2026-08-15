@@ -77,23 +77,41 @@ class TextEditingCommands extends ChangeNotifier {
     _recompute();
   }
 
+  /// The field a command acts on.
+  ///
+  /// Unlike [target] this does not require a menu to still be open, because by
+  /// the time an item's `onPressed` runs, its menu has already reported itself
+  /// closed — `onClose` fires *first*. Gating the action on [target] therefore
+  /// let Cut and Copy light up correctly and then quietly do nothing, since the
+  /// field had been forgotten a callback earlier. The enabled state stays
+  /// menu-gated; only the action reaches back like this, and it can only be
+  /// reached from an item that was enabled a moment ago.
+  EditableTextState? get _actionTarget {
+    final focused = _focused;
+    if (focused != null && focused.mounted) return focused;
+    final remembered = _remembered;
+    return (remembered != null && remembered.mounted) ? remembered : null;
+  }
+
   void cut() {
-    final state = target;
-    if (state == null || !_canCut) return;
+    final state = _actionTarget;
+    if (state == null || state.widget.readOnly) return;
+    if (state.widget.obscureText || !_hasSelection(state)) return;
     _restoreFocus(state);
     state.cutSelection(SelectionChangedCause.toolbar);
   }
 
   void copy() {
-    final state = target;
-    if (state == null || !_canCopy) return;
+    final state = _actionTarget;
+    if (state == null || state.widget.obscureText) return;
+    if (!_hasSelection(state)) return;
     _restoreFocus(state);
     state.copySelection(SelectionChangedCause.toolbar);
   }
 
   void paste() {
-    final state = target;
-    if (state == null || !_canPaste) return;
+    final state = _actionTarget;
+    if (state == null || state.widget.readOnly) return;
     _restoreFocus(state);
     state.pasteText(SelectionChangedCause.toolbar);
   }
@@ -106,16 +124,36 @@ class TextEditingCommands extends ChangeNotifier {
   }
 
   void _handleFocusChanged() {
-    final context = _focusManager.primaryFocus?.context;
-    final editable = context?.findAncestorStateOfType<EditableTextState>();
+    final primary = _focusManager.primaryFocus;
+    final editable = primary?.context
+        ?.findAncestorStateOfType<EditableTextState>();
     if (editable != null) _remembered = editable;
-    // Focus settling on a non-editable with no menu open is the user genuinely
-    // leaving the field; forget it so the Edit items grey out.
-    if (editable == null && !_menuOpen) _remembered = null;
+    // Focus settling on some other real control with no menu open is the user
+    // genuinely leaving the field; forget it so the Edit items grey out.
+    //
+    // Merely *losing* focus is not that, and the difference matters: on desktop
+    // a text field unfocuses itself whenever a click lands outside it, so
+    // clicking the menu bar with a mouse empties the focus a gesture *before*
+    // the menu opens and can announce itself. Clearing here would throw away
+    // the very field the menu is about to act on — which is exactly what left
+    // Cut and Copy greyed out with a live selection on screen. An unfocus like
+    // that parks primary focus on the enclosing scope rather than on a control,
+    // and that is what tells the two apart.
+    if (editable == null && !_menuOpen && _isControl(primary)) {
+      _remembered = null;
+    }
     _focused = editable;
-    _watch(editable?.widget.controller);
+    // Follow the remembered field's controller too, so a selection change is
+    // still seen while focus is parked on a scope mid-click.
+    _watch((editable ?? _remembered)?.widget.controller);
     _recompute();
   }
+
+  /// Whether [node] is a control that can hold focus in its own right, as
+  /// opposed to a [FocusScopeNode] — where focus lands when a field is simply
+  /// unfocused and nothing has claimed it.
+  static bool _isControl(FocusNode? node) =>
+      node != null && node is! FocusScopeNode;
 
   void _watch(TextEditingController? controller) {
     if (identical(_watched, controller)) return;

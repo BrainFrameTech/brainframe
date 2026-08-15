@@ -3,6 +3,7 @@ import 'package:brainframe/commands/app_menu_bar.dart';
 import 'package:brainframe/commands/app_shortcuts.dart';
 import 'package:brainframe/l10n/gen/app_localizations.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -268,6 +269,36 @@ void main() {
 
       expect(clipboard['text'], 'hello');
       expect(controller.text, 'hello world', reason: 'copy leaves the text');
+    });
+
+    testWidgets('Copy survives opening the menu with a mouse', (tester) async {
+      // The pointer *kind* is the whole point of this test. A field unfocuses
+      // itself when a tap lands outside it, and on desktop that only happens
+      // for a mouse — so a touch-driven tap (what `tester.tap` sends by
+      // default) never reproduces what a real click does to focus. This is the
+      // path a human takes, and it was broken while every touch-driven test
+      // above passed.
+      final controller = TextEditingController(text: 'hello world');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(withField(publishedCommands(), controller));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(TextField), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      controller.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Edit'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(
+        itemNamed(tester, 'Copy').onPressed,
+        isNotNull,
+        reason: 'clicking the menu must not lose the field it applies to',
+      );
+
+      await tester.tap(find.text('Copy'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(clipboard['text'], 'hello');
     });
 
     testWidgets('Cut removes the selection and Paste puts it back', (

@@ -839,7 +839,9 @@ saves unwritten edits and the window geometry first (F10 step 9, F1).
 3. **Press and hold** the primary mouse button over a word for ~half a second
    (desktop). On a touch device, do the same with a finger; with a stylus, with
    the pen.
-4. Select a word, then open **Edit** in the menu bar (desktop).
+4. Select a word, then open **Edit** in the menu bar by **clicking it with the
+   mouse** (not the keyboard), and **click Copy**. Paste at the caret to confirm
+   it really copied.
 5. Repeat step 4 with **nothing selected**, and again after clicking a **file
    row in the tree** so the editor no longer has focus.
 6. Switch to **Preview** and try to select text.
@@ -848,8 +850,13 @@ saves unwritten edits and the window geometry first (F10 step 9, F1).
 lands in the system clipboard (paste into another app to confirm). Steps 2–3 —
 the same adaptive menu appears (Cut / Copy / Paste / Select all), styled for the
 platform; press-and-hold selects the word **under the pointer** first, and one
-hold opens exactly **one** menu. Step 4 — Edit ▸ Copy is enabled and acts on the
-field you were typing in, even though the open menu itself now has focus. Step 5
+hold opens exactly **one** menu. Step 4 — Edit ▸ Copy is enabled **and actually
+copies**, acting on the field you were typing in even though the open menu now
+has focus. Check both halves: looking enabled and doing nothing is a failure,
+and so is greying out. Use the **mouse**, deliberately — a desktop field
+unfocuses itself when a click lands outside it, so a mouse click exercises a
+focus path the keyboard never touches, and both halves of this have broken there
+before. Step 5
 — Cut and Copy are **greyed out** with an empty selection, Paste stays available
 at a caret; with focus in the file tree **all three** are greyed. Step 6 —
 Preview text is deliberately **not** selectable (an accessibility trade-off, see

@@ -476,6 +476,11 @@ quit_app() {
   # someone else is running is never touched.
   pkill -f "x11vnc.*-rfbport $VNC_PORT" 2>/dev/null
 
+  # Sweep any pidfile left behind — including ones written by an older version
+  # of this script, which would otherwise sit here forever looking like a
+  # process we failed to reap.
+  rm -f "$STATE_DIR"/*.pid
+
   [ "$rc" = 0 ] && log "quit (clean)"
   return "$rc"
 }

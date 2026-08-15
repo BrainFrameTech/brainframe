@@ -16,11 +16,13 @@ and controlling a window there has sharp edges:
 
 - `grim` (the usual Wayland tool) is wlroots-only — it does **not** work on
   Mutter.
-- Plain X11 tools (`maim`, `xdotool`) only see **XWayland** clients, so the app
-  must be launched with `GDK_BACKEND=x11 flutter run -d linux`.
+- Plain X11 tools (`maim`, `xprop`, `xdotool`) only see **XWayland** clients, so
+  the app must be launched with `GDK_BACKEND=x11 flutter run -d linux`.
 - The Flutter app exposes three X windows — two 10×10 helpers and the real one
   titled **`BrainFrame`**. `maim -i` on a helper fails with a RENDER
-  `BadMatch`; you must pick the titled window.
+  `BadMatch`; you must pick the titled window. The script finds it through the
+  window manager's `_NET_CLIENT_LIST` (via `xprop`), which lists only *managed*
+  top-level windows — so the helpers never come up in the first place.
 - The debug build's windows carry a distinct `WM_CLASS` of
   `tech.brainframe.app.debug` (the release/profile ID is `tech.brainframe.app`;
   the `.debug` suffix is added in `linux/CMakeLists.txt`). The script selects on
@@ -37,8 +39,18 @@ allowlist once (see Permissions).
 ## Requirements
 
 - A running graphical session (`$DISPLAY` set).
-- `maim` and `xdotool`: `sudo apt install maim xdotool`.
+- **To see the app** — `maim` and `x11-utils` (`xprop`, `xwininfo`):
+  `sudo apt install maim x11-utils`. This covers `launch`, `run`, `shot`,
+  `status` and `quit`, which is most of what verification needs.
+- **To drive the app** — `xdotool`: `sudo apt install xdotool`. Only `hover`,
+  `click`, `key` and `resize` need it; they exit with a message naming the
+  package when it is absent, rather than failing obscurely.
 - The Flutter Linux desktop toolchain (already needed to build the app).
+
+> On a fresh machine, run `tool/appshot.sh status` first. It prints
+> `running=<n> window=<n> tools=<ok|missing:…>` — the `tools=` field exists
+> because a missing dependency used to look exactly like a missing window
+> (`window=0`), which is a genuinely confusing way to lose an afternoon.
 
 ## Usage
 
@@ -50,7 +62,7 @@ tool/appshot.sh shot [OUT]               # capture the running app
 tool/appshot.sh hover X Y [OUT]          # pointer to window px, then capture
 tool/appshot.sh click X Y [OUT]          # move, left-click, then capture
 tool/appshot.sh key NAME [OUT]           # send a key (e.g. Escape), capture
-tool/appshot.sh status                   # print "running=<n> window=<n>"
+tool/appshot.sh status                   # "running=<n> window=<n> tools=<…>"
 tool/appshot.sh quit                     # terminate the app (loops until gone)
 ```
 
@@ -61,6 +73,8 @@ tool/appshot.sh quit                     # terminate the app (loops until gone)
   loading spinner.
 - Do launch / drive / verify / quit **only** through these subcommands — never a
   bare `pkill` / `pgrep` / `xdotool` — so nothing escapes the one allow rule.
+- The four driving subcommands are the only ones that need `xdotool`; without it
+  you can still launch, capture and quit.
 
 ## Permissions
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/ui/document_edit_controller.dart';
 import 'package:fake_async/fake_async.dart';
@@ -266,6 +267,42 @@ void main() {
       // Default observeLifecycle: true exercises addObserver / removeObserver.
       final c = DocumentEditController(store: store);
       c.dispose();
+    });
+  });
+
+  group('exit-time flush registration', () {
+    test('an unwritten buffer is flushed when the app is asked to exit',
+        () async {
+      final store = _RecordingStore();
+      final saves = PendingSaves();
+      final c = DocumentEditController(
+        store: store,
+        observeLifecycle: false,
+        pendingSaves: saves,
+      );
+      await c.openFile('a.md', 'hi');
+      c.edit('hi there'); // dirty, with the debounce still pending
+
+      // Desktop exits without a lifecycle event; this is the hook that saves
+      // the last keystroke (see PendingSaves).
+      await saves.flushAll();
+
+      expect(store.writes, ['a.md::hi there']);
+      c.dispose();
+    });
+
+    test('a disposed controller leaves nothing registered', () async {
+      final saves = PendingSaves();
+      final c = DocumentEditController(
+        store: _RecordingStore(),
+        observeLifecycle: false,
+        pendingSaves: saves,
+      );
+      expect(saves.length, 1);
+
+      c.dispose();
+
+      expect(saves.length, 0);
     });
   });
 }

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../commands/app_commands.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../settings/settings_screen.dart';
 import '../../settings/settings_store.dart';
@@ -118,6 +120,16 @@ class _EngramBrowserState extends State<EngramBrowser> {
   String? _selectedPath;
   bool _drawerOpen = false;
 
+  /// The file actually on screen — the explicit selection, or whichever default
+  /// stood in for it (see [_effectiveSelection]). Recorded on every build
+  /// because it is what "the currently selected entry" means to the menu bar's
+  /// New Note / New Folder: both create beside the open file.
+  String? _effectivePath;
+
+  /// The menu bar's command surface, held from [didChangeDependencies] so
+  /// [dispose] can withdraw from it without an inherited-widget lookup.
+  AppCommands? _commands;
+
   late final BrowserPreferences _prefs =
       widget.preferences ?? BrowserPreferences(SharedPreferencesAsync());
 
@@ -151,8 +163,46 @@ class _EngramBrowserState extends State<EngramBrowser> {
   @override
   void dispose() {
     widget.controller?._detach(this);
+    _commands?.withdraw();
     super.dispose();
   }
+
+  /// Publishes what the desktop menu bar may invoke right now. A read-only
+  /// engram cannot be written to at all, so its create commands are withheld
+  /// and the menu greys them out — the same rule that hides the sidebar's
+  /// create buttons.
+  ///
+  /// Deferred to after the frame because publishing notifies the menu bar,
+  /// which is an ancestor: marking it dirty mid-build is not allowed.
+  void _publishCommands(Engram engram) {
+    final commands = _commands;
+    if (commands == null) return;
+    final writable = !engram.readOnly;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      commands.publish(
+        newNote: writable ? _newNoteCommand : null,
+        newFolder: writable ? _newFolderCommand : null,
+        preferences: _preferencesCommand,
+        help: _helpCommand,
+        about: _aboutCommand,
+      );
+    });
+  }
+
+  void _newNoteCommand() => unawaited(_newNote());
+
+  void _newFolderCommand() => unawaited(_newFolder());
+
+  void _preferencesCommand() => unawaited(openSettingsScreen(context));
+
+  void _helpCommand() =>
+      unawaited(showHelpOverlay(context, builtInHelpEngram()));
+
+  /// About is a Settings category, so the Help ▸ About item deep-links to it
+  /// rather than duplicating the screen.
+  void _aboutCommand() =>
+      unawaited(openSettingsScreen(context, initialCategoryId: 'about'));
 
   /// Re-issues the active engram's listing after a mutation, optionally moving
   /// the selection to [selectPath]. Invoked through [EngramBrowserController];
@@ -173,6 +223,8 @@ class _EngramBrowserState extends State<EngramBrowser> {
     // exactly when the content store and its listing should be (re)issued.
     final engram = EngramScope.of(context).engram;
     final locale = Localizations.localeOf(context);
+    _commands = AppCommandsScope.maybeOf(context);
+    _publishCommands(engram);
     final engramChanged = engram.id != _loadedEngramId;
     if (engramChanged || locale != _loadedLocale) {
       _loadedEngramId = engram.id;
@@ -251,6 +303,9 @@ class _EngramBrowserState extends State<EngramBrowser> {
         ];
         final collapsed = data?.collapsed ?? const <String>{};
         final selected = _effectiveSelection(paths, data?.lastOpenedNote);
+        // Remembered for the menu bar's create commands, which target the open
+        // file's folder (see [_targetFolder]).
+        _effectivePath = selected;
         final title = selected != null
             ? _fileName(selected)
             : localizedEngramName(engram, AppLocalizations.of(context));
@@ -398,12 +453,22 @@ class _EngramBrowserState extends State<EngramBrowser> {
     _persistLastOpenedNote(path);
   }
 
-  /// Prompts for a name and creates a new Markdown note inside [parent] (the
-  /// engram root when empty), seeded with an H1 derived from the name, then
-  /// selects it (opening it in Edit) and closes the drawer. A collision with an
-  /// existing note in that folder is avoided with the same "Name", "Name 2"
-  /// numbering the store uses for folders.
-  Future<void> _newNote({String parent = ''}) async {
+  /// The folder a create command lands in when the caller names none: the one
+  /// holding the file on screen, and the engram root when nothing is open.
+  ///
+  /// This is what "respect the currently selected entry" resolves to — the
+  /// tree selects files, not folders, so the open file's folder is the entry
+  /// the user is working in. A folder row's own "⋯" menu still targets that
+  /// folder explicitly, which is how an empty folder is reached.
+  String get _targetFolder => _parentOf(_effectivePath ?? '');
+
+  /// Prompts for a name and creates a new Markdown note inside [parent]
+  /// (defaulting to [_targetFolder]), seeded with an H1 derived from the name,
+  /// then selects it (opening it in Edit) and closes the drawer. A collision
+  /// with an existing note in that folder is avoided with the same "Name",
+  /// "Name 2" numbering the store uses for folders.
+  Future<void> _newNote({String? parent}) async {
+    parent ??= _targetFolder;
     final store = _contentStore;
     if (store == null) return;
     final l10n = AppLocalizations.of(context);
@@ -431,11 +496,12 @@ class _EngramBrowserState extends State<EngramBrowser> {
     _refresh(selectPath: notePath);
   }
 
-  /// Prompts for a name and creates a new empty folder inside [parent] (the
-  /// engram root when empty), visible in the tree via
+  /// Prompts for a name and creates a new empty folder inside [parent]
+  /// (defaulting to [_targetFolder]), visible in the tree via
   /// [EngramStore.listDirectories], avoiding a collision with an existing folder
   /// in that parent using the same "Name", "Name 2" numbering.
-  Future<void> _newFolder({String parent = ''}) async {
+  Future<void> _newFolder({String? parent}) async {
+    parent ??= _targetFolder;
     final store = _contentStore;
     if (store == null) return;
     final l10n = AppLocalizations.of(context);

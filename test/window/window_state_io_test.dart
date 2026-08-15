@@ -1,3 +1,4 @@
+import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/settings/device_settings.dart';
 import 'package:brainframe/settings/settings_store.dart';
 import 'package:brainframe/window/window_state_io.dart';
@@ -62,6 +63,38 @@ void main() {
       device.values[windowStateSetting.key],
       {'x': 100.0, 'y': 200.0, 'width': 1280.0, 'height': 800.0, 'maximized': false},
     );
+  });
+
+  test('onWindowClose writes unsaved edits before the window goes away',
+      () async {
+    final saves = PendingSaves();
+    final order = <String>[];
+    saves.register('editor', () async => order.add('flush'));
+    final device = _MapBackend();
+    final persister = WindowStatePersister(
+      storeWith(device),
+      pendingSaves: saves,
+    );
+
+    await persister.onWindowClose();
+
+    // Flushed first, and before the window was destroyed — a debounced
+    // keystroke must not die with the process.
+    expect(order, ['flush']);
+    expect(calls, contains('destroy'));
+  });
+
+  test('a failing flush still lets the window close', () async {
+    final saves = PendingSaves();
+    saves.register('editor', () async => throw StateError('disk full'));
+    final persister = WindowStatePersister(
+      storeWith(_MapBackend()),
+      pendingSaves: saves,
+    );
+
+    await persister.onWindowClose();
+
+    expect(calls, contains('destroy'));
   });
 
   test(

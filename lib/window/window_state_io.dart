@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../commands/pending_saves.dart';
 import '../settings/device_settings.dart';
 import '../settings/settings_store.dart';
 
@@ -78,7 +79,19 @@ Future<void> initWindowManager() async {
   windowManager.addListener(WindowStatePersister(store));
 }
 
-/// Persists window geometry whenever it changes.
+/// Asks the app to quit: the Quit menu item and its hotkey.
+///
+/// Routed through the window's own close so there is exactly one exit path —
+/// `close()` fires the delete-event that [WindowStatePersister.onWindowClose]
+/// intercepts, which flushes unsaved edits and saves the geometry before
+/// destroying the window. A no-op where there is no OS window to close.
+Future<void> requestAppQuit() async {
+  if (!_isDesktop) return;
+  await windowManager.close();
+}
+
+/// Persists window geometry whenever it changes, and flushes unsaved edits on
+/// the way out.
 ///
 /// Linux (GTK) emits only the present-tense `resize`/`move` events, while
 /// macOS and Windows emit the past-tense `resized`/`moved` variants. We listen
@@ -86,9 +99,15 @@ Future<void> initWindowManager() async {
 /// during a drag.
 @visibleForTesting
 class WindowStatePersister extends WindowListener {
-  WindowStatePersister(this._store);
+  WindowStatePersister(this._store, {PendingSaves? pendingSaves})
+    : _pendingSaves = pendingSaves ?? PendingSaves.instance;
 
   final SettingsStore _store;
+
+  /// The unwritten editor buffers to flush before the window is destroyed.
+  /// Injectable so a test can supply its own registry.
+  final PendingSaves _pendingSaves;
+
   Timer? _debounce;
 
   /// True once a close is underway. `windowManager.destroy()` re-fires the GTK
@@ -174,6 +193,10 @@ class WindowStatePersister extends WindowListener {
     _closing = true;
     _debounce?.cancel();
     try {
+      // Desktop gets no lifecycle warning before an exit, so the editor's
+      // debounced autosave could still be holding the last few keystrokes.
+      // Write them before anything tears down.
+      await _pendingSaves.flushAll();
       await _save();
     } finally {
       // We intercepted the close (setPreventClose); always actually close,

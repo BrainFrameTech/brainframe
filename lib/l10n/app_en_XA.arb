@@ -95,5 +95,12 @@
   "housekeepingMissing": "[Ḿíššíñǵ~~~]",
   "housekeepingForget": "[Ƒóŕǵéŧ~~]",
   "housekeepingConfirmTitle": "[Ƒóŕǵéŧ “{name}”?~~~~]",
-  "housekeepingConfirmBody": "[Ŧħíš ŕéɱóvéš íŧ ƒŕóɱ ƁŕáíñƑŕáɱé. Íŧš ƒíłéš šŧáý óñ đíšķ, úñŧóúçħéđ.~~~~~~~~~~~~~~~~~~~~~~~]"
+  "housekeepingConfirmBody": "[Ŧħíš ŕéɱóvéš íŧ ƒŕóɱ ƁŕáíñƑŕáɱé. Íŧš ƒíłéš šŧáý óñ đíšķ, úñŧóúçħéđ.~~~~~~~~~~~~~~~~~~~~~~~]",
+  "menuFile": "[Ƒíłé~~]",
+  "menuEdit": "[Éđíŧ~~]",
+  "menuQuit": "[Qúíŧ~~]",
+  "menuCut": "[Çúŧ~]",
+  "menuCopy": "[Çóþý~~]",
+  "menuPaste": "[Þášŧé~~]",
+  "menuPreferences": "[Þŕéƒéŕéñçéš~~~~]"
 }

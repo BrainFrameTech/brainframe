@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../commands/pending_saves.dart';
 import '../engram_store.dart';
 
 /// The save state surfaced to the header status indicator.
@@ -26,13 +27,21 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
     this.idleDebounce = const Duration(seconds: 5),
     this.maxWait = const Duration(seconds: 30),
     this.observeLifecycle = true,
-  }) {
+    PendingSaves? pendingSaves,
+  }) : _pendingSaves = pendingSaves ?? PendingSaves.instance {
     if (observeLifecycle) WidgetsBinding.instance.addObserver(this);
+    // Desktop exits without a lifecycle event, so the close path asks every
+    // live controller to flush rather than waiting to be told (see
+    // [PendingSaves]).
+    _pendingSaves.register(this, flush);
   }
 
   final EngramStore store;
   final Duration idleDebounce;
   final Duration maxWait;
+
+  /// The exit-time flush registry this controller belongs to for its lifetime.
+  final PendingSaves _pendingSaves;
 
   /// Whether this controller registers a [WidgetsBindingObserver] to flush on
   /// app pause/detach. Off in unit tests that have no binding.
@@ -160,6 +169,7 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
   @override
   void dispose() {
     _cancelTimers();
+    _pendingSaves.unregister(this);
     if (observeLifecycle) WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

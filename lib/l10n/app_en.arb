@@ -522,5 +522,40 @@
   "housekeepingConfirmBody": "This removes it from BrainFrame. Its files stay on disk, untouched.",
   "@housekeepingConfirmBody": {
     "description": "Body of the confirmation dialog before forgetting an engram."
+  },
+
+  "menuFile": "File",
+  "@menuFile": {
+    "description": "Title of the desktop menu bar's File menu, holding the new-note, new-folder and quit commands."
+  },
+
+  "menuEdit": "Edit",
+  "@menuEdit": {
+    "description": "Title of the desktop menu bar's Edit menu, holding the clipboard commands and Preferences."
+  },
+
+  "menuQuit": "Quit",
+  "@menuQuit": {
+    "description": "Menu item that saves any unwritten edits and closes the app."
+  },
+
+  "menuCut": "Cut",
+  "@menuCut": {
+    "description": "Menu item that moves the selected text to the clipboard."
+  },
+
+  "menuCopy": "Copy",
+  "@menuCopy": {
+    "description": "Menu item that copies the selected text to the clipboard."
+  },
+
+  "menuPaste": "Paste",
+  "@menuPaste": {
+    "description": "Menu item that inserts the clipboard's text at the cursor."
+  },
+
+  "menuPreferences": "Preferences",
+  "@menuPreferences": {
+    "description": "Menu item that opens the Settings screen. Under Edit on Linux and Windows; in the application menu on macOS, where the platform convention puts it."
   }
 }

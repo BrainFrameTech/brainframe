@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 
+import 'commands/app_commands.dart';
+import 'commands/app_menu_bar.dart';
+import 'commands/app_shortcuts.dart';
 import 'engram/engram.dart';
 import 'engram/engram_repository.dart';
 import 'engram/engram_scope.dart';
@@ -68,6 +71,11 @@ class BrainFrameApp extends StatefulWidget {
 class _BrainFrameAppState extends State<BrainFrameApp> {
   late final AppSettingsController _controller;
 
+  /// The desktop menu bar's command surface, published into by the engram
+  /// browser (see [AppCommands]). Owned here because both the menu bar and the
+  /// screens that fill it need to reach the same instance.
+  final AppCommands _commands = AppCommands();
+
   /// Whether we created the controller and must dispose it (vs. one injected by
   /// `main`, whose lifetime it owns).
   late final bool _ownsController = widget.settingsController == null;
@@ -81,6 +89,7 @@ class _BrainFrameAppState extends State<BrainFrameApp> {
   @override
   void dispose() {
     if (_ownsController) _controller.dispose();
+    _commands.dispose();
     super.dispose();
   }
 
@@ -99,31 +108,43 @@ class _BrainFrameAppState extends State<BrainFrameApp> {
           // reach the repository; EngramScope, which sits at `home`, cannot.
           child: RepositoryScope(
             repository: widget.repository,
-            child: Builder(
-              builder: (context) => MaterialApp(
-                // Title is localized: onGenerateTitle runs inside a context that has
-                // the localizations, so it re-resolves when the locale changes.
-                onGenerateTitle: (context) =>
-                    AppLocalizations.of(context).appTitle,
-                debugShowCheckedModeBanner: false,
-                localizationsDelegates: AppLocalizations.localizationsDelegates,
-                supportedLocales: appSupportedLocales(),
-                theme: AppTheme.light,
-                darkTheme: AppTheme.dark,
-                // MaterialApp switches to these automatically when the platform
-                // requests high contrast (MediaQuery.highContrast).
-                highContrastTheme: AppTheme.lightHighContrast,
-                highContrastDarkTheme: AppTheme.darkHighContrast,
-                themeMode: AppSettings.of(context).themeMode,
-                home: EngramStartupGate(
-                  resolveInitialEngram:
-                      widget.resolveInitialEngram ??
-                      widget.repository.openInitialEngram,
-                  onSwitched: (engram) =>
-                      widget.repository.setLastOpened(engram.id),
-                  child: _ActiveEngramThemeReporter(
-                    controller: _controller,
-                    child: EngramBrowser(repository: widget.repository),
+            // Above the MaterialApp for the same reason: the desktop menu bar
+            // is built outside the Navigator, and the screens that publish into
+            // it are inside — both must see one AppCommands.
+            child: AppCommandsScope(
+              commands: _commands,
+              child: Builder(
+                builder: (context) => MaterialApp(
+                  // Title is localized: onGenerateTitle runs inside a context that has
+                  // the localizations, so it re-resolves when the locale changes.
+                  onGenerateTitle: (context) =>
+                      AppLocalizations.of(context).appTitle,
+                  debugShowCheckedModeBanner: false,
+                  localizationsDelegates:
+                      AppLocalizations.localizationsDelegates,
+                  supportedLocales: appSupportedLocales(),
+                  theme: AppTheme.light,
+                  darkTheme: AppTheme.dark,
+                  // MaterialApp switches to these automatically when the platform
+                  // requests high contrast (MediaQuery.highContrast).
+                  highContrastTheme: AppTheme.lightHighContrast,
+                  highContrastDarkTheme: AppTheme.darkHighContrast,
+                  themeMode: AppSettings.of(context).themeMode,
+                  // Wraps every route: the desktop menu bar and its hotkeys are
+                  // app-wide, not per-screen, and both must sit above the
+                  // Navigator so a pushed route or a dialog never displaces them.
+                  builder: (context, child) =>
+                      AppCommandShortcuts(child: AppMenuBar(child: child!)),
+                  home: EngramStartupGate(
+                    resolveInitialEngram:
+                        widget.resolveInitialEngram ??
+                        widget.repository.openInitialEngram,
+                    onSwitched: (engram) =>
+                        widget.repository.setLastOpened(engram.id),
+                    child: _ActiveEngramThemeReporter(
+                      controller: _controller,
+                      child: EngramBrowser(repository: widget.repository),
+                    ),
                   ),
                 ),
               ),

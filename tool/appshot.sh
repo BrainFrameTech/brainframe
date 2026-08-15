@@ -10,18 +10,8 @@
 # whole workflow.
 #
 # Linux only (GNOME/Wayland + XWayland, or plain X11). Run from the repo root as
-# `tool/appshot.sh …`, or by absolute path from anywhere. Needs a running
-# graphical session (`$DISPLAY`) and:
-#
-#   * `maim` + `x11-utils` (xprop, xwininfo) — for launch / status / shot / run.
-#     These are the read-only commands, and they are the common case.
-#   * `xdotool` — *only* to drive the app (hover, click, key, resize). The other
-#     commands work without it; those four say so plainly and name the package.
-#
-# Window discovery deliberately uses `xprop` rather than `xdotool`, so a fresh
-# machine can capture the app before anything extra is installed. `status`
-# reports which tools are missing, because a missing tool once looked exactly
-# like "no window" (`window=0`) and cost an afternoon.
+# `tool/appshot.sh …`, or by absolute path from anywhere. Requires `maim`,
+# `xdotool`, and a running graphical session (`$DISPLAY`).
 #
 # Usage:
 #   tool/appshot.sh launch [PROJECT_DIR]   # flutter run -d linux (X11) from DIR
@@ -63,50 +53,15 @@ readonly DEFAULT_OUT='/tmp/brainframe-shot.png'
 
 log() { printf 'appshot: %s\n' "$*" >&2; }
 
-have() { command -v "$1" >/dev/null 2>&1; }
-
-# Aborts a driving command that has no xdotool to drive with, naming the fix.
-# Silence here is what makes a fresh machine look broken, so this is loud.
-require_driver() {
-  have xdotool && return 0
-  log "'$1' needs xdotool to move the pointer or send keys, and it is not installed."
-  log "  fix: sudo apt install xdotool"
-  log "  (launch, shot, run, status and quit all work without it.)"
-  exit 69   # EX_UNAVAILABLE
-}
-
-# The window id (decimal — what both maim and xdotool take), or nothing.
-#
-# Read from the window manager's own client list via xprop, not xdotool: the
-# capture path then depends on nothing beyond maim + x11-utils. Filter by class
-# (so a release/profile build being dogfooded is never touched) and then by
-# title. `_NET_CLIENT_LIST` holds only managed top-level windows, which also
-# leaves out the debug build's two 10x10 helper windows for free.
+# The debug build exposes three X windows sharing APP_CLASS: two 10x10 helpers
+# and the real one titled APP_TITLE. Filter by class (excludes any release/
+# profile build) then by title (excludes the 10x10 helpers).
 find_window() {
-  have xprop || { log "xprop is missing — install x11-utils"; return 1; }
-  local ids id
-  ids=$(xprop -root _NET_CLIENT_LIST 2>/dev/null | sed -n 's/.*# //p' | tr -d ' ' | tr ',' '\n')
-  for id in $ids; do
-    [ -n "$id" ] || continue
-    xprop -id "$id" WM_CLASS 2>/dev/null | grep -q "\"${APP_CLASS}\"" || continue
-    xprop -id "$id" WM_NAME _NET_WM_NAME 2>/dev/null | grep -q "\"${APP_TITLE}\"" || continue
-    printf '%d\n' "$id"
-    return 0
+  local wid
+  for wid in $(xdotool search --classname "^${APP_CLASS}\$" 2>/dev/null); do
+    [ "$(xdotool getwindowname "$wid" 2>/dev/null)" = "$APP_TITLE" ] && { echo "$wid"; return 0; }
   done
-  return 1
 }
-
-# "X Y WIDTH HEIGHT" for a window, in absolute screen pixels.
-window_geometry() {
-  have xwininfo || { log "xwininfo is missing — install x11-utils"; return 1; }
-  xwininfo -id "$1" 2>/dev/null | awk '
-    /Absolute upper-left X/ { x = $NF }
-    /Absolute upper-left Y/ { y = $NF }
-    /^  Width:/             { w = $NF }
-    /^  Height:/            { h = $NF }
-    END { if (w == "") exit 1; print x, y, w, h }'
-}
-
 app_running() { pgrep -f "$APP_BUNDLE" >/dev/null 2>&1; }
 
 launch() {
@@ -138,25 +93,19 @@ launch() {
 }
 
 capture() {
-  local out="${1:-$DEFAULT_OUT}" wid geo
-  have maim || { log "maim is missing — fix: sudo apt install maim"; return 1; }
+  local out="${1:-$DEFAULT_OUT}" wid
   wid=$(find_window)
   [ -n "$wid" ] || { log "no ${APP_TITLE} window — launch first"; return 1; }
-  # Raising is a nicety, not a requirement: it guarantees an unoccluded window
-  # before the grab. Without xdotool we capture where it lies.
-  if have xdotool; then
-    xdotool windowactivate "$wid" 2>/dev/null; xdotool windowraise "$wid" 2>/dev/null
-    sleep 0.5
-  fi
+  xdotool windowactivate "$wid" 2>/dev/null; xdotool windowraise "$wid" 2>/dev/null
+  sleep 0.5
   if maim -i "$wid" "$out" 2>/tmp/appshot-maim.err; then
     echo "$out"; return 0
   fi
   # Fallback: some windows reject direct capture (RENDER BadMatch); grab the
   # screen region the window occupies instead.
-  geo=$(window_geometry "$wid") || { log "capture failed and no geometry to fall back on"; return 1; }
-  # shellcheck disable=SC2086
-  set -- $geo
-  if maim -g "${3}x${4}+${1}+${2}" "$out" 2>>/tmp/appshot-maim.err; then
+  local X Y WIDTH HEIGHT WINDOW SCREEN
+  eval "$(xdotool getwindowgeometry --shell "$wid")"
+  if maim -g "${WIDTH}x${HEIGHT}+${X}+${Y}" "$out" 2>>/tmp/appshot-maim.err; then
     echo "$out"; return 0
   fi
   log "capture failed:"; cat /tmp/appshot-maim.err >&2; return 1
@@ -164,12 +113,10 @@ capture() {
 
 # Translate window-relative (x,y) to absolute screen coords (window origin + x,y).
 to_screen() {
-  local wid geo
+  local wid X Y WIDTH HEIGHT WINDOW SCREEN
   wid=$(find_window) || return 1
-  geo=$(window_geometry "$wid") || return 1
-  # shellcheck disable=SC2086
-  set -- $geo "$1" "$2"
-  printf '%s %s' "$(($1 + $5))" "$(($2 + $6))"
+  eval "$(xdotool getwindowgeometry --shell "$wid")"
+  printf '%s %s' "$((X + $1))" "$((Y + $2))"
 }
 
 # Terminate the app and its `flutter run` supervisor, escalating to SIGKILL, and
@@ -201,32 +148,22 @@ case "$cmd" in
   launch) launch "${1:-}" ;;
   shot)   capture "${1:-}" ;;
   run)    require "${1:-}"; launch "$1" >/dev/null || exit 1; capture "${2:-}" ;;
-  hover)  require_driver hover; require "${1:-}"; require "${2:-}"
+  hover)  require "${1:-}"; require "${2:-}"
           read -r sx sy < <(to_screen "$1" "$2")
           xdotool mousemove "$sx" "$sy"; sleep 1; capture "${3:-}" ;;
-  click)  require_driver click; require "${1:-}"; require "${2:-}"
+  click)  require "${1:-}"; require "${2:-}"
           read -r sx sy < <(to_screen "$1" "$2")
           xdotool mousemove "$sx" "$sy"; sleep 0.3; xdotool click 1; sleep 1
           capture "${3:-}" ;;
-  key)    require_driver key; require "${1:-}"
-          xdotool key "$1"; sleep 0.6; capture "${2:-}" ;;
-  resize) require_driver resize; require "${1:-}"; require "${2:-}"
+  key)    require "${1:-}"; xdotool key "$1"; sleep 0.6; capture "${2:-}" ;;
+  resize) require "${1:-}"; require "${2:-}"
           wid=$(find_window)
           [ -n "$wid" ] || { log "no ${APP_TITLE} window — launch first"; exit 1; }
           xdotool windowsize "$wid" "$1" "$2"; sleep 1; capture "${3:-}" ;;
   quit)   quit_app ;;
   status) running=$(pgrep -cf "$APP_BUNDLE" 2>/dev/null || true)
-          window=0; find_window >/dev/null 2>&1 && window=1
-          missing=''
-          for tool in maim xprop xwininfo xdotool; do
-            have "$tool" || missing="${missing:+$missing,}$tool"
-          done
-          # tools= is here so a missing dependency can never masquerade as
-          # "no window": window=0 with tools=missing:xprop means the tool is
-          # blind, not that the app is down.
-          echo "running=${running:-0} window=${window} tools=${missing:+missing:}${missing:-ok}"
-          [ -n "$missing" ] && log "install with: sudo apt install ${missing//,/ }"
-          exit 0 ;;
+          window=$(find_window | grep -c . || true)
+          echo "running=${running:-0} window=${window:-0}" ;;
   *) log "usage: appshot.sh {launch [DIR]|shot [OUT]|run DIR [OUT]|hover X Y [OUT]|click X Y [OUT]|key NAME [OUT]|resize W H [OUT]|status|quit}"
      exit 64 ;;
 esac

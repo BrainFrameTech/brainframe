@@ -63,16 +63,22 @@ void main() {
     // Load-bearing (must always hold): convergence to a single value, both runs
     // contiguous/intact, and Q's clock dragged forward to at least P's time.
     //
-    // CONFIRM-THEN-PIN + SPEC DEVIATION: the spec prose expects P's inflated
-    // run to sort FIRST ("status: donewip"). crdt_lf replays changes in
-    // ASCENDING HLC order and builds the sequence left-to-right, so the higher
-    // (inflated) HLC actually sorts LAST → observed "status: wipdone". The
-    // mechanism the spec describes still holds (the HLC term dominates the
-    // tiebreak — the honest peerID order would have put "done" first since
-    // peerA < peerB, but the inflated clock overrides that); only the stated
-    // left/right DIRECTION is inverted. This deviation is surfaced to the human
-    // for a conscious spec decision rather than silently matched or silently
-    // flipped.
+    // CONFIRM-THEN-PIN: the ordering DIRECTION is the library's, re-pinned at
+    // crdt_lf 3.5.0. Under 3.4.2 the inflated run sorted LAST
+    // ("status: wipdone"), which the spec recorded as a deviation from its own
+    // prose. 3.5.0 made the replay order explicit (`compareChangeOrder`, the
+    // `(hlc, author)` order changes are replayed in) and the direction now
+    // matches the spec's original theory: P's inflated HLC sorts its run FIRST
+    // → "status: donewip".
+    //
+    // Re-pinned consciously, not adapted to blindly. The flip was verified to
+    // be a genuine ordering change and not a materialization artifact of
+    // 3.5.0's new incremental-fold cache: both replicas converge on the same
+    // string under both delivery orders, and a cold third replica replaying
+    // every change from scratch (which never touches the cache) produces the
+    // same "status: donewip". The load-bearing guarantees below — exact
+    // convergence, runs intact, clock jump — held across the bump untouched;
+    // only the confirm-then-pin direction moved.
     void runSkew(String label, bool deliverPtoQfirst) {
       final replicas = replicaSet(
         [peerA, peerB],
@@ -99,8 +105,8 @@ void main() {
       }
 
       // Convergence — pin the exact value, never merely "p == q".
-      expect(p.text, 'status: wipdone', reason: '$label: P converged value');
-      expect(q.text, 'status: wipdone', reason: '$label: Q converged value');
+      expect(p.text, 'status: donewip', reason: '$label: P converged value');
+      expect(q.text, 'status: donewip', reason: '$label: Q converged value');
 
       // Both runs remain contiguous and intact — skew changes which run wins
       // the ordering, never whether runs stay whole.

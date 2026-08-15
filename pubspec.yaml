@@ -63,8 +63,13 @@ dependencies:
   # Opens the About screen's Website (external browser) and Contact (mailto)
   # links via the platform handler. Cross-platform incl. Linux/flutter-pi.
   url_launcher: ^6.3.2
-  crdt_lf: ^3.4.2+1
+  crdt_lf: ^3.5.0
   hlc_dart: ^1.1.0+2
+  # sqlite3-backed persistence for crdt_lf `Change` / `Snapshot` objects — the
+  # durable oplog behind engram sync. Synchronous FFI API (sqlite3 is not
+  # async), so it is desktop/mobile only; web has no dart:ffi and must never
+  # import it from shared code.
+  crdt_lf_sqlite: ^0.1.0+2
 
 dev_dependencies:
   flutter_test:
@@ -80,6 +85,12 @@ dev_dependencies:
   # Test-only: fake_async drives the DocumentEditController's debounce / max-wait
   # timers deterministically, without real wall-clock delays.
   fake_async: ^1.3.3
+  # Test-only: already present transitively via crdt_lf_sqlite, promoted to a
+  # direct dev dependency because the shared-database test opens and owns a
+  # sqlite3 database itself (the consumer-managed case) rather than letting
+  # CRDTSqlite create one. Not a runtime dependency — no lib/ code opens a
+  # database yet.
+  sqlite3: ^3.5.1
   # Localization enforcement, both layers (design Decision 3):
   #   - tool/check_l10n.dart (CLI gate) parses the AST to find hardcoded strings.
   #   - custom_lint runs brainframe_lints' no_raw_widget_strings rule in the IDE.

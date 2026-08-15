@@ -63,8 +63,13 @@ dependencies:
   # Opens the About screen's Website (external browser) and Contact (mailto)
   # links via the platform handler. Cross-platform incl. Linux/flutter-pi.
   url_launcher: ^6.3.2
-  crdt_lf: ^3.4.2+1
+  crdt_lf: ^3.5.0
   hlc_dart: ^1.1.0+2
+  # sqlite3-backed persistence for crdt_lf `Change` / `Snapshot` objects — the
+  # durable oplog behind engram sync. Synchronous FFI API (sqlite3 is not
+  # async), so it is desktop/mobile only; web has no dart:ffi and must never
+  # import it from shared code.
+  crdt_lf_sqlite: ^0.1.0+2
 
 dev_dependencies:
   flutter_test:

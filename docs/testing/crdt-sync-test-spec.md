@@ -366,20 +366,25 @@ character is the one outcome the storage model calls unacceptable, so the
 assertion pins survival; it is **not** a confirm-then-pin observation, because
 data loss is never a value BrainFrame accepts.
 
-**FINDING — this assertion is known-failing against `crdt_lf` 3.4.2, and the
-test is skipped (not deleted) pending an upstream fix.** The library ties
-`update`'s replacement element to the liveness of the element it replaces, so
-under a concurrent delete the `0` is silently dropped (`"hello "`) — data loss —
+**RESOLVED — this assertion was known-failing against `crdt_lf` 3.4.2 and is
+active and passing as of `crdt_lf` 3.5.0.** The 3.4.2 library tied `update`'s
+replacement element to the liveness of the element it replaces, so under a
+concurrent delete the `0` was silently dropped (`"hello "`) — data loss —
 whereas both a plain insert *and* an equivalent hand-written `delete`+`insert`
-in the identical situation reattach and survive (`"hello 0"`). That the manual
-`delete`+`insert` — `update`'s own recipe — survives is what isolates the fault
-to `update()` itself; the suite keeps that case as an active control test
-alongside the skipped one. Reported upstream as `MattiaPispisa/crdt#113`. The
-skip carries this reason and auto-reactivates — validating the fix — when the
-library lands it. Determinism and the no-crash guarantee both hold today
-regardless; only survival does not. (`change()`, the diff-based bulk edit,
-compiles to insert+delete and never `update`, so the diff-editing path is not
-exposed to this loss.)
+in the identical situation reattached and survived (`"hello 0"`). That the
+manual `delete`+`insert` — `update`'s own recipe — survived is what isolated the
+fault to `update()` itself; the suite kept that case as an active control test
+alongside the skipped one.
+
+Reported upstream as `MattiaPispisa/crdt#113` and fixed in `crdt_lf` 3.4.3,
+which anchors the replacement to the element it replaces rather than to its
+position in the visible text. The skip was removed at the 3.5.0 bump and the
+assertion — unchanged, still pinning survival — now passes, so it stands as the
+regression guard for that fix. A future red here means data loss has returned:
+escalate upstream, never re-pin to the lossy value. Determinism and the no-crash
+guarantee held throughout; only survival did not. (`change()`, the diff-based
+bulk edit, compiles to insert+delete and never `update`, so the diff-editing
+path was never exposed to this loss.)
 
 ### Why this holds
 
@@ -436,22 +441,37 @@ here it is the thing under test.
   - **Convergence holds** — both replicas land on the same string (assert equal
     *and* pin the exact value).
   - **The inflated clock decides the ordering deterministically** — pinned to
-    `"status: wipdone"`. **FINDING — direction confirmed against the
-    implementation, opposite to this spec's original prose.** The original draft
-    asserted `"status: donewip"` on the theory that P's inflated HLC would make
-    its run sort *first* (leftmost). In practice `crdt_lf` replays a handler's
-    changes in **ascending** HLC order and lays the sequence out left-to-right,
-    so the **higher (inflated) HLC sorts LAST** — P's `done` lands to the right
-    of Q's `wip`. Everything the case is actually defending still holds: the HLC
+    `"status: donewip"` as of `crdt_lf` 3.5.0. **FINDING — the direction moved
+    once and has been re-pinned twice; it is the clearest live example of a
+    confirm-then-pin value in this suite.** This spec's original prose asserted
+    `"status: donewip"` on the theory that P's inflated HLC would make its run
+    sort *first* (leftmost). Against `crdt_lf` 3.4.2 the observed direction was
+    the opposite — the higher (inflated) HLC sorted LAST, P's `done` landing to
+    the right of Q's `wip` — so the value was re-pinned to `"status: wipdone"`
+    and recorded here as a deviation from the prose. `crdt_lf` 3.5.0 made the
+    replay order explicit (`compareChangeOrder`, the `(hlc, author)` order
+    changes are replayed in) and the direction flipped back, so the pinned value
+    returns to the original `"status: donewip"`.
+
+    The 3.5.0 flip was **verified before being absorbed**, not adapted to
+    blindly. 3.5.0 also introduced an incremental-fold cache that lets a handler
+    fold a remote change into the state it already holds, which could in
+    principle change a *materialization* without changing the *ordering*. Both
+    replicas converge on the same string under both delivery orders, and a cold
+    third replica replaying every change from scratch — a path that never
+    touches the cache — produces the same `"status: donewip"`. That rules out
+    the cache and confirms a genuine ordering change.
+
+    Everything the case is actually defending held across both flips: the HLC
     term dominates the tiebreak (it overrides the peerID order that equal
     timestamps would have used — here `peerP` < `peerQ` would have put `done`
-    first, and the clock skew overrides that), convergence is exact, and the
-    runs stay whole. Only the left/right *direction* differed from the guess, so
-    we pin `"status: wipdone"` as the observed, deliberately-depended-on value.
+    first either way, and the clock skew is what decides), convergence is exact,
+    and the runs stay whole. Only the left/right *direction* has ever moved.
     This is a **confirm-then-pin** assertion (see "Two kinds of pinned value"),
-    not a load-bearing guarantee: if a future `crdt_lf` changes the replay
-    direction it is a library *change* to absorb consciously, not necessarily a
-    bug. Document this as expected skew, not a bug.
+    not a load-bearing guarantee: when a future `crdt_lf` changes the replay
+    direction again it is a library *change* to absorb consciously — re-run the
+    cold-replay check, then re-pin — not necessarily a bug. Document this as
+    expected skew, not a bug.
   - Both runs remain **contiguous and intact** — clock skew changes *which run
     wins the ordering*, never whether runs stay whole.
   - After merge, Q's own HLC has **jumped forward** to at least P's timestamp

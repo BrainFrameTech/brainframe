@@ -64,13 +64,16 @@ void main() {
     // this asserts survival, NOT the library's current output. It is not a
     // confirm-then-pin observation — data loss is never a value we accept.
     //
-    // KNOWN-FAILING (skip): crdt_lf 3.4.2 ties update()'s replacement to the
-    // liveness of the element it replaces, so under a concurrent delete the '0'
-    // is silently dropped → "hello " (data loss) — even though the equivalent
-    // hand-written delete+insert (the control test above) survives. Reported
-    // upstream as MattiaPispisa/crdt#113. Un-skip when fixed upstream; the
-    // assertion then validates the fix. Deterministic convergence and the
-    // no-dangling-identity-crash guarantee both already hold regardless.
+    // HISTORY: crdt_lf 3.4.2 tied update()'s replacement to the liveness of the
+    // element it replaces, so under a concurrent delete the '0' was silently
+    // dropped → "hello " (data loss) — even though the equivalent hand-written
+    // delete+insert (the control test above) survived. Reported upstream as
+    // MattiaPispisa/crdt#113 and fixed in crdt_lf 3.4.3, which anchors the
+    // replacement to the element it replaces rather than to its position in the
+    // visible text. This test was skipped until then; it was un-skipped at the
+    // 3.5.0 bump and now passes, so it stands as the regression guard for that
+    // fix. A future red here is data loss returning — escalate it upstream,
+    // never re-pin the assertion to the lossy value.
     convergesTo(
       'update inside a fully-deleted run preserves the replacement (no loss)',
       peers: [peerA, peerB],
@@ -80,10 +83,6 @@ void main() {
         r[1].note.update(7, '0'); // B: 'o' -> '0' inside "world"
       },
       expected: 'hello 0',
-      skip: 'BLOCKED on crdt_lf update() data-loss bug (MattiaPispisa/crdt#113) '
-          '— the replacement is dropped when its target is concurrently '
-          'deleted, though the equivalent manual delete+insert (control test '
-          'above) survives. Un-skip when fixed upstream.',
     );
   });
 }

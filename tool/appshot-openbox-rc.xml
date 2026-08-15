@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Openbox configuration for tool/appshot.sh.
+
+  The point of running a WM at all is real EWMH activation and focus semantics.
+  The point of *this* file is to get that without the frame that normally comes
+  with it: a decorated, WM-placed window puts the client at an offset from its
+  frame, and then the origin used for screenshots and the origin used for
+  coordinates disagree — clicks land tens of pixels off, silently.
+
+  Undecorated and pinned to (0,0), the client *is* the frame, so window pixel ==
+  screenshot pixel == the (X,Y) you pass, exactly as it is with APPSHOT_WM=none.
+  Switching the WM on and off therefore never moves the target.
+-->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <applications>
+    <application class="*">
+      <decor>no</decor>
+      <position force="yes">
+        <x>0</x>
+        <y>0</y>
+      </position>
+      <focus>yes</focus>
+    </application>
+  </applications>
+</openbox_config>

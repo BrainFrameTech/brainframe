@@ -50,18 +50,48 @@ Other sharp edges the script encodes so nobody re-derives them:
   launched it. Without that the app dies the moment the calling tool call or
   terminal is reaped, and `status` reports a window that vanished for no
   visible reason.
-- There is **no window manager**. Focus therefore cannot go through EWMH
-  (`xdotool windowactivate`); the script uses `xdotool windowfocus`, a direct
-  `XSetInputFocus`, which needs no WM.
+- **Openbox** runs on the private display so the app gets real EWMH activation
+  and focus semantics rather than a bare `XSetInputFocus`. It runs
+  **undecorated** (`tool/appshot-openbox-rc.xml`): a framed window puts the
+  client at an offset from its frame, so the origin screenshots are captured
+  from and the origin coordinates are computed from disagree, and clicks land
+  tens of pixels off with nothing on screen to explain it. Undecorated, the
+  client *is* the frame and coordinates are identical with the WM on or off —
+  so `APPSHOT_WM=none` is a clean A/B for "does this depend on window
+  management?" and never moves the target.
 
 ## Requirements
 
 ```bash
-sudo apt install xvfb x11-utils xdotool maim
+sudo apt install xvfb x11-utils xdotool maim openbox x11vnc remmina
 ```
 
-Plus the Flutter Linux desktop toolchain (already needed to build the app). No
-graphical session is required — this works over SSH and in CI.
+Plus the Flutter Linux desktop toolchain (already needed to build the app).
+`tool/appshot.sh deps` checks all of them and prints exactly that line for
+whatever is missing — worth running first on an unfamiliar machine, because
+these fail in ways that each look like a different problem.
+
+The window manager and viewer are only required when switched on, so a headless
+run (`APPSHOT_WM=none APPSHOT_VIEW=0`) needs neither. No graphical session is
+required for the app itself — that part works over SSH and in CI.
+
+## Watching a run live
+
+`launch` exports the private display over VNC and opens remmina on your real
+desktop, so you can watch the app being driven:
+
+- The x11vnc server is **view-only** and bound to **localhost**. You can watch
+  but not type or click, which is deliberate — it preserves the isolation the
+  private display bought. To interact, drive through the subcommands.
+- `tool/appshot.sh watch` reopens the viewer if you closed it.
+- `APPSHOT_VIEW=0` disables it; `APPSHOT_VNC_PORT` changes the port (5900).
+- x11vnc decides it is "on Wayland" from `WAYLAND_DISPLAY` /
+  `XDG_SESSION_TYPE` in its environment and refuses to start — it never looks
+  at the display it was handed. The script scrubs both. If you run x11vnc by
+  hand against `:99` and it exits complaining about Wayland, that is why.
+- `quit` stops the VNC server, which disconnects the session. Remmina itself is
+  left running on purpose: it is single-instance, so killing it would close
+  every other connection you have open. Close the dead tab when you like.
 
 ## Usage
 
@@ -77,9 +107,15 @@ tool/appshot.sh rclick X Y [OUT]       # move, right-click, then capture
 tool/appshot.sh key NAME [OUT]         # send a key/combo (Escape, ctrl+a), capture
 tool/appshot.sh type TEXT [OUT]        # type literal text, capture
 tool/appshot.sh resize W H [OUT]       # resize the window, capture
-tool/appshot.sh status                 # print "display=<0|1> running=<n> window=<n>"
-tool/appshot.sh quit                   # terminate the app and the display
+tool/appshot.sh watch                  # (re)open the view-only VNC viewer
+tool/appshot.sh deps                   # check dependencies, print the apt line
+tool/appshot.sh status                 # state of every moving part
+tool/appshot.sh quit                   # tear down viewer, VNC, app, WM, display
 ```
+
+`status` reports `display= wm= running= window= vnc= viewer=`. `viewer=` is a
+live TCP connection to the VNC port, not a process we started — remmina hands
+off to its own daemon and exits, so its pid proves nothing.
 
 - Capturing subcommands print the PNG path on stdout.
 - **Coordinates are 1:1.** The window is moved to the origin at a fixed

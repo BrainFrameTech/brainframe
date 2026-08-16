@@ -14,6 +14,19 @@ analyzer:
   # no_raw_widget_strings rule flags hardcoded user-facing strings in the IDE.
   # custom_lint issues surface in the IDE and via `dart run custom_lint`, not
   # `flutter analyze`; the commit/CI backstop is tool/check_l10n.dart.
+  # Written automatically by the Flutter tool on `pub get` ("Upgrading
+  # analysis_options.yaml to exclude build and platform directories"), not by
+  # hand. Keep it: deleting it only makes the next `pub get` put it back, so it
+  # would show up as a phantom diff in someone else's unrelated branch. These
+  # are generated/platform-scaffolding trees with no BrainFrame Dart in them.
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
   plugins:
     - custom_lint
 

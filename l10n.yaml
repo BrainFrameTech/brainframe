@@ -1,5 +1,11 @@
-# Configuration for Flutter's gen-l10n tool. Runs automatically because
-# `flutter: generate: true` is set in pubspec.yaml (on pub get / build / test).
+# Configuration for Flutter's gen-l10n tool. `flutter: generate: true` in
+# pubspec.yaml runs it on **`flutter pub get`** — and only there. Neither
+# `flutter build` nor `flutter test` regenerates, so a checkout that has merely
+# *pulled* new ARB keys still holds stale generated Dart, and every call site of
+# a new key fails to compile with "The getter 'x' isn't defined for the type
+# 'AppLocalizations'". That is a stale artifact, not a broken branch: run
+# `flutter pub get` (or `flutter gen-l10n`). tool/coverage.sh regenerates for
+# the same reason.
 #
 # ARB files live in lib/l10n; app_en.arb is the template (defines the keys and
 # their @-descriptions). Generated Dart lands in lib/l10n/gen, which is

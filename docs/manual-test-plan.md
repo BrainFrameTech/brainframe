@@ -807,7 +807,9 @@ Quit (Cmd+Q) live in the **BrainFrame** application menu, not under File/Edit.
 9. **File ▸ Quit**, then relaunch and quit again with **Ctrl/Cmd+Q**.
 
 **Expected:** File holds New note / New folder / Quit; Edit holds Cut / Copy /
-Paste / Preferences; Help holds Help / About — with the macOS re-layout above.
+Paste / Select all / Preferences; Help holds Help / About — with the macOS
+re-layout above. Every item that has an accelerator displays it, Select all
+included (**Ctrl+A**, Cmd+A on macOS).
 Step 2: New note and New folder are **greyed out** for a read-only engram
 (nothing can be written there), while Quit stays enabled. Steps 3–4 create
 beside the open file, exactly as the sidebar buttons do (F11 step 6). Step 6
@@ -841,7 +843,8 @@ saves unwritten edits and the window geometry first (F10 step 9, F1).
    the pen.
 4. Select a word, then open **Edit** in the menu bar by **clicking it with the
    mouse** (not the keyboard), and **click Copy**. Paste at the caret to confirm
-   it really copied.
+   it really copied. Open **Edit ▸ Select all** and check it shows **Ctrl+A**
+   (Cmd+A on macOS) and really selects the whole document.
 5. Repeat step 4 with **nothing selected**, and again after clicking a **file
    row in the tree** so the editor no longer has focus.
 6. Switch to **Preview** and try to select text.
@@ -857,8 +860,10 @@ and so is greying out. Use the **mouse**, deliberately — a desktop field
 unfocuses itself when a click lands outside it, so a mouse click exercises a
 focus path the keyboard never touches, and both halves of this have broken there
 before. Step 5
-— Cut and Copy are **greyed out** with an empty selection, Paste stays available
-at a caret; with focus in the file tree **all three** are greyed. Step 6 —
+— Cut and Copy are **greyed out** with an empty selection, while Paste and
+Select all stay available at a caret (Select all needs no selection, only text
+to select — it greys out only in an **empty** file); with focus in the file tree
+**all four** are greyed. Step 6 —
 Preview text is deliberately **not** selectable (an accessibility trade-off, see
 [markdown_reader.dart](../lib/engram/ui/markdown_reader.dart#L72)), so the Edit
 items stay greyed there.

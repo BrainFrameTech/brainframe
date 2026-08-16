@@ -134,6 +134,12 @@ class _AppMenuBarState extends State<AppMenuBar> {
               enabled: () => _text.canPaste,
               onPressed: _text.paste,
             ),
+            _editItem(
+              label: l10n.menuSelectAll,
+              shortcut: shortcuts.selectAll,
+              enabled: () => _text.canSelectAll,
+              onPressed: _text.selectAll,
+            ),
             const Divider(),
             MenuItemButton(
               shortcut: shortcuts.preferences,
@@ -249,6 +255,11 @@ class _AppMenuBarState extends State<AppMenuBar> {
             label: l10n.menuPaste,
             shortcut: shortcuts.paste,
             onSelected: _text.canPaste ? _text.paste : null,
+          ),
+          PlatformMenuItem(
+            label: l10n.menuSelectAll,
+            shortcut: shortcuts.selectAll,
+            onSelected: _text.canSelectAll ? _text.selectAll : null,
           ),
         ],
       ),

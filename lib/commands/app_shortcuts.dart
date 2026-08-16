@@ -21,6 +21,7 @@ class AppShortcuts {
     this.cut,
     this.copy,
     this.paste,
+    this.selectAll,
     this.bindInApp = true,
   });
 
@@ -44,6 +45,7 @@ class AppShortcuts {
           cut: SingleActivator(LogicalKeyboardKey.keyX, control: true),
           copy: SingleActivator(LogicalKeyboardKey.keyC, control: true),
           paste: SingleActivator(LogicalKeyboardKey.keyV, control: true),
+          selectAll: SingleActivator(LogicalKeyboardKey.keyA, control: true),
         );
       case TargetPlatform.macOS:
         // Command, not Control — and bound by the *system* menu bar, which
@@ -61,6 +63,7 @@ class AppShortcuts {
           cut: SingleActivator(LogicalKeyboardKey.keyX, meta: true),
           copy: SingleActivator(LogicalKeyboardKey.keyC, meta: true),
           paste: SingleActivator(LogicalKeyboardKey.keyV, meta: true),
+          selectAll: SingleActivator(LogicalKeyboardKey.keyA, meta: true),
           bindInApp: false,
         );
       case TargetPlatform.android:
@@ -77,6 +80,7 @@ class AppShortcuts {
   final SingleActivator? cut;
   final SingleActivator? copy;
   final SingleActivator? paste;
+  final SingleActivator? selectAll;
 
   /// Whether Flutter should bind these itself. False on macOS, where the OS
   /// menu bar owns them.
@@ -84,10 +88,10 @@ class AppShortcuts {
 
   /// The in-app key bindings.
   ///
-  /// Cut / Copy / Paste are deliberately absent even where they are displayed:
-  /// Flutter's `DefaultTextEditingShortcuts` already binds them inside a
-  /// focused text field on every platform, and an app-level binding would
-  /// shadow that.
+  /// Cut / Copy / Paste / Select all are deliberately absent even where they
+  /// are displayed: Flutter's `DefaultTextEditingShortcuts` already binds them
+  /// inside a focused text field on every platform, and an app-level binding
+  /// would shadow that.
   Map<ShortcutActivator, Intent> get bindings {
     if (!bindInApp) return const <ShortcutActivator, Intent>{};
     return <ShortcutActivator, Intent>{

@@ -554,6 +554,11 @@
     "description": "Menu item that inserts the clipboard's text at the cursor."
   },
 
+  "menuSelectAll": "Select all",
+  "@menuSelectAll": {
+    "description": "Menu item that selects all of the text in the focused field."
+  },
+
   "menuPreferences": "Preferences",
   "@menuPreferences": {
     "description": "Menu item that opens the Settings screen. Under Edit on Linux and Windows; in the application menu on macOS, where the platform convention puts it."

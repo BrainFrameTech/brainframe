@@ -301,6 +301,54 @@ void main() {
       expect(clipboard['text'], 'hello');
     });
 
+    testWidgets('Select all selects the field and shows Ctrl+A', (tester) async {
+      final controller = TextEditingController(text: 'hello world');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(withField(publishedCommands(), controller));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(TextField), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      controller.selection = const TextSelection.collapsed(offset: 3);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Edit'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      final item = itemNamed(tester, 'Select all');
+      expect(
+        item.onPressed,
+        isNotNull,
+        reason: 'Select all needs no existing selection, unlike Copy',
+      );
+      expect(
+        item.shortcut,
+        AppShortcuts.forPlatform(TargetPlatform.linux).selectAll,
+        reason: 'the accelerator is displayed, so it must be Ctrl+A',
+      );
+
+      await tester.tap(find.text('Select all'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 11),
+      );
+    });
+
+    testWidgets('Select all greys out for an empty field', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(withField(publishedCommands(), controller));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(TextField), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      expect(itemNamed(tester, 'Select all').onPressed, isNull);
+    });
+
     testWidgets('Cut removes the selection and Paste puts it back', (
       tester,
     ) async {
@@ -475,7 +523,7 @@ void main() {
       expect(labelsOf(menus), ['BrainFrame', 'File', 'Edit', 'Help']);
       expect(labelsOf(menus[0].menus), ['About', 'Preferences', 'Quit']);
       expect(labelsOf(menus[1].menus), ['New note', 'New folder']);
-      expect(labelsOf(menus[2].menus), ['Cut', 'Copy', 'Paste']);
+      expect(labelsOf(menus[2].menus), ['Cut', 'Copy', 'Paste', 'Select all']);
       expect(labelsOf(menus[3].menus), ['Help']);
     });
 

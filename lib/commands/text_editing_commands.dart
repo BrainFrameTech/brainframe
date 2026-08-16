@@ -1,11 +1,12 @@
 import 'package:flutter/widgets.dart';
 
-/// Drives the desktop Edit menu's Cut / Copy / Paste against whichever text
-/// field the user is working in.
+/// Drives the desktop Edit menu's Cut / Copy / Paste / Select all against
+/// whichever text field the user is working in.
 ///
 /// The clipboard hotkeys themselves need none of this — Flutter's
-/// `DefaultTextEditingShortcuts` already binds Ctrl/Cmd+X/C/V inside a focused
-/// field on every platform, and rebinding them here would only shadow that. The
+/// `DefaultTextEditingShortcuts` already binds Ctrl/Cmd+X/C/V/A inside a
+/// focused field on every platform, and rebinding them here would only shadow
+/// that. The
 /// menu items are the reason this exists, and they have a problem the hotkeys
 /// do not: opening a Material menu moves focus onto the menu, so by the time an
 /// item is tapped, "the focused field" is gone.
@@ -42,6 +43,7 @@ class TextEditingCommands extends ChangeNotifier {
   bool _canCut = false;
   bool _canCopy = false;
   bool _canPaste = false;
+  bool _canSelectAll = false;
 
   /// Whether there is a selection to cut from an editable field.
   bool get canCut => _canCut;
@@ -53,6 +55,11 @@ class TextEditingCommands extends ChangeNotifier {
   /// contents are deliberately not probed: that is an async platform round-trip
   /// per menu build, and pasting nothing is harmless.
   bool get canPaste => _canPaste;
+
+  /// Whether there is text to select. Unlike [canCopy] this needs no existing
+  /// selection — that is the whole point of it — but an empty field still has
+  /// nothing to act on, and a read-only one (Preview) has nothing selectable.
+  bool get canSelectAll => _canSelectAll;
 
   /// The field the Edit menu acts on, or null when there is none.
   EditableTextState? get target {
@@ -116,6 +123,14 @@ class TextEditingCommands extends ChangeNotifier {
     state.pasteText(SelectionChangedCause.toolbar);
   }
 
+  void selectAll() {
+    final state = _actionTarget;
+    if (state == null || state.textEditingValue.text.isEmpty) return;
+    if (state.widget.readOnly) return;
+    _restoreFocus(state);
+    state.selectAll(SelectionChangedCause.toolbar);
+  }
+
   /// Returns the caret to the field the command acted on, so the user carries
   /// on typing where they left off rather than in the dismissed menu.
   void _restoreFocus(EditableTextState state) {
@@ -167,12 +182,20 @@ class TextEditingCommands extends ChangeNotifier {
     final canCopy = state != null && !state.widget.obscureText && _hasSelection(state);
     final canCut = canCopy && !state.widget.readOnly;
     final canPaste = state != null && !state.widget.readOnly;
-    if (canCut == _canCut && canCopy == _canCopy && canPaste == _canPaste) {
+    final canSelectAll =
+        state != null &&
+        !state.widget.readOnly &&
+        state.textEditingValue.text.isNotEmpty;
+    if (canCut == _canCut &&
+        canCopy == _canCopy &&
+        canPaste == _canPaste &&
+        canSelectAll == _canSelectAll) {
       return;
     }
     _canCut = canCut;
     _canCopy = canCopy;
     _canPaste = canPaste;
+    _canSelectAll = canSelectAll;
     notifyListeners();
   }
 

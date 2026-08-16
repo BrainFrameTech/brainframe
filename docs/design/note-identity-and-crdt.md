@@ -120,9 +120,10 @@ note. It is the `documentId` handed to `crdt_lf`, so note identity and CRDT
 document identity are the same string — one concept, not two that must be kept
 in step.
 
-The id lives in a **catalog table inside the engram's database** (Decision 2),
+The id lives in a **catalog table in the engram's `metadata.db`** (Decision 2),
 keyed to the note's current engram-relative path. It is **not** written into
-the markdown file.
+the markdown file. Because that database is device-local, so is the id — see
+"Consequence: note identity is device-local" below.
 
 ULID rather than UUIDv7 for consistency with `EngramMetadata.id`, which already
 uses one and already has an `isCanonicalUlid` validator in
@@ -154,64 +155,68 @@ match and falls through to content matching (Decision 6), the mergeable-text
 objection does not apply to that role. This is a one-column, one-code-path
 addition if interop ever demands it, so it is reserved rather than built.
 
-### Decision 2 — the op-log lives inside the engram, in per-device files
+### Decision 2 — one device-local database per engram, in Application Support
 
-The engram's marker directory gains a database per writing device:
+Each engram gets exactly **one** SQLite database, holding BrainFrame's own
+tables *and* the `crdt_lf_sqlite` tables, opened by BrainFrame and injected via
+`CRDTSqlite.fromDatabase`. It lives in `Library/Application Support`, keyed by
+the engram's ULID — **not** inside the engram:
 
 ```text
-<engram root>/
-  .brainframe/
-    engram.json            ← unchanged: engram identity
-    catalog.db             ← this device's catalog + its own op-log
-    oplog/
-      <peerId>.db          ← one file per device that has ever written
+<application support>/
+  engrams/
+    <engram ULID>/
+      metadata.db          ← catalog, op-log, and future per-engram state
 ```
 
-Each device opens **its own** file for writing, via `sqlite3` directly, and
-injects the `crdt_lf_sqlite` tables into it with `CRDTSqlite.fromDatabase`. It
-opens every *other* device's file **read-only** and imports their changes. No
-two processes ever write the same SQLite file.
+`metadata.db` rather than a narrower name like `catalog.db`: the catalog is the
+first tenant, not the only one. Per-engram state that is device-local and not
+user content — snapshot bookkeeping, scan state, later the search and graph
+indexes — belongs in the same file, and a name describing only the first table
+leaves the next reader wondering whether they are in the right place.
 
-**This amends an accepted design doc.**
-[engram-storage.md](engram-storage.md)'s on-disk layout rules state that
-app-level and derived state never goes in the documents directory, and that
-derived per-engram caches live in `Library/Application Support`, keyed by
-engram id.
-That rule stands for genuinely derived state — the search index and the graph
-index, which any device can rebuild from content alone. **The op-log is not
-derived.** The markdown file is the *projection*; the op-log is the authority
-that produced it and the only thing that can merge a concurrent edit. It cannot
-be rebuilt from the file, so if it does not travel with the engram, then copying
-an engram to a new machine, restoring it from backup, or handing it to a second
-device silently discards all history and all merge capability.
+**One database, not one per peer.** `crdt_lf_sqlite`'s `changes` table is keyed
+`PRIMARY KEY (document_id, change_id)`, and `change_id` is
+`OperationId.toString()`, which renders as `peerId@hlc`. The peer is therefore
+*already* part of every row's key, so changes from any number of peers coexist
+in one table with no possibility of collision, and `document_id` separates the
+notes. A per-peer file would buy nothing the schema does not already give.
 
-**Why per-device files rather than one shared database.** The single-file layout
-is what the shared-database test's rationale assumed, and it is simpler. It is
-rejected because the storage design already promises that *"BrainFrame is never
-guaranteed to be the sole writer"* — an engram folder in iCloud or Dropbox,
-opened on a desktop and a laptop, is an explicitly supported arrangement. Two
-processes writing one SQLite file through a file-syncing service is a
-well-known corruption path, and the corruption is silent and total. Under
-writer-owned files, the worst a file-sync service can do is deliver a stale or
-half-written copy of *someone else's* log, which import either rejects or
-applies partially — and a partially-applied CRDT log is not corruption, it is
-simply a peer you have not fully caught up with.
+**Why Application Support and not the engram.** The database is not
+file-syncable. A SQLite file is a page-structured binary with internal
+consistency invariants; a sync service that merges, partially transfers, or
+last-writer-wins two divergent copies produces a file that is not stale but
+*corrupt* — silently and totally. Since an engram folder living in iCloud or
+Dropbox is an explicitly supported arrangement, anything placed inside the
+engram must survive being file-synced. The database cannot, so it does not go
+there. This keeps [engram-storage.md](engram-storage.md)'s existing rule intact
+rather than amending it.
 
-The bonus is that this makes the thing actually asked for work end to end: a
-change file appearing in a synced folder **is** a locally-arriving CRDT, with
-no network code anywhere. That turns **#67** into a transport optimization over
-a working model rather than the moment the model is first exercised.
+**The peerID argument points the same way, independently.** Decision 8 stores
+this device's `PeerId` alongside its op-log. If that database travelled inside
+the engram folder, a second device opening a copied or synced engram would
+inherit the *first* device's peerID and stamp its own operations with it. Two
+devices sharing one peerID breaks the tiebreak comparator's uniqueness
+assumption outright — genuinely concurrent operations stop being merely tied and
+become indistinguishable. A device-local database makes a device-local identity
+the natural, hard-to-get-wrong default.
 
-The cost is honest: more files, a read-many/write-one open path, and a
-retirement story for devices that no longer exist. Retirement rides with the
-existing peer-retirement item noted under Housekeeping and is not built here.
+**The cost, stated plainly: history does not travel with the engram folder.**
+Copying an engram to a second machine carries the markdown and nothing else —
+the new device sees ordinary files with no history. That is the correct trade
+(an absent database is recoverable, a corrupt one is not), and history transfer
+is properly **#67**'s job, moving `Change` objects over a transport rather than
+a binary file through a folder. But it has a consequence for *identity* that is
+not #67's job, and that is the open question below.
 
-**Conservative alternative, if the above is judged over-built:** keep one
-`catalog.db` per engram, write only from one process, and declare
-concurrently-file-synced engrams unsupported until **#67**. It is less
-machinery and defers the multi-writer question. It is not recommended, because
-"unsupported" here means "silently corrupts," and the arrangement is one the
-storage design already invites.
+**One note on the shared-database test.**
+[sqlite_shared_database_test.dart](../../test/crdt/sqlite_shared_database_test.dart)
+still asserts exactly the right thing — BrainFrame's tables and the CRDT tables
+must co-exist in one consumer-owned database — and that property stays
+load-bearing here. Only its header's stated *motivation* ("one file per engram
+is what makes an engram copyable, backup-able, and syncable as a unit") is
+superseded: the file is not inside the engram and is not what makes it portable.
+The assertions stand; the comment should be corrected when this is implemented.
 
 ### Decision 3 — merge policy is per note, recorded in the catalog
 
@@ -356,14 +361,19 @@ reason.
 ### Decision 8 — device identity is per device, per engram
 
 `crdt_lf` needs a stable `PeerId` — a UUID — for this device. It is minted on
-first write to an engram and stored in that engram's catalog, not in device
-settings, so it travels with the op-log that its operations are stamped with.
-A peerID that outlived its log, or a log whose peerID could not be recovered,
-would both break the tiebreak comparator's totality.
+first write to an engram and stored in that engram's `metadata.db`, not in
+device settings, so it lives and dies with the op-log its operations are
+stamped with. A peerID that outlived its log, or a log whose peerID could not
+be recovered, would both break the tiebreak comparator's totality.
 
-Scoping it per engram rather than per device also keeps engrams independent:
-copying one engram elsewhere carries a coherent identity with it, and does not
-leak a correlatable device identifier across unrelated engrams.
+Because that database is device-local by Decision 2, this is automatically a
+*per device, per engram* identity — the property that must hold, since two
+devices sharing a peerID would make genuinely concurrent operations
+indistinguishable rather than merely tied.
+
+Scoping per engram rather than one identity per device also keeps engrams
+independent, and avoids leaking a correlatable device identifier across
+unrelated engrams.
 
 ## Platform consequences
 
@@ -389,8 +399,8 @@ materializer, the reconciler, and the policy table. Above it:
   "apply the buffer diff as operations, then materialize" — the same call as
   reconciliation step 3–5, which is a genuine unification rather than two
   parallel paths.
-- The engram open path gains catalog opening, peer-file discovery, and a first
-  scan; the close path releases every database handle.
+- The engram open path gains opening (or creating) `metadata.db`, injecting the
+  CRDT schema, and running a first scan; the close path closes the database.
 - File-management operations (new note, rename, delete, move) route through the
   catalog so the app's own moves are recorded rather than rediscovered by
   content matching on the next scan.
@@ -418,6 +428,12 @@ expensively otherwise:
   tombstone.
 - **Byte-stable materialization** across a save/reload cycle, including
   frontmatter with comments, quoting, and key ordering the user chose.
+- **Two devices over one folder converge.** Two independent catalogs and
+  op-logs (two `metadata.db` files, two peerIDs) pointed at one engram
+  directory, edited alternately with a scan between; assert both converge on
+  the same content. This is the direct test of "locally arriving CRDTs work,"
+  and it is what proves the device-local-identity consequence is benign rather
+  than merely argued to be.
 
 ## Suggested phasing
 
@@ -428,23 +444,56 @@ Design is whole; implementation need not land at once.
 2. **Materialization and editor rewiring.** The file becomes a projection.
 3. **Scan and reconciliation** — Decisions 6 and 7. This is where "locally
    arriving CRDTs work fully" becomes true.
-4. **`blobLww` for binary content**, and per-device peer file import.
+4. **`blobLww` for binary content.**
 
 Step 3 is the one with real difficulty in it; steps 1 and 2 are mostly
 plumbing, and are worth landing first precisely so step 3 has a stable floor.
 
+## Consequence: note identity is device-local
+
+This falls out of Decision 2 and deserves stating on its own, because it is the
+one place where a choice made here constrains **#67**.
+
+Since the catalog lives in a device-local database, two devices opening the
+same engram folder — over Dropbox, or via a plain copy — independently mint
+**different** ULIDs for the same file. Each builds its own CRDT document and its
+own history for `trails/cedar-marsh.md`.
+
+**Locally, this is harmless, and the reason is Decision 6.** Each device sees
+the other's edits arriving as ordinary file drift and reconciles them as a
+minimal diff. Content converges on both devices with no network code and no
+corruption; the only thing that differs is that each device holds its own
+private history of how it got there. A shared folder between two devices
+already works under this design.
+
+**At #67 it becomes a real decision.** Two documents describing one file cannot
+be merged into a unified history — a device must elect a winning ULID and
+absorb its own current content into the winner. That is not new machinery: it
+is exactly Decision 6's reconciler, pointed at a document that arrived over the
+wire instead of a file that changed on disk. So the cost is bounded and
+concrete — the losing device keeps its *content* and loses its *history* — but
+it is a cost, and it is paid once per device pair.
+
+The alternative, if that is judged too expensive, is a small **portable
+identity map** in the engram — a text file beside `engram.json` mapping paths
+to ULIDs. It does not have the database's syncability problem: a text map
+mangled by a sync service is repairable and human-readable, not destroyed, and
+last-writer-wins on a mostly-append map is benign. That would make ULIDs agree
+across devices from the start and give #67 one document per note.
+
+**Recommendation: defer it.** It is additive, it costs nothing local, and the
+degradation path above is real rather than theoretical. Revisit when #67 is
+designed, with the cross-device history question actually in front of us.
+
 ## Open questions
 
-- **Decision 2's per-device files** is the most debatable call here, and the
-  conservative single-file alternative is stated alongside it. This is the
-  first thing to push back on.
 - **The similarity threshold** in Decision 7 needs a concrete value and metric,
   which is better chosen against the real fixture engram than in the abstract.
 - **Snapshot and compaction policy.** Case 5b of the frozen suite pins that
-  garbage collection can strand a peer below the frontier. Purely local use has
-  no stranded peers, but per-device files reintroduce them the moment a second
-  device exists. When to snapshot, and what frontier to keep, is reserved here
-  and needs deciding before **#67**.
+  garbage collection can strand a peer below the frontier. Purely local,
+  single-device use has no stranded peers, so this can be deferred — but it must
+  be settled before **#67**, since that is the moment peers below the frontier
+  become possible.
 - **Large notes.** The frozen suite explicitly excludes performance. A
   multi-megabyte note as one Fugue sequence has a cost that should be measured
   before it is discovered.

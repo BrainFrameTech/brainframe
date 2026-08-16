@@ -50,7 +50,7 @@ RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continu
 # sha256 pins (empty = unpinned; requires APPIMAGE_ALLOW_UNPINNED=1). Per-arch
 # via an associative array keyed "<tool>:<arch>".
 declare -A SHA256=(
-  [linuxdeploy:x86_64]="e87ee0815d109282fdda73e34c2361d64d02b0ffaea3674b18f1fd1f6a687dcf"
+  [linuxdeploy:x86_64]="421ca71d5c69ea97c6309276232990d43df1dcece0edfaa26bbf926ff96ed12e"
   [linuxdeploy-gtk:x86_64]="b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171"
   [appimagetool:x86_64]="a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"
   [runtime:x86_64]="1cc49bcf1e2ccd593c379adb17c9f85a36d619088296504de95b1d06215aebbf"

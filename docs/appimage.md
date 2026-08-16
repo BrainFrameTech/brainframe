@@ -78,8 +78,33 @@ CI), `ICON`, `DESKTOP_FILE`, `ARCH`, and `OUTPUT`. Run
 `linuxdeploy`, its GTK plugin, `appimagetool`, and the runtime publish only
 rolling `continuous` releases, so the **sha256 checksum is the real pin**: if
 upstream republishes an asset, verification fails and we bump the hash on
-purpose. To refresh a pin, run once allowing an unpinned download and copy the
-printed hashes into the `SHA256` table at the top of the script:
+purpose.
+
+**Verify before you bump.** A failed check means the bytes changed; it does not
+say *why*. Copying whatever just downloaded into the table turns the pin into
+theatre — it would accept a corrupted transfer or a substituted artifact just as
+readily as a legitimate rebuild. Ask GitHub what it is serving, independently of
+the bytes you received:
+
+```bash
+gh api repos/linuxdeploy/linuxdeploy/releases/tags/continuous \
+  --jq '.assets[] | select(.name=="linuxdeploy-x86_64.AppImage") | {digest, size, updated_at}'
+```
+
+The `digest` must equal the sha256 the build printed, and `updated_at` should
+show a republish that plausibly explains the change. Only then bump the hash in
+the `SHA256` table at the top of the script, and say in the commit what you
+checked. The other pins are worth a glance at the same time — a single moved
+asset is routine, several at once is worth a harder look.
+
+Also worth knowing what this can and cannot tell you: the digest confirms your
+download matches the official asset GitHub is serving. It does **not** attest
+that the new build is trustworthy — `continuous` is a rolling tag rebuilt from
+upstream CI, so its contents change by design. That residual trust in upstream
+is inherent to pinning a rolling release, not something the checksum removes.
+
+To bootstrap a pin that does not exist yet, run once allowing an unpinned
+download and pin the printed hashes after verifying them the same way:
 
 ```bash
 APPIMAGE_ALLOW_UNPINNED=1 tool/appimage/build-appimage.sh

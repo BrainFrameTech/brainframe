@@ -38,23 +38,27 @@ dependencies:
 
   # ARB message lookup + plural/date formatting behind the generated
   # AppLocalizations. `any` defers to the version flutter_localizations pins.
+  # Deliberately left as `any` — `pub upgrade --tighten` will try to rewrite it
+  # to a caret constraint on whatever resolved (e.g. ^0.20.3); revert that. A
+  # pinned range here fights the Flutter SDK's own pin and breaks resolution on
+  # an SDK bump.
   intl: any
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^1.0.9
   # Command-line parsing for the desktop startup options (see
   # lib/startup_options.dart). The Dart-team ArgParser; already in the tree
   # transitively, promoted to a direct dependency now that we use it directly.
   args: ^2.7.0
-  window_manager: ^0.5.1
+  window_manager: ^0.5.2
   shared_preferences: ^2.5.5
   # Direct dependency for InMemorySharedPreferencesAsync, which backs the
   # --ignore-config startup option (see lib/main.dart) with an ephemeral store.
   # Also provides the in-memory fake used throughout the tests.
   shared_preferences_platform_interface: ^2.4.2
   path_provider: ^2.1.6
-  flutter_markdown_plus: ^1.0.7
+  flutter_markdown_plus: ^1.0.12
   file_selector: ^1.1.0
   # Reads the app's real semantic version + build number from bundle metadata
   # at runtime, shown on the About screen (lib/about/about_screen.dart) instead
@@ -97,8 +101,8 @@ dev_dependencies:
   # Both use the analyzer package; custom_lint caps it at ^8, so the whole
   # tooling layer is pinned there. This is a dev-only dep — it does not affect
   # the app or `flutter analyze`, which use the SDK's own bundled analyzer.
-  analyzer: ^8.0.0
-  custom_lint: ^0.8.0
+  analyzer: ^8.4.0
+  custom_lint: ^0.8.1
   brainframe_lints:
     path: tool/lints
 

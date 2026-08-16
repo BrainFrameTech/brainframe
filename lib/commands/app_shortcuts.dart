@@ -86,6 +86,29 @@ class AppShortcuts {
   /// menu bar owns them.
   final bool bindInApp;
 
+  // Hoisted out of [bindings] deliberately, to work around a compiler bug.
+  //
+  // Written inline as `?newNote: const NewNoteIntent()` — a null-aware map
+  // entry whose value is a *const constructor invocation* — these crash the AOT
+  // compiler. The CFE's constant evaluator throws "Null check operator used on
+  // a null value" in `_recordConstructorCoverage`, which fails
+  // `kernel_snapshot_program` and leaves `flutter build linux --release`
+  // reporting only its generic "Build process failed". The real message is
+  // ~180 lines into `--verbose`, so this is expensive to diagnose twice.
+  //
+  // Debug never evaluates constants this way (`--aot --tfa -Ddart.vm.product`
+  // is release-only), so `flutter run` and `flutter test` stay perfectly happy
+  // while release is broken — do not take a green test suite as evidence here.
+  //
+  // Referencing a const *variable* rather than invoking a const constructor in
+  // place sidesteps it, and these stay canonicalized exactly as before. Keeping
+  // the null-aware `?` entries is fine; it is only the inline `const` call in
+  // that position that trips it. Flutter 3.44.8 / Dart 3.12.2.
+  static const _newNote = NewNoteIntent();
+  static const _newFolder = NewFolderIntent();
+  static const _quit = QuitAppIntent();
+  static const _preferences = OpenPreferencesIntent();
+
   /// The in-app key bindings.
   ///
   /// Cut / Copy / Paste / Select all are deliberately absent even where they
@@ -95,10 +118,10 @@ class AppShortcuts {
   Map<ShortcutActivator, Intent> get bindings {
     if (!bindInApp) return const <ShortcutActivator, Intent>{};
     return <ShortcutActivator, Intent>{
-      ?newNote: const NewNoteIntent(),
-      ?newFolder: const NewFolderIntent(),
-      ?quit: const QuitAppIntent(),
-      ?preferences: const OpenPreferencesIntent(),
+      ?newNote: _newNote,
+      ?newFolder: _newFolder,
+      ?quit: _quit,
+      ?preferences: _preferences,
     };
   }
 }

@@ -138,9 +138,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Run gen-l10n on the ARB files in lib/l10n during pub get / build / test,
-  # generating AppLocalizations into lib/l10n/gen (see l10n.yaml). That output
-  # is git-ignored and regenerated, never committed.
+  # Run gen-l10n on the ARB files in lib/l10n during **pub get** — not on build
+  # or test — generating AppLocalizations into lib/l10n/gen (see l10n.yaml).
+  # That output is git-ignored and regenerated, never committed, so a fresh
+  # checkout or worktree needs one `flutter pub get` before it will compile.
   generate: true
 
   # The BrainFrame logo, shown on the home screen and used as the icon source.

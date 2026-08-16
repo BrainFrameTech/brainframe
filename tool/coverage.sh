@@ -51,6 +51,12 @@ else
 fi
 
 dart run tool/gen_coverage_helper.dart
+# Regenerate AppLocalizations before measuring. gen-l10n runs on `pub get`, not
+# on build or test, so a checkout that has merely *pulled* new ARB keys still
+# holds stale generated Dart — and every call site of a new key then fails to
+# compile, which reads as a broken branch rather than a stale artifact. Cheap to
+# run unconditionally, and it makes the gate self-healing.
+flutter gen-l10n
 flutter test --coverage
 "${COVERDE[@]}" transform \
   -i coverage/lcov.info \

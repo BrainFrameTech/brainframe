@@ -17,7 +17,24 @@ git worktree add -b worktree-<slug> .claude/worktrees/<slug> origin/main
 ```
 
 The pre-commit hook is shared from the main checkout, so a new worktree is
-ready to commit immediately — no per-worktree setup.
+ready to *commit* immediately. It is not ready to **build or test** until you
+run, once, inside it:
+
+```bash
+flutter pub get
+```
+
+That is what generates `lib/l10n/gen/` (`AppLocalizations`), which is derived
+code and deliberately git-ignored, so a fresh worktree has none of it. Skip this
+and `flutter test` fails to compile with `The getter 'AppLocalizations' isn't
+defined` — which looks like a broken branch rather than a missing artifact.
+
+The same applies to an **existing** checkout that pulls a branch adding new ARB
+keys: `generate: true` runs gen-l10n on `pub get` only, never on build or test,
+so the generated Dart goes stale and every call site of a new key fails to
+compile. `flutter pub get` (or `flutter gen-l10n`) fixes it. `tool/coverage.sh`
+regenerates before measuring, so the push gate and CI heal themselves; a bare
+`flutter test` does not.
 
 ## 2. Commit
 

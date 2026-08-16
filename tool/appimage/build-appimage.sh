@@ -223,6 +223,14 @@ HOOK
 log "==> packaging with static runtime → $OUTPUT"
 mkdir -p "$(dirname "$OUTPUT")"
 rm -f "$OUTPUT"
+# VERSION must be *exported*, not merely set: appimagetool reads it from the
+# environment and injects `X-AppImage-Version` into the embedded .desktop entry.
+# That key is how AppImage managers (AppImageLauncher, AppMan, Gear Lever…)
+# report an installed app's version, and it is the only place the version
+# survives — the file name is cosmetic and managers rename freely. Without the
+# export the build still succeeds and the AppImage still runs, so nothing fails
+# loudly; the app just shows up with no version at all.
+export VERSION
 "$APPIMAGETOOL" --runtime-file "$RUNTIME" "$APPDIR" "$OUTPUT" >&2
 
 [ -f "$OUTPUT" ] || die "appimagetool did not produce $OUTPUT"

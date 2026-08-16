@@ -65,6 +65,31 @@ sudo apt install patchelf desktop-file-utils file
 3. **Package with the static runtime.** `appimagetool --runtime-file` writes the
    final AppImage using the FUSE 2/3-safe runtime described above.
 
+### Version metadata
+
+The version comes from `pubspec.yaml` and reaches the artifact in two places:
+the **file name**, and an `X-AppImage-Version` key that `appimagetool` injects
+into the embedded `.desktop` entry. Only the second one counts — AppImage
+managers (AppImageLauncher, AppMan, Gear Lever, …) read that key to report an
+installed app's version, and they rename files freely, so the name proves
+nothing.
+
+`appimagetool` picks it up from the **environment**, which is why the script
+`export`s `VERSION` rather than just setting it. Miss the export and nothing
+fails: the build succeeds, the AppImage runs, the file name still carries the
+number, and the app simply shows up in every manager with no version at all.
+Check it after any change to the packaging step:
+
+```bash
+./BrainFrame-0.0.1-x86_64.AppImage --appimage-extract >/dev/null
+grep X-AppImage-Version squashfs-root/*.desktop
+```
+
+Do **not** add the version to the checked-in `.desktop` file to fix this. The
+`Version=` key there means the *desktop-entry spec* version, not the app's, and
+a hand-written `X-AppImage-Version` would be a second source of truth that
+drifts from `pubspec.yaml` the first time someone bumps one and not the other.
+
 ## Reusing the script
 
 Everything project-specific is a variable with a repo-derived default that an

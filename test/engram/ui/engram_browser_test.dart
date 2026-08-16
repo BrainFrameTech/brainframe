@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:brainframe/commands/app_commands.dart';
 import 'package:brainframe/engram/built_in_engrams.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
@@ -8,6 +9,7 @@ import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/ui/browser_preferences.dart';
 import 'package:brainframe/engram/ui/engram_browser.dart';
+import 'package:brainframe/engram/ui/file_tree.dart';
 import 'package:brainframe/engram/ui/markdown_editor_pane.dart';
 import 'package:brainframe/engram/ui/markdown_reader.dart';
 import 'package:brainframe/theme/app_settings.dart';
@@ -50,16 +52,23 @@ void main() {
     EngramRepository repository,
     Engram engram, {
     EngramBrowserController? controller,
-  }) =>
-      AppSettings(
-        designOverride: DesignLanguage.material,
-        child: localizedApp(
-          home: EngramScope(
-            initialEngram: engram,
-            child: EngramBrowser(repository: repository, controller: controller),
-          ),
+    AppCommands? commands,
+  }) {
+    final app = AppSettings(
+      designOverride: DesignLanguage.material,
+      child: localizedApp(
+        home: EngramScope(
+          initialEngram: engram,
+          child: EngramBrowser(repository: repository, controller: controller),
         ),
-      );
+      ),
+    );
+    // Only the menu-bar tests need the command surface; everything else pumps
+    // the browser bare, as the app did before there was one.
+    return commands == null
+        ? app
+        : AppCommandsScope(commands: commands, child: app);
+  }
 
   Widget harness(EngramRepository repository) =>
       harnessFor(repository, tutorial());
@@ -1074,6 +1083,209 @@ void main() {
         tester.widget<MarkdownEditorPane>(find.byType(MarkdownEditorPane)).path,
         'archive/zeta.md',
       );
+    });
+  });
+
+  group('creating beside the open file', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    Engram writable(EngramStore store) =>
+        Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
+
+    Finder dialogField() => find.descendant(
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
+
+    Future<void> pumpBrowser(
+      WidgetTester tester,
+      EngramStore store, {
+      AppCommands? commands,
+    }) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      setWidth(tester, 1000);
+      await tester.pumpWidget(
+        harnessFor(repo(), writable(store), commands: commands),
+      );
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+    }
+
+    Future<void> createNamed(WidgetTester tester, String name) async {
+      await tester.pump(const Duration(milliseconds: 300)); // dialog transition
+      await tester.enterText(dialogField(), name);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+    }
+
+    /// The file's row in the tree — its name also appears in the app bar when
+    /// it is the open file.
+    Finder treeRow(String name) => find.descendant(
+      of: find.byType(FileTree),
+      matching: find.text(name),
+    );
+
+    // 'a-root.md' sorts first, so it is the default selection and the folder
+    // has to be opened deliberately.
+    _RwStore twoLevels() =>
+        _RwStore({'a-root.md': '# R', 'notes/b.md': '# B'});
+
+    testWidgets('a new note lands in the open file\'s folder', (tester) async {
+      final store = twoLevels();
+      await pumpBrowser(tester, store);
+
+      await tester.tap(treeRow('b.md'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('New note'));
+      await createNamed(tester, 'Beside');
+
+      expect(store.files.containsKey('notes/Beside.md'), isTrue);
+      expect(store.files.containsKey('Beside.md'), isFalse);
+    });
+
+    testWidgets('a new folder lands in the open file\'s folder', (
+      tester,
+    ) async {
+      final store = twoLevels();
+      await pumpBrowser(tester, store);
+
+      await tester.tap(treeRow('b.md'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('New folder'));
+      await createNamed(tester, 'Sub');
+
+      expect(store.dirs, contains('notes/Sub'));
+    });
+
+    testWidgets('with a root file open it lands at the root', (tester) async {
+      final store = twoLevels();
+      await pumpBrowser(tester, store);
+      // 'a-root.md' is the default selection — nothing to tap.
+
+      await tester.tap(find.byTooltip('New note'));
+      await createNamed(tester, 'Top');
+
+      expect(store.files.containsKey('Top.md'), isTrue);
+    });
+
+    testWidgets('a folder row\'s own action still targets that folder, which '
+        'is how an empty one is reached', (tester) async {
+      final store = _RwStore({'root.md': '# R'}, directories: {'empty'});
+      await pumpBrowser(tester, store);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FileTree),
+          matching: find.byIcon(Icons.more_vert),
+        ).at(0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New note').last);
+      await createNamed(tester, 'Inside');
+
+      expect(store.files.containsKey('empty/Inside.md'), isTrue);
+    });
+  });
+
+  group('publishing to the desktop menu bar', () {
+    Engram writable(EngramStore store) =>
+        Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
+
+    testWidgets('a writable engram offers every command', (tester) async {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      setWidth(tester, 1000);
+      await tester.pumpWidget(
+        harnessFor(
+          repo(),
+          writable(_RwStore({'a.md': '# A'})),
+          commands: commands,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(commands.newNote, isNotNull);
+      expect(commands.newFolder, isNotNull);
+      expect(commands.preferences, isNotNull);
+      expect(commands.help, isNotNull);
+      expect(commands.about, isNotNull);
+    });
+
+    testWidgets('a read-only engram withholds the create commands but keeps '
+        'the rest', (tester) async {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      setWidth(tester, 1000);
+      await tester.pumpWidget(
+        harnessFor(repo(), tutorial(), commands: commands),
+      );
+      await tester.pumpAndSettle();
+
+      expect(commands.newNote, isNull);
+      expect(commands.newFolder, isNull);
+      expect(commands.preferences, isNotNull);
+      expect(commands.help, isNotNull);
+      expect(commands.about, isNotNull);
+    });
+
+    testWidgets('the published New note command creates beside the open file, '
+        'exactly as the sidebar button does', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      final store = _RwStore({'notes/a.md': '# A', 'root.md': '# R'});
+      setWidth(tester, 1000);
+      await tester.pumpWidget(
+        harnessFor(repo(), writable(store), commands: commands),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FileTree),
+          matching: find.text('a.md'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      commands.newNote!();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.byType(TextField),
+        ),
+        'From the menu',
+      );
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+
+      expect(store.files.containsKey('notes/From the menu.md'), isTrue);
+    });
+
+    testWidgets('the commands are withdrawn when the browser goes away', (
+      tester,
+    ) async {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      setWidth(tester, 1000);
+      await tester.pumpWidget(
+        harnessFor(
+          repo(),
+          writable(_RwStore({'a.md': '# A'})),
+          commands: commands,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(commands.newNote, isNotNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+
+      expect(commands.newNote, isNull);
+      expect(commands.help, isNull);
     });
   });
 }

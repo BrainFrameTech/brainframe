@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
@@ -22,6 +23,12 @@ const List<String> _monospaceFallback = <String>[
 /// [TextField], so the internals can later be swapped for a code-editor package
 /// behind this one widget without touching the save controller, toggle, or
 /// browser.
+///
+/// Cut / copy / paste come from three triggers. The hotkeys and the right-click
+/// menu are Flutter's own; the third, press-and-hold, is not. Flutter restricts
+/// its long-press-to-menu gesture to touch input, so on a desktop with a mouse
+/// nothing happens — [_LongPressContextMenu] adds it back for pointer devices,
+/// leaving touch to the framework so a finger never fires both.
 class MarkdownSourceEditor extends StatefulWidget {
   const MarkdownSourceEditor({
     super.key,
@@ -51,8 +58,16 @@ class MarkdownSourceEditor extends StatefulWidget {
 }
 
 class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialText);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
+
+  /// Ours only when the host supplied none. The press-and-hold menu needs a
+  /// node it can reach — it is the handle on the [EditableText] below.
+  FocusNode? _ownedFocusNode;
+
+  FocusNode get _focusNode =>
+      widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
 
   @override
   void didUpdateWidget(MarkdownSourceEditor oldWidget) {
@@ -72,6 +87,7 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
   @override
   void dispose() {
     _controller.dispose();
+    _ownedFocusNode?.dispose();
     super.dispose();
   }
 
@@ -85,30 +101,108 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
     return Semantics(
       label: AppLocalizations.of(context).markdownEditorLabel,
       textField: true,
-      child: TextField(
-        controller: _controller,
-        focusNode: widget.focusNode,
-        scrollController: widget.scrollController,
-        onChanged: widget.onChanged,
-        // Fill the pane and grow with content; the host bounds the height.
-        maxLines: null,
-        expands: true,
-        textAlignVertical: TextAlignVertical.top,
-        keyboardType: TextInputType.multiline,
-        cursorOpacityAnimates: !reduceMotion,
-        // Ambient text scaling and boldText apply automatically; the size is
-        // never clamped. Only the family is overridden, to monospace.
-        style: theme.textTheme.bodyLarge?.copyWith(
-          fontFamily: 'monospace',
-          fontFamilyFallback: _monospaceFallback,
-          height: 1.4,
-        ),
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          isCollapsed: true,
-          contentPadding: EdgeInsets.all(16),
+      child: _LongPressContextMenu(
+        focusNode: _focusNode,
+        child: TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          scrollController: widget.scrollController,
+          onChanged: widget.onChanged,
+          // Fill the pane and grow with content; the host bounds the height.
+          maxLines: null,
+          expands: true,
+          textAlignVertical: TextAlignVertical.top,
+          keyboardType: TextInputType.multiline,
+          cursorOpacityAnimates: !reduceMotion,
+          // Ambient text scaling and boldText apply automatically; the size is
+          // never clamped. Only the family is overridden, to monospace.
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontFamily: 'monospace',
+            fontFamilyFallback: _monospaceFallback,
+            height: 1.4,
+          ),
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            isCollapsed: true,
+            contentPadding: EdgeInsets.all(16),
+          ),
         ),
       ),
     );
+  }
+}
+
+/// Adds press-and-hold as a way to open a text field's selection menu.
+///
+/// Flutter builds its long-press-to-menu gesture for touch only
+/// (`TextSelectionGestureDetectorBuilder` restricts the recognizer to
+/// [PointerDeviceKind.touch]), so holding a mouse button down over a field does
+/// nothing on desktop. This restores it for pointer devices — and *only* those,
+/// leaving touch to the framework, so a finger never fires two menus at once.
+///
+/// The menu shown is the field's own [EditableTextState.showToolbar], so all
+/// three triggers — hotkey, right-click and press-and-hold — offer the same
+/// adaptive Cut / Copy / Paste / Select All, styled for the platform.
+class _LongPressContextMenu extends StatefulWidget {
+  const _LongPressContextMenu({required this.focusNode, required this.child});
+
+  /// The field's focus node — the handle on the [EditableText] under it.
+  final FocusNode focusNode;
+
+  final Widget child;
+
+  @override
+  State<_LongPressContextMenu> createState() => _LongPressContextMenuState();
+}
+
+class _LongPressContextMenuState extends State<_LongPressContextMenu> {
+  @override
+  Widget build(BuildContext context) {
+    return RawGestureDetector(
+      gestures: <Type, GestureRecognizerFactory>{
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                debugOwner: this,
+                // A trackpad *click* arrives as a mouse press; the trackpad
+                // kind is for pan/zoom, so it has no place here. Stylus is
+                // included because the framework's touch-only recognizer
+                // leaves pen input with no long press either.
+                supportedDevices: const <PointerDeviceKind>{
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.stylus,
+                },
+              ),
+              (instance) => instance.onLongPressStart = _handleLongPress,
+            ),
+      },
+      child: widget.child,
+    );
+  }
+
+  void _handleLongPress(LongPressStartDetails details) {
+    if (widget.focusNode.hasFocus) {
+      _showMenu(details.globalPosition);
+      return;
+    }
+    // A field only has a selection overlay to show once it has focus, so wait
+    // for the focus change to land before asking for the menu.
+    widget.focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showMenu(details.globalPosition);
+    });
+  }
+
+  void _showMenu(Offset globalPosition) {
+    final state = widget.focusNode.context
+        ?.findAncestorStateOfType<EditableTextState>();
+    if (state == null) return;
+    // Select the word under the pointer first, exactly as the framework's own
+    // long press does, so the menu opens anchored to real content rather than
+    // wherever the caret happened to be.
+    final render = state.renderEditable;
+    render.handleTapDown(TapDownDetails(globalPosition: globalPosition));
+    render.selectWord(cause: SelectionChangedCause.longPress);
+    state.showToolbar();
   }
 }

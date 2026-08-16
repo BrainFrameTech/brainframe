@@ -358,6 +358,9 @@ snapshot.
 6. Type, then click **outside** the editor (focus loss).
 7. Type, then background/quit the app; relaunch and reopen the file.
 8. Edit text, then edit it **back** to the original.
+9. **Desktop exit (no lifecycle warning):** type a character and, *within the
+   5 s debounce*, quit with **File ▸ Quit** / **Ctrl+Q** (Cmd+Q on macOS).
+   Repeat using the window's own **close button**. Relaunch and reopen the file.
 
 **Expected:**
 
@@ -371,6 +374,10 @@ snapshot.
 - Focus loss and app pause/detach both flush.
 - Editing back to the original returns the chip to `saved` and cancels any
   pending write.
+- **Both desktop exits write first.** The keystroke from step 9 is on disk after
+  the relaunch — a desktop app gets no pause/detach event, so the close path
+  flushes explicitly. Quit and the window's close button share one path, so
+  neither can lose the last few characters.
 - After each save, confirm the **on-disk** file changed (open it outside the
   app).
 
@@ -398,12 +405,18 @@ snapshot.
 4. Open a folder row's **⋯** menu → **New note** (and **New folder**) *inside*
    that folder.
 5. Create a second note with the **same name** as an existing one.
+6. **Target folder:** select a file that lives **inside a folder**, then use the
+   sidebar's **new-note** button (or **Ctrl/Cmd+N**, F24). Then select a file at
+   the **root** and repeat.
 
 **Expected:** the new note opens in **Edit** mode, pre-seeded with an
 `# H1` derived from the filename (`the-beginning` → `# The Beginning`); the new
 folder appears in the tree even while empty; row-menu creation nests inside the
 folder; a name collision is auto-resolved ("Name", "Name 2") rather than
 overwriting; the tree refreshes to show the new item and selects the new note.
+Step 6: creation lands **beside the open file** — inside that file's folder, and
+at the root when a root file is open. (The tree selects files, not folders, so
+an **empty** folder is targeted through its own ⋯ menu — step 4.)
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -769,6 +782,103 @@ defaults.
   polluted by — your real saved config.
 - **`--engram` transience is a state check:** confirm it does **not** become the
   last-opened engram, i.e. the override doesn't leak into normal resolution.
+
+### F24 — Desktop menu bar & its hotkeys
+
+> Steps 3–4 write files: Field Notebook fixture only; reset afterward with
+> checkout + clean (see Safety).
+
+The menu bar is **desktop-only**, and each desktop gets the layout its users
+expect. On Windows and Linux it is an in-app strip above the app bar, with Quit
+under **File** and Preferences under **Edit**. On macOS it is the **real system
+menu bar**, laid out to the platform convention: About, Preferences (Cmd+,) and
+Quit (Cmd+Q) live in the **BrainFrame** application menu, not under File/Edit.
+
+**Steps:**
+
+1. Open each menu in turn and read the items and their accelerators.
+2. With a **read-only** engram open (tutorial/help), open **File**.
+3. **File ▸ New note**, then **File ▸ New folder** (writable engram).
+4. **Ctrl+N** and **Ctrl+Shift+N** (Cmd on macOS) with a file selected.
+5. **Edit ▸ Preferences** (and **Ctrl/Cmd+,**).
+6. **Help ▸ Help**, then **Help ▸ About** (macOS: **BrainFrame ▸ About**).
+7. Open Settings, then open the menus again from that screen.
+8. Open any dialog (e.g. the new-note name prompt) and look at the strip.
+9. **File ▸ Quit**, then relaunch and quit again with **Ctrl/Cmd+Q**.
+
+**Expected:** File holds New note / New folder / Quit; Edit holds Cut / Copy /
+Paste / Select all / Preferences; Help holds Help / About — with the macOS
+re-layout above. Every item that has an accelerator displays it, Select all
+included (**Ctrl+A**, Cmd+A on macOS).
+Step 2: New note and New folder are **greyed out** for a read-only engram
+(nothing can be written there), while Quit stays enabled. Steps 3–4 create
+beside the open file, exactly as the sidebar buttons do (F11 step 6). Step 6
+opens the help overlay (F16) and the About screen (F22). Step 7: the menus are
+still there and still work — the bar is app-wide, not per-screen. Step 8: the
+strip stays **above** the dialog rather than being covered by it. Step 9: quit
+saves unwritten edits and the window geometry first (F10 step 9, F1).
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ (Ctrl accelerators; Alt+F4 still closes too) | ✓ but **system** menu bar at the top of the screen, Cmd accelerators, and About/Preferences/Quit in the **BrainFrame** menu | ✓ | **N/A** — no menu-bar chrome and no modifier keys; the same actions live in the sidebar header, ⋯ menus and Settings | **N/A** — as Android, even with a hardware keyboard attached | **N/A** — as Android | **N/A** — no window chrome, no keyboard, and a menu that repaints on hover is wrong for the panel |
+
+- **Full-panel mode:** the strip does not disappear when a desktop window is
+  narrowed past 720 px — only the sidebar becomes a drawer. Check both widths.
+- **A11y:** every item is reachable by keyboard alone (open a menu, arrow
+  through it, Enter to invoke, Escape to close), and a screen reader announces
+  each item plus its enabled/disabled state.
+- **Nothing swallowed:** with a read-only engram (no create command published),
+  Ctrl+N must not be *consumed* — it simply does nothing, and any other handler
+  for that key still sees it.
+
+### F25 — Cut / copy / paste in the editor
+
+**Steps:**
+
+1. In a writable `.md` file (Edit mode), select a word and press **Ctrl+C**
+   (Cmd+C on macOS), then **Ctrl/Cmd+V** at the caret. Then **Ctrl/Cmd+X**.
+2. **Right-click** inside the editor.
+3. **Press and hold** the primary mouse button over a word for ~half a second
+   (desktop). On a touch device, do the same with a finger; with a stylus, with
+   the pen.
+4. Select a word, then open **Edit** in the menu bar by **clicking it with the
+   mouse** (not the keyboard), and **click Copy**. Paste at the caret to confirm
+   it really copied. Open **Edit ▸ Select all** and check it shows **Ctrl+A**
+   (Cmd+A on macOS) and really selects the whole document.
+5. Repeat step 4 with **nothing selected**, and again after clicking a **file
+   row in the tree** so the editor no longer has focus.
+6. Switch to **Preview** and try to select text.
+
+**Expected:** step 1 — the standard clipboard behavior, and the text really
+lands in the system clipboard (paste into another app to confirm). Steps 2–3 —
+the same adaptive menu appears (Cut / Copy / Paste / Select all), styled for the
+platform; press-and-hold selects the word **under the pointer** first, and one
+hold opens exactly **one** menu. Step 4 — Edit ▸ Copy is enabled **and actually
+copies**, acting on the field you were typing in even though the open menu now
+has focus. Check both halves: looking enabled and doing nothing is a failure,
+and so is greying out. Use the **mouse**, deliberately — a desktop field
+unfocuses itself when a click lands outside it, so a mouse click exercises a
+focus path the keyboard never touches, and both halves of this have broken there
+before. Step 5
+— Cut and Copy are **greyed out** with an empty selection, while Paste and
+Select all stay available at a caret (Select all needs no selection, only text
+to select — it greys out only in an **empty** file); with focus in the file tree
+**all four** are greyed. Step 6 —
+Preview text is deliberately **not** selectable (an accessibility trade-off, see
+[markdown_reader.dart](../lib/engram/ui/markdown_reader.dart#L72)), so the Edit
+items stay greyed there.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ (Cmd accelerators) | ✓ | ✓ for long-press and the hotkeys **only** with a hardware keyboard; **N/A** for right-click and the menu bar | ✓ as Android | ✓ as Android | ✓ for hotkey/long-press *if* input hardware allows; menu-bar row is **N/A** (F24) |
+
+- **Why press-and-hold needed building:** Flutter's own long-press-to-menu is
+  restricted to **touch**, so a desktop mouse (and a stylus anywhere) got
+  nothing. Touch is still handled by the framework — hence "exactly one menu".
+- **A11y:** a screen reader's own copy/cut/paste actions on the text field are
+  unaffected; the added gesture must not replace them.
+- **State survival:** a cut/paste is an edit like any other — the save chip goes
+  `unsaved` and the autosave pipeline (F10) takes it from there.
 
 ---
 

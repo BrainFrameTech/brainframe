@@ -169,6 +169,193 @@ void main() {
 
     expect(store.releaseCount, 1);
   });
+
+  group('updateActive', () {
+    testWidgets('replaces the engram in place without releasing its store',
+        (tester) async {
+      final store = _RecordingStore();
+      final engram = _engram('a', store);
+      late EngramScopeData scope;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                scope = EngramScope.of(context);
+                return Text('active: ${scope.engram.displayName}');
+              },
+            ),
+          ),
+        ),
+      );
+      expect(find.text('active: a'), findsOneWidget);
+
+      await scope.updateActive(engram.withDisplayName('Field Notebook'));
+      await tester.pump();
+
+      // The dependent rebuilt: the marker used to compare ids only, so a
+      // renamed engram left every reader showing the old name.
+      expect(find.text('active: Field Notebook'), findsOneWidget);
+      // Same engram over the same store: releasing it would close what the
+      // user is still reading.
+      expect(store.releaseCount, 0);
+    });
+
+    testWidgets('a switch still releases the outgoing store', (tester) async {
+      // Guards the distinction updateActive introduces: only a rename skips
+      // the release.
+      final outgoing = _RecordingStore();
+      final engram = _engram('a', outgoing);
+      final other = _engram('b', _RecordingStore());
+      late EngramScopeData scope;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                scope = EngramScope.of(context);
+                return Text('active: ${scope.engram.displayName}');
+              },
+            ),
+          ),
+        ),
+      );
+
+      await scope.switchTo(other);
+      await tester.pumpAndSettle();
+
+      expect(outgoing.releaseCount, 1);
+    });
+  });
+
+  group('EngramScopeProxy', () {
+    testWidgets('a captured scope is readable inside a detached subtree',
+        (tester) async {
+      // A pushed route is the scope's sibling, not its descendant, so without
+      // the proxy `EngramScope.of` finds nothing there at all.
+      final engram = _engram('a', _RecordingStore());
+      late EngramScopeData captured;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                captured = EngramScope.of(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScopeProxy(
+            source: captured,
+            child: Builder(
+              builder: (context) => Text(
+                'inside: ${EngramScope.of(context).engram.displayName}',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('inside: a'), findsOneWidget);
+    });
+
+    testWidgets('a rename through the proxy updates it and the real scope',
+        (tester) async {
+      final engram = _engram('a', _RecordingStore());
+      late EngramScopeData inner;
+
+      // The real scope stays mounted while the proxy stands in beside it,
+      // mirroring Settings pushed over the browser.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                final captured = EngramScope.of(context);
+                return Column(
+                  children: [
+                    Text('below: ${captured.engram.displayName}'),
+                    EngramScopeProxy(
+                      source: captured,
+                      child: Builder(
+                        builder: (context) {
+                          inner = EngramScope.of(context);
+                          return Text(
+                            'inside: ${inner.engram.displayName}',
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('below: a'), findsOneWidget);
+      expect(find.text('inside: a'), findsOneWidget);
+
+      await inner.updateActive(engram.withDisplayName('Field Notebook'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('inside: Field Notebook'), findsOneWidget);
+      expect(find.text('below: Field Notebook'), findsOneWidget);
+    });
+
+    testWidgets('a switch through the proxy reaches the real scope',
+        (tester) async {
+      final engram = _engram('a', _RecordingStore());
+      final other = _engram('b', _RecordingStore());
+      late EngramScopeData inner;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                final captured = EngramScope.of(context);
+                return Column(
+                  children: [
+                    Text('below: ${captured.engram.displayName}'),
+                    EngramScopeProxy(
+                      source: captured,
+                      child: Builder(
+                        builder: (context) {
+                          inner = EngramScope.of(context);
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await inner.switchTo(other);
+      await tester.pumpAndSettle();
+
+      expect(find.text('below: b'), findsOneWidget);
+    });
+  });
+
 }
 
 class _RootBuildCounter extends StatefulWidget {

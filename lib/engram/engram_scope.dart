@@ -6,7 +6,11 @@ import 'engram.dart';
 /// open [engram] plus [switchTo] to change it.
 @immutable
 class EngramScopeData {
-  const EngramScopeData({required this.engram, required this.switchTo});
+  const EngramScopeData({
+    required this.engram,
+    required this.switchTo,
+    required this.updateActive,
+  });
 
   /// The one engram open right now — never a collection (Decision 2).
   final Engram engram;
@@ -14,6 +18,15 @@ class EngramScopeData {
   /// Switches the active engram, releasing the outgoing engram's store first.
   /// Switching to the already-active engram is a no-op.
   final Future<void> Function(Engram engram) switchTo;
+
+  /// Replaces the *same* engram with an updated value — a rename, where the id
+  /// and store are unchanged and only the display name differs.
+  ///
+  /// Distinct from [switchTo], which swaps engrams and releases the outgoing
+  /// store; here the store keeps being used, so releasing it would close the
+  /// engram the user is still reading. Passing a different id is a programming
+  /// error.
+  final Future<void> Function(Engram engram) updateActive;
 }
 
 /// Holds the single active engram and exposes it to descendants, the way
@@ -74,6 +87,16 @@ class _EngramScopeState extends State<EngramScope> {
     await widget.onSwitched?.call(next);
   }
 
+  Future<void> _updateActive(Engram next) async {
+    assert(
+      next.id == _engram.id,
+      'updateActive replaces the active engram in place; use switchTo to open '
+      'a different one.',
+    );
+    // No release: this is the same engram over the same store.
+    setState(() => _engram = next);
+  }
+
   @override
   void dispose() {
     // Free the active store when the scope itself is torn down.
@@ -83,7 +106,11 @@ class _EngramScopeState extends State<EngramScope> {
 
   @override
   Widget build(BuildContext context) => _EngramScopeMarker(
-        data: EngramScopeData(engram: _engram, switchTo: _switchTo),
+        data: EngramScopeData(
+          engram: _engram,
+          switchTo: _switchTo,
+          updateActive: _updateActive,
+        ),
         child: widget.child,
       );
 }
@@ -95,5 +122,56 @@ class _EngramScopeMarker extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_EngramScopeMarker oldWidget) =>
-      data.engram.id != oldWidget.data.engram.id;
+      data.engram.id != oldWidget.data.engram.id ||
+      data.engram.displayName != oldWidget.data.engram.displayName;
+}
+
+/// Re-publishes a captured [EngramScopeData] into a subtree that is not a
+/// descendant of the [EngramScope] that owns it.
+///
+/// [EngramScope] deliberately sits at the `MaterialApp`'s `home`, below the
+/// Navigator, so switching engrams never rebuilds the app root. The cost is
+/// that anything *pushed* — the Settings route, a modal sheet — is a sibling of
+/// the scope rather than a child, and `EngramScope.of` there finds nothing. The
+/// established fix is to capture the data before the push (see
+/// `EngramSwitcher`); this widget makes the captured value readable through the
+/// ordinary `EngramScope.of` lookup inside the pushed subtree.
+///
+/// It keeps its own copy of the engram and updates it on [updateActive], so a
+/// rename performed inside the pushed subtree is reflected both there and in
+/// the real scope underneath. Without that, reads through a captured snapshot
+/// would silently go stale the moment the pushed route changed anything.
+class EngramScopeProxy extends StatefulWidget {
+  const EngramScopeProxy({
+    super.key,
+    required this.source,
+    required this.child,
+  });
+
+  /// The scope data captured from below, before the push.
+  final EngramScopeData source;
+
+  final Widget child;
+
+  @override
+  State<EngramScopeProxy> createState() => _EngramScopeProxyState();
+}
+
+class _EngramScopeProxyState extends State<EngramScopeProxy> {
+  late Engram _engram = widget.source.engram;
+
+  Future<void> _updateActive(Engram next) async {
+    setState(() => _engram = next);
+    await widget.source.updateActive(next);
+  }
+
+  @override
+  Widget build(BuildContext context) => _EngramScopeMarker(
+    data: EngramScopeData(
+      engram: _engram,
+      switchTo: widget.source.switchTo,
+      updateActive: _updateActive,
+    ),
+    child: widget.child,
+  );
 }

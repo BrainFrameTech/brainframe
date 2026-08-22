@@ -47,6 +47,7 @@ import 'package:brainframe/engram/ui/markdown_source_editor.dart';
 import 'package:brainframe/main.dart';
 import 'package:brainframe/settings/app_settings_controller.dart';
 import 'package:brainframe/settings/device_settings.dart';
+import 'package:brainframe/settings/engram_pane.dart';
 import 'package:brainframe/settings/housekeeping_pane.dart';
 import 'package:brainframe/settings/setting_control.dart';
 import 'package:brainframe/settings/settings_controls.dart';

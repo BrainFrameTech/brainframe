@@ -47,6 +47,10 @@ void main() {
       expect(await store.readSettings(), isNull);
     });
 
+    test('setDisplayName throws UnsupportedError by default', () {
+      expect(() => store.setDisplayName('Notes'), throwsUnsupportedError);
+    });
+
     test('writeSettings throws UnsupportedError by default', () {
       expect(() => store.writeSettings({'a': 1}), throwsUnsupportedError);
     });

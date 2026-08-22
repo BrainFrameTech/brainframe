@@ -27,6 +27,18 @@ class Engram {
   /// The content-access seam this engram is reached through.
   final EngramStore store;
 
+  /// A copy of this engram carrying [displayName] instead — the in-memory half
+  /// of a rename, over the same [store] and the same [id].
+  ///
+  /// The name is a label, not identity: everything that cross-references an
+  /// engram keys on [id], so renaming changes what is shown and nothing else.
+  Engram withDisplayName(String displayName) => Engram(
+    id: id,
+    displayName: displayName,
+    readOnly: readOnly,
+    store: store,
+  );
+
   @override
   String toString() =>
       'Engram(id: $id, displayName: $displayName, readOnly: $readOnly)';

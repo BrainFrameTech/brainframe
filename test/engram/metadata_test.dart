@@ -193,4 +193,49 @@ void main() {
       );
     });
   });
+
+  group('withDisplayName', () {
+    final original = EngramMetadata(
+      schemaVersion: 1,
+      id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+      displayName: 'zettel',
+      createdUtc: DateTime.utc(2026, 5, 1, 9),
+    );
+
+    test('changes only the display name', () {
+      final renamed = original.withDisplayName('Field Notebook');
+
+      expect(renamed.displayName, 'Field Notebook');
+      expect(renamed.id, original.id);
+      expect(renamed.createdUtc, original.createdUtc);
+      expect(renamed.schemaVersion, original.schemaVersion);
+    });
+
+    test('trims surrounding whitespace', () {
+      expect(original.withDisplayName('  Notes  ').displayName, 'Notes');
+    });
+
+    test('rejects a blank name, which would not parse back', () {
+      expect(() => original.withDisplayName(''), throwsArgumentError);
+      expect(() => original.withDisplayName('   '), throwsArgumentError);
+    });
+
+    test('keeps a marker at its stored schema version rather than upgrading',
+        () {
+      // Written by a hypothetical older build; renaming must not restamp it.
+      final v1 = EngramMetadata(
+        schemaVersion: 1,
+        id: original.id,
+        displayName: 'old',
+        createdUtc: original.createdUtc,
+      );
+      expect(v1.withDisplayName('new').schemaVersion, 1);
+    });
+
+    test('round-trips through encode/decode', () {
+      final renamed = original.withDisplayName('Field Notebook');
+      expect(EngramMetadata.decode(renamed.encode()), renamed);
+    });
+  });
+
 }

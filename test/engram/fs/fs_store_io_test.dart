@@ -493,4 +493,109 @@ void main() {
       expect(await store.readSettings(), isNull);
     });
   });
+
+  group('marker metadata', () {
+    test('readMetadata returns what is stored on disk', () async {
+      final loc = locFor('Personal');
+      final engram =
+          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final store = engram.store as FileSystemEngramStore;
+
+      final metadata = await store.readMetadata();
+
+      expect(metadata, isNotNull);
+      expect(metadata!.id, engram.id);
+      expect(metadata.displayName, 'Personal');
+      expect(metadata.schemaVersion, EngramMetadata.currentSchemaVersion);
+      expect(metadata.createdUtc.isUtc, isTrue);
+    });
+
+    test('readMetadata is null when the folder has no marker', () async {
+      final loc = locFor('Plain');
+      await Directory(loc.path).create(recursive: true);
+
+      expect(await FileSystemEngramStore(loc).readMetadata(), isNull);
+    });
+
+    test('readMetadata surfaces a malformed marker instead of hiding it',
+        () async {
+      final loc = locFor('Broken');
+      await createFileSystemEngram(location: loc, displayName: 'Broken');
+      await File('${loc.path}/.brainframe/engram.json')
+          .writeAsString('{ not json');
+
+      expect(
+        () => FileSystemEngramStore(loc).readMetadata(),
+        throwsA(isA<EngramMetadataException>()),
+      );
+    });
+
+    test('locationDescription reports the engram root', () async {
+      final loc = locFor('Personal');
+      final engram =
+          await createFileSystemEngram(location: loc, displayName: 'Personal');
+
+      expect(engram.store.locationDescription, loc.path);
+    });
+
+    test('setDisplayName rewrites the name and keeps the identity', () async {
+      final loc = locFor('zettel');
+      final engram =
+          await createFileSystemEngram(location: loc, displayName: 'zettel');
+      final store = engram.store as FileSystemEngramStore;
+      final before = (await store.readMetadata())!;
+
+      final updated = await store.setDisplayName('Field Notebook');
+
+      expect(updated.displayName, 'Field Notebook');
+      expect(updated.id, before.id);
+      expect(updated.createdUtc, before.createdUtc);
+      // Reopening reads the new name back — the write reached disk.
+      final reopened = await openFileSystemEngram(loc);
+      expect(reopened.displayName, 'Field Notebook');
+      expect(reopened.id, before.id);
+    });
+
+    test('setDisplayName trims, and rejects a blank name', () async {
+      final loc = locFor('Personal');
+      final engram =
+          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final store = engram.store as FileSystemEngramStore;
+
+      expect((await store.setDisplayName('  Notes  ')).displayName, 'Notes');
+      expect(() => store.setDisplayName('  '), throwsArgumentError);
+      // The rejected write left the previous name intact.
+      expect((await store.readMetadata())!.displayName, 'Notes');
+    });
+
+    test('setDisplayName leaves the folder itself untouched', () async {
+      final loc = locFor('zettel');
+      final engram =
+          await createFileSystemEngram(location: loc, displayName: 'zettel');
+      await (engram.store as FileSystemEngramStore)
+          .setDisplayName('Field Notebook');
+
+      // The directory keeps its own name, and no stray temp file survives the
+      // atomic write.
+      expect(Directory(loc.path).existsSync(), isTrue);
+      final entries = Directory(loc.path)
+          .listSync(recursive: true)
+          .map((e) => e.path
+              .substring(loc.path.length + 1)
+              .replaceAll(Platform.pathSeparator, '/'))
+          .toSet();
+      expect(entries, {'.brainframe', '.brainframe/engram.json'});
+    });
+
+    test('setDisplayName refuses a folder that is not an engram', () async {
+      final loc = locFor('Plain');
+      await Directory(loc.path).create(recursive: true);
+
+      expect(
+        () => FileSystemEngramStore(loc).setDisplayName('Notes'),
+        throwsStateError,
+      );
+    });
+  });
+
 }

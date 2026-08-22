@@ -1,5 +1,6 @@
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
+import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/repository_scope.dart';
 import 'package:brainframe/settings/app_settings_controller.dart';
@@ -179,4 +180,68 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('open settings'), findsOneWidget); // back home
   });
+
+  group('the Engram category', () {
+    /// Opens Settings the way the app does — pushed from a route *under* an
+    /// EngramScope — which is the only way the active engram reaches it.
+    Widget hostWithEngram(Engram engram) => host(
+      EngramScope(
+        initialEngram: engram,
+        child: Builder(
+          builder: (context) => Scaffold(
+            body: Column(
+              children: [
+                Text('open: ${EngramScope.of(context).engram.displayName}'),
+                TextButton(
+                  onPressed: () => openSettingsScreen(context),
+                  child: const Text('open settings'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('is offered when an engram is open, and describes it', (
+      tester,
+    ) async {
+      setSize(tester, 1000);
+      await tester.pumpWidget(
+        hostWithEngram(
+          Engram(
+            id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+            displayName: 'zettel',
+            readOnly: false,
+            store: _FakeStore(),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open settings'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Engram'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('01JAB2CD3EFGHJKMNPQRSTVWXY'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'zettel',
+      );
+    });
+
+    testWidgets('is absent when there is no engram to describe', (
+      tester,
+    ) async {
+      // The settings shell embedded without an EngramScope above it: there is
+      // nothing for the category to be about, so it is not listed.
+      setSize(tester, 1000);
+      await tester.pumpWidget(host(const SettingsScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Engram'), findsNothing);
+      expect(find.text('Housekeeping'), findsOneWidget);
+    });
+  });
+
 }

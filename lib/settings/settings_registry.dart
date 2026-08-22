@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../about/about_screen.dart';
+import '../engram/engram_scope.dart';
 import '../engram/repository_scope.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theme/app_settings.dart';
 import 'app_settings_controller.dart';
+import 'engram_pane.dart';
 import 'housekeeping_pane.dart';
 import 'setting_control.dart';
 
@@ -90,6 +92,11 @@ List<SettingsGroup> buildSettingsGroups(BuildContext context) {
 List<SettingsGroup> buildCoreGroups(BuildContext context) {
   final l10n = AppLocalizations.of(context);
   final controller = AppSettings.of(context).controller;
+  // Settings is a pushed route, so the active engram reaches it only through
+  // the proxy `openSettingsScreen` wraps it in (see EngramScopeProxy). Absent
+  // it — an embedded settings shell in a test, a host with no engram open —
+  // there is nothing for this category to describe, so it is not offered.
+  final engramScope = EngramScope.maybeOf(context);
 
   return [
     SettingsGroup(
@@ -194,6 +201,24 @@ List<SettingsGroup> buildCoreGroups(BuildContext context) {
             ),
           ],
         ),
+        if (engramScope != null)
+          SettingsCategory(
+            id: 'engram',
+            name: l10n.settingsEngramName,
+            initial: 'E',
+            description: l10n.settingsEngramDesc,
+            // The Engram pane loads the marker from disk and edits one field of
+            // it, so it renders itself rather than a set of control rows.
+            detail: (ctx) => EngramPane(
+              engram: engramScope.engram,
+              loadMetadata: engramScope.engram.store.readMetadata,
+              rename: (name) =>
+                  RepositoryScope.of(ctx).rename(engramScope.engram, name),
+              // Push the renamed engram back down into the real scope, so the
+              // switcher behind this route shows the new name on return.
+              onRenamed: engramScope.updateActive,
+            ),
+          ),
         SettingsCategory(
           id: 'housekeeping',
           name: l10n.settingsHousekeepingName,

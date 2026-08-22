@@ -589,7 +589,7 @@ edit affordances.
    find the **gear** icon beside the engram switcher, past a short divider rule.
 2. Tap it. Settings opens as a **full page** titled "Settings", with a back
    affordance.
-3. Confirm a category master list grouped under **CORE**: Appearance,
+3. Confirm a category master list grouped under **CORE**: Appearance, Engram,
    Housekeeping, About — and a detail pane showing the selected category.
 4. Select each category; confirm the detail pane swaps.
 5. On desktop, resize the window wide→narrow and watch the shell reflow: **≥860
@@ -879,6 +879,68 @@ items stay greyed there.
   unaffected; the added gesture must not replace them.
 - **State survival:** a cut/paste is an edit like any other — the save chip goes
   `unsaved` and the autosave pipeline (F10) takes it from there.
+
+### F26 — Engram: rename & details
+
+> The rename is **not** destructive — it rewrites one field of
+> `.brainframe/engram.json` and never touches your notes or the folder — but it
+> does change what the engram is called everywhere, so use the **Field
+> Notebook** fixture rather than an engram you care about.
+
+**Steps:**
+
+1. Settings → **Engram**. Confirm the pane describes the engram you have
+   **open**: its display name in the field, and a **Details** block listing
+   Identifier, Location, Created, Format version and Read-only.
+2. Confirm **Location** is the engram's folder, and that **Identifier** matches
+   the `id` in that folder's `.brainframe/engram.json`.
+3. With the name untouched, confirm **Save** is **disabled**. Type a new name —
+   it enables.
+4. Clear the field to blank and press Save: an **"Enter a name."** error appears
+   and nothing is written. Type again — the error clears.
+5. Enter a new name and Save (or press Enter in the field). A snackbar confirms
+   the rename; Save goes disabled again.
+6. Leave Settings. The **switcher footer now shows the new name**, without
+   reopening or switching engrams.
+7. Open the switcher sheet (F15): the engram is listed under its new name.
+8. On disk, confirm the folder still has its **original name**, and that
+   `engram.json` has the new `displayName` with `id` and `createdUtc`
+   **unchanged**.
+9. Switch to the built-in **Tutorial** or **Help** and open the pane again: the
+   name field is **disabled**, there is **no Save button**, and the explanation
+   says built-in names come from the app's translations. Location reads
+   "Bundled with the app"; Created and Format version are **absent**.
+10. Press **Copy details** and paste elsewhere: a plain-text block with the same
+    values, suitable for a bug report.
+
+**Expected:** the display name is editable and the change lands in the marker
+file; identity (identifier, creation stamp) is shown but never editable; the
+folder on disk is never renamed; the new name reaches the switcher immediately;
+built-in engrams are read-only here.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓ (step 8 needs a file manager, or re-check via the pane after a restart) | same as Android | ✓ — step 8 is **N/A** without a files app that reaches the container | ✓ |
+
+- **Why the folder is not renamed:** the name and the folder are deliberately
+  independent — an engram's ULID is what everything cross-references, so it
+  survives renames on either side. A test that expects the folder to follow is
+  testing the wrong thing.
+- **Cross-route probe:** step 6 is the interesting one. Settings is a *pushed
+  route*, a sibling of the scope holding the open engram, so the new name has to
+  travel back down to reach the switcher. A stale footer here is a real bug, not
+  a refresh delay.
+- **Declarative-trap probe:** after a rename, the Details block is **re-read**
+  from disk rather than patched in place — corrupt the marker externally between
+  saves and the pane should say so (see below), not keep showing stale values.
+- **Broken-marker probe:** with the app closed, make `engram.json` invalid JSON
+  and reopen the pane. It shows a "Could not read this engram's details" line
+  and still shows the identifier it knows — a diagnostic surface that hides the
+  fault would be worse than none.
+- **A11y:** the name field exposes its label and enabled state; each detail row
+  exposes label and value; the section headings are headers.
+- **State survival:** the rename persists across an app restart, and the engram
+  reopens under its new name (F1).
 
 ---
 

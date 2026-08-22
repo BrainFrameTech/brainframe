@@ -524,6 +524,135 @@
     "description": "Body of the confirmation dialog before forgetting an engram."
   },
 
+  "settingsEngramName": "Engram",
+  "@settingsEngramName": {
+    "description": "Name of the settings category that shows and edits the open engram's name and identity."
+  },
+
+  "settingsEngramDesc": "Name and details of the engram you have open.",
+  "@settingsEngramDesc": {
+    "description": "One-line description of the Engram settings category, shown under its name in the category list."
+  },
+
+  "engramPaneIntro": "These are the details of the engram you have open. Its name is stored with the engram itself, so it travels with the folder wherever you sync it.",
+  "@engramPaneIntro": {
+    "description": "Introductory paragraph at the top of the Engram settings pane."
+  },
+
+  "engramPaneNameSection": "Name",
+  "@engramPaneNameSection": {
+    "description": "Heading of the section of the Engram pane holding the editable display name."
+  },
+
+  "engramPaneNameLabel": "Display name",
+  "@engramPaneNameLabel": {
+    "description": "Label of the text field holding the engram's display name."
+  },
+
+  "engramPaneNameHelp": "Shown in the engram switcher. The folder on disk keeps its own name — renaming here never moves or renames any files.",
+  "@engramPaneNameHelp": {
+    "description": "Help text under the display-name field, explaining that the folder is not renamed."
+  },
+
+  "engramPaneNameEmpty": "Enter a name.",
+  "@engramPaneNameEmpty": {
+    "description": "Validation message when the user tries to save a blank engram name."
+  },
+
+  "engramPaneSave": "Save",
+  "@engramPaneSave": {
+    "description": "Button that saves the edited engram display name."
+  },
+
+  "engramPaneSaved": "Renamed to “{name}”.",
+  "@engramPaneSaved": {
+    "description": "Confirmation shown after the engram's display name is saved.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Field Notebook" }
+    }
+  },
+
+  "engramPaneSaveFailed": "Could not save the name: {message}",
+  "@engramPaneSaveFailed": {
+    "description": "Shown when writing the new engram name to disk fails.",
+    "placeholders": {
+      "message": { "type": "String", "example": "Permission denied" }
+    }
+  },
+
+  "engramPaneReadOnly": "Built-in engrams can't be renamed — their names come from the app's own translations.",
+  "@engramPaneReadOnly": {
+    "description": "Explains why the display-name field is disabled for the bundled tutorial and help engrams."
+  },
+
+  "engramPaneDetailsSection": "Details",
+  "@engramPaneDetailsSection": {
+    "description": "Heading of the read-only section of the Engram pane listing identity fields."
+  },
+
+  "engramPaneDetailsHelp": "Useful when reporting a problem. These are set when the engram is created and never change.",
+  "@engramPaneDetailsHelp": {
+    "description": "Help text under the read-only details section of the Engram pane."
+  },
+
+  "engramPaneId": "Identifier",
+  "@engramPaneId": {
+    "description": "Label for the engram's permanent identifier (a ULID) in the details list."
+  },
+
+  "engramPaneCreated": "Created",
+  "@engramPaneCreated": {
+    "description": "Label for the engram's creation timestamp in the details list."
+  },
+
+  "engramPaneLocation": "Location",
+  "@engramPaneLocation": {
+    "description": "Label for the folder the engram lives in, in the details list."
+  },
+
+  "engramPaneLocationBuiltIn": "Bundled with the app",
+  "@engramPaneLocationBuiltIn": {
+    "description": "Location value for the built-in tutorial and help engrams, which have no folder on disk."
+  },
+
+  "engramPaneFormat": "Format version",
+  "@engramPaneFormat": {
+    "description": "Label for the engram marker file's schema version in the details list."
+  },
+
+  "engramPaneReadOnlyLabel": "Read-only",
+  "@engramPaneReadOnlyLabel": {
+    "description": "Label for whether the engram forbids edits, in the details list."
+  },
+
+  "engramPaneYes": "Yes",
+  "@engramPaneYes": {
+    "description": "Affirmative value in the engram details list (e.g. for read-only)."
+  },
+
+  "engramPaneNo": "No",
+  "@engramPaneNo": {
+    "description": "Negative value in the engram details list (e.g. for read-only)."
+  },
+
+  "engramPaneMarkerError": "Could not read this engram's details: {message}",
+  "@engramPaneMarkerError": {
+    "description": "Shown in place of the details list when the engram's marker file is missing or malformed.",
+    "placeholders": {
+      "message": { "type": "String", "example": "engram.json is not valid JSON" }
+    }
+  },
+
+  "engramPaneCopy": "Copy details",
+  "@engramPaneCopy": {
+    "description": "Button that copies the engram's identity details to the clipboard, for pasting into a bug report."
+  },
+
+  "engramPaneCopied": "Details copied to the clipboard.",
+  "@engramPaneCopied": {
+    "description": "Confirmation shown after the engram details are copied to the clipboard."
+  },
+
   "menuFile": "File",
   "@menuFile": {
     "description": "Title of the desktop menu bar's File menu, holding the new-note, new-folder and quit commands."

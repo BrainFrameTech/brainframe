@@ -327,4 +327,98 @@ void main() {
       expect((await repo.openInitialEngram()).id, builtinTutorialId);
     });
   });
+
+  group('rename', () {
+    test('rewrites the marker so the new name survives a reopen', () async {
+      final repo = repoWith();
+      final engram = await repo.create('zettel');
+
+      final renamed = await repo.rename(engram, 'Field Notebook');
+
+      expect(renamed.displayName, 'Field Notebook');
+      expect(renamed.id, engram.id);
+      // Discovery re-reads every marker from disk, so this proves the write
+      // landed rather than just the returned object being patched.
+      final discovery = await repo.discover();
+      expect(
+        discovery.available.firstWhere((e) => e.id == engram.id).displayName,
+        'Field Notebook',
+      );
+    });
+
+    test('leaves the folder on disk under its original name', () async {
+      final repo = repoWith();
+      final engram = await repo.create('zettel');
+      await repo.rename(engram, 'Field Notebook');
+
+      expect(Directory('$containerPath/zettel').existsSync(), isTrue);
+      expect(Directory('$containerPath/Field Notebook').existsSync(), isFalse);
+    });
+
+    test('syncs the registry copy of the name for an adopted root', () async {
+      final outside = '${tempRoot.path}/outside';
+      await Directory(outside).create(recursive: true);
+      final repo = repoWith();
+      final engram = await repo.adoptFolder(EngramLocation(outside));
+      expect(engram.displayName, 'outside');
+
+      await repo.rename(engram, 'Field Notebook');
+
+      // The registry's cached label is what a *missing* folder is listed under,
+      // so a stale copy here would resurface the old name later.
+      final registered = await repo.registeredEngrams();
+      expect(registered.single.displayName, 'Field Notebook');
+      expect(registered.single.path, outside);
+    });
+
+    test('an unavailable adopted root still reports the new name', () async {
+      final outside = '${tempRoot.path}/gone';
+      await Directory(outside).create(recursive: true);
+      final repo = repoWith();
+      final engram = await repo.adoptFolder(EngramLocation(outside));
+      await repo.rename(engram, 'Field Notebook');
+
+      Directory(outside).deleteSync(recursive: true);
+
+      final discovery = await repo.discover();
+      expect(discovery.unavailable.single.displayName, 'Field Notebook');
+    });
+
+    test('a container engram renames without touching the registry', () async {
+      final repo = repoWith();
+      final engram = await repo.create('zettel');
+
+      await repo.rename(engram, 'Field Notebook');
+
+      expect(await repo.registeredEngrams(), isEmpty);
+    });
+
+    test('rejects a blank name', () async {
+      final repo = repoWith();
+      final engram = await repo.create('zettel');
+
+      expect(() => repo.rename(engram, '   '), throwsArgumentError);
+      final after = (await repo.discover())
+          .available
+          .firstWhere((e) => e.id == engram.id);
+      expect(after.displayName, 'zettel');
+    });
+
+    test('refuses the read-only built-ins', () async {
+      final repo = repoWith();
+      final tutorial = (await repo.discover())
+          .available
+          .firstWhere((e) => e.id == builtinTutorialId);
+
+      expect(() => repo.rename(tutorial, 'My Tutorial'), throwsArgumentError);
+    });
+
+    test('trims the name before storing it', () async {
+      final repo = repoWith();
+      final engram = await repo.create('zettel');
+
+      expect((await repo.rename(engram, '  Notes  ')).displayName, 'Notes');
+    });
+  });
+
 }

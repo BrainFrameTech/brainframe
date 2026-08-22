@@ -69,4 +69,22 @@ void main() {
       'Engram(id: abc, displayName: Personal, readOnly: true)',
     );
   });
+
+  test('withDisplayName keeps the id, store and read-only flag', () {
+    final store = _FakeStore(const {});
+    final engram = Engram(
+      id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+      displayName: 'zettel',
+      readOnly: false,
+      store: store,
+    );
+
+    final renamed = engram.withDisplayName('Field Notebook');
+
+    expect(renamed.displayName, 'Field Notebook');
+    expect(renamed.id, engram.id);
+    expect(renamed.readOnly, isFalse);
+    expect(identical(renamed.store, store), isTrue);
+  });
+
 }

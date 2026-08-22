@@ -147,6 +147,38 @@ class FileSystemEngramStore extends EngramStore {
     await _atomicWrite(file, Uint8List.fromList(utf8.encode(text)));
   }
 
+  /// The marker file carrying this engram's identity (see [readMetadata]).
+  File get _metadataFile =>
+      File('$_rootPath/$_markerDirectoryName/$_metadataFileName');
+
+  @override
+  Future<EngramMetadata?> readMetadata() async {
+    final file = _metadataFile;
+    if (!await file.exists()) return null;
+    // Deliberately unguarded, unlike readSettings: a malformed marker is a real
+    // fault, so it propagates as EngramMetadataException for the caller to show.
+    return EngramMetadata.decode(await file.readAsString());
+  }
+
+  @override
+  Future<EngramMetadata> setDisplayName(String displayName) async {
+    final current = await readMetadata();
+    if (current == null) {
+      throw StateError('No engram marker at $_rootPath');
+    }
+    final updated = current.withDisplayName(displayName);
+    // Atomic like every other marker write: an interrupted rename must never
+    // leave an engram with a half-written identity.
+    await _atomicWrite(
+      _metadataFile,
+      Uint8List.fromList(utf8.encode(updated.encode())),
+    );
+    return updated;
+  }
+
+  @override
+  String? get locationDescription => _rootPath;
+
   /// Writes [bytes] to [file] atomically (Decision 5): write a sibling temp
   /// file with the data flushed to disk, then `rename` it over [file]. Rename
   /// is atomic within a filesystem, so an interrupted write (crash, power loss)

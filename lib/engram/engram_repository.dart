@@ -161,6 +161,46 @@ class EngramRepository {
     return engram;
   }
 
+  /// Renames [engram] to [displayName], returning the renamed engram.
+  ///
+  /// The display name lives in two places and this is what keeps them in step:
+  /// the engram's own marker (`engram.json`, the source of truth, which travels
+  /// with the folder) and — for a registry-backed root only — the device
+  /// registry's cached copy, which is what the switcher shows while the folder
+  /// is unreachable. The folder on disk is never renamed.
+  ///
+  /// Throws [ArgumentError] on a blank name or a read-only engram (the
+  /// built-ins, whose names are localized app text rather than user data).
+  Future<Engram> rename(Engram engram, String displayName) async {
+    final trimmed = displayName.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(
+        displayName,
+        'displayName',
+        'must not be blank',
+      );
+    }
+    if (engram.readOnly) {
+      throw ArgumentError.value(
+        engram.id,
+        'engram',
+        'read-only engrams cannot be renamed',
+      );
+    }
+    final metadata = await engram.store.setDisplayName(trimmed);
+    final entries = await _readRegistry();
+    final index = entries.indexWhere((e) => e.id == engram.id);
+    if (index >= 0) {
+      entries[index] = _RegistryEntry(
+        id: entries[index].id,
+        displayName: metadata.displayName,
+        path: entries[index].path,
+      );
+      await _writeRegistry(entries);
+    }
+    return engram.withDisplayName(metadata.displayName);
+  }
+
   /// Drops a registered (Location B) engram from the registry, leaving its
   /// files on disk. Built-in engrams cannot be forgotten (Decision 5);
   /// container engrams are removed by deleting their folder, not through here.

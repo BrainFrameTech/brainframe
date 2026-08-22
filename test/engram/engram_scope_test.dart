@@ -203,6 +203,38 @@ void main() {
       expect(store.releaseCount, 0);
     });
 
+    testWidgets('a different engram is refused, not quietly adopted', (
+      tester,
+    ) async {
+      // Release-mode behaviour, not just a debug assert: this path skips the
+      // store release and the last-opened bookkeeping a switch performs, so
+      // adopting a different engram here would leak and desync silently.
+      final store = _RecordingStore();
+      final engram = _engram('a', store);
+      final other = _engram('b', _RecordingStore());
+      late EngramScopeData scope;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                scope = EngramScope.of(context);
+                return Text('active: ${scope.engram.displayName}');
+              },
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(scope.updateActive(other), throwsArgumentError);
+      await tester.pump();
+
+      expect(find.text('active: a'), findsOneWidget);
+      expect(store.releaseCount, 0);
+    });
+
     testWidgets('a switch still releases the outgoing store', (tester) async {
       // Guards the distinction updateActive introduces: only a rename skips
       // the release.
@@ -314,6 +346,49 @@ void main() {
 
       expect(find.text('inside: Field Notebook'), findsOneWidget);
       expect(find.text('below: Field Notebook'), findsOneWidget);
+    });
+
+    testWidgets('an update the real scope refuses leaves the proxy unchanged', (
+      tester,
+    ) async {
+      // The proxy keeps its own copy, so it must not accept what the scope
+      // underneath rejected — that would show two different engrams at once.
+      final engram = _engram('a', _RecordingStore());
+      final other = _engram('b', _RecordingStore());
+      late EngramScopeData inner;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngramScope(
+            initialEngram: engram,
+            child: Builder(
+              builder: (context) {
+                final captured = EngramScope.of(context);
+                return Column(
+                  children: [
+                    Text('below: ${captured.engram.displayName}'),
+                    EngramScopeProxy(
+                      source: captured,
+                      child: Builder(
+                        builder: (context) {
+                          inner = EngramScope.of(context);
+                          return Text('inside: ${inner.engram.displayName}');
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(inner.updateActive(other), throwsArgumentError);
+      await tester.pump();
+
+      expect(find.text('inside: a'), findsOneWidget);
+      expect(find.text('below: a'), findsOneWidget);
     });
 
     testWidgets('a switch through the proxy reaches the real scope',

@@ -24,8 +24,15 @@ class EngramScopeData {
   ///
   /// Distinct from [switchTo], which swaps engrams and releases the outgoing
   /// store; here the store keeps being used, so releasing it would close the
-  /// engram the user is still reading. Passing a different id is a programming
-  /// error.
+  /// engram the user is still reading.
+  ///
+  /// Throws [ArgumentError] if the engram has a different id. That is not
+  /// pedantry about a misuse that "can't happen": this path deliberately skips
+  /// everything a switch does — releasing the outgoing store, recording the new
+  /// last-opened engram — so a different engram arriving here would be adopted
+  /// with its predecessor's store leaked and the bookkeeping silently out of
+  /// step. Refusing it turns that into an immediate, located failure. Use
+  /// [switchTo] to open a different engram.
   final Future<void> Function(Engram engram) updateActive;
 }
 
@@ -88,11 +95,17 @@ class _EngramScopeState extends State<EngramScope> {
   }
 
   Future<void> _updateActive(Engram next) async {
-    assert(
-      next.id == _engram.id,
-      'updateActive replaces the active engram in place; use switchTo to open '
-      'a different one.',
-    );
+    // Checked in release too, not just asserted in debug: the damage here is
+    // silent (a leaked store, stale last-opened) rather than a crash, so a
+    // stripped assert would let it ship and surface later as something else.
+    if (next.id != _engram.id) {
+      throw ArgumentError.value(
+        next.id,
+        'engram',
+        'updateActive replaces the active engram (${_engram.id}) in place; '
+            'use switchTo to open a different one',
+      );
+    }
     // No release: this is the same engram over the same store.
     setState(() => _engram = next);
   }
@@ -161,8 +174,11 @@ class _EngramScopeProxyState extends State<EngramScopeProxy> {
   late Engram _engram = widget.source.engram;
 
   Future<void> _updateActive(Engram next) async {
-    setState(() => _engram = next);
+    // Forward *first*, so an update the owning scope refuses cannot leave this
+    // proxy displaying an engram the real scope never adopted.
     await widget.source.updateActive(next);
+    if (!mounted) return;
+    setState(() => _engram = next);
   }
 
   @override

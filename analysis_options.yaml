@@ -14,6 +14,14 @@ analyzer:
   # no_raw_widget_strings rule flags hardcoded user-facing strings in the IDE.
   # custom_lint issues surface in the IDE and via `dart run custom_lint`, not
   # `flutter analyze`; the commit/CI backstop is tool/check_l10n.dart.
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
   plugins:
     - custom_lint
 

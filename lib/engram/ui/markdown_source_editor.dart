@@ -36,6 +36,9 @@ class MarkdownSourceEditor extends StatefulWidget {
     this.onChanged,
     this.focusNode,
     this.scrollController,
+    this.controller,
+    this.matches = const <TextRange>[],
+    this.activeMatch = -1,
   });
 
   /// The file's source when the editor is first built. If it changes to a
@@ -53,14 +56,55 @@ class MarkdownSourceEditor extends StatefulWidget {
   /// Scroll controller for the field's own vertical scrolling.
   final ScrollController? scrollController;
 
+  /// A handle for the one thing the host cannot express declaratively: putting
+  /// the caret on a range (see [SourceEditorController]).
+  final SourceEditorController? controller;
+
+  /// Ranges to highlight — the find bar's matches.
+  ///
+  /// Painted by the text controller's own span builder rather than through the
+  /// field's selection, so they stay visible while the caret is elsewhere
+  /// entirely — which it is throughout a search, sitting in the find field.
+  final List<TextRange> matches;
+
+  /// Which of [matches] is the current one: emphasized, and scrolled into view
+  /// when it changes. -1 when there is none.
+  final int activeMatch;
+
   @override
   State<MarkdownSourceEditor> createState() => _MarkdownSourceEditorState();
 }
 
+/// A handle on a mounted [MarkdownSourceEditor], so its host can place the
+/// caret without knowing what widget renders the text.
+///
+/// Everything else about the editor is declarative — text in, changes out,
+/// ranges to highlight — but "put the caret here, now" is an event, not a
+/// state, and modelling it as one would mean the host could never move the
+/// caret to the same range twice. The attach/detach shape mirrors
+/// `EngramBrowserController`.
+class SourceEditorController {
+  _MarkdownSourceEditorState? _state;
+
+  /// Whether an editor is currently attached — false before the editor mounts
+  /// and after it is disposed.
+  bool get isAttached => _state != null;
+
+  /// Selects [range] in the editor and gives it focus. A no-op when no editor
+  /// is attached; the range is clamped to the text, so a stale one cannot
+  /// throw.
+  void selectRange(TextRange range) => _state?._selectRange(range);
+
+  void _attach(_MarkdownSourceEditorState state) => _state = state;
+
+  void _detach(_MarkdownSourceEditorState state) {
+    if (identical(_state, state)) _state = null;
+  }
+}
+
 class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initialText,
-  );
+  late final _HighlightingTextEditingController _controller =
+      _HighlightingTextEditingController(text: widget.initialText);
 
   /// Ours only when the host supplied none. The press-and-hold menu needs a
   /// node it can reach — it is the handle on the [EditableText] below.
@@ -70,8 +114,18 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
       widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?._attach(this);
+  }
+
+  @override
   void didUpdateWidget(MarkdownSourceEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
     // A different file (or an external reset) arrived without the widget being
     // recreated. Adopt it, but don't clobber a matching in-progress buffer, and
     // place the caret at the end of the freshly loaded text.
@@ -82,13 +136,54 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
         selection: TextSelection.collapsed(offset: widget.initialText.length),
       );
     }
+    // Stepping to another match has to bring it on screen: the field scrolls
+    // itself for typing and taps, but never for ranges handed to it.
+    if (widget.activeMatch != oldWidget.activeMatch ||
+        widget.matches != oldWidget.matches) {
+      _revealAfterFrame(_activeRange);
+    }
   }
 
   @override
   void dispose() {
+    widget.controller?._detach(this);
     _controller.dispose();
     _ownedFocusNode?.dispose();
     super.dispose();
+  }
+
+  /// The current match, or null when there is none.
+  TextRange? get _activeRange {
+    final index = widget.activeMatch;
+    if (index < 0 || index >= widget.matches.length) return null;
+    return widget.matches[index];
+  }
+
+  /// Places the caret over [range] and focuses the field, so the user carries
+  /// on typing at the match they just found.
+  void _selectRange(TextRange range) {
+    final length = _controller.text.length;
+    final start = range.start.clamp(0, length);
+    final end = range.end.clamp(start, length);
+    _focusNode.requestFocus();
+    _controller.selection = TextSelection(baseOffset: start, extentOffset: end);
+    _revealAfterFrame(TextRange(start: start, end: end));
+  }
+
+  /// Scrolls [range] into view once the frame that laid it out has been drawn.
+  void _revealAfterFrame(TextRange? range) {
+    if (range == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Only the [EditableText] below knows how to turn a text offset into a
+      // scroll position; reach it through the focus node's context, the same
+      // way the press-and-hold menu reaches it.
+      final state = _focusNode.context
+          ?.findAncestorStateOfType<EditableTextState>();
+      if (state == null) return;
+      final offset = range.start.clamp(0, _controller.text.length);
+      state.bringIntoView(TextPosition(offset: offset));
+    });
   }
 
   @override
@@ -98,6 +193,19 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
     // fade. The blink cadence itself is Flutter's and has no public disable, so
     // this turns off the animation the framework does expose.
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    // Assigned, not notified: this runs inside build, and a notifying
+    // controller would be marking its own listeners dirty mid-build. The field
+    // below is (re)built by this very build, so it reads the new ranges anyway.
+    _controller.matches = widget.matches;
+    _controller.activeMatch = widget.activeMatch;
+    _controller.matchStyle = TextStyle(
+      backgroundColor: theme.colorScheme.secondaryContainer,
+      color: theme.colorScheme.onSecondaryContainer,
+    );
+    _controller.activeMatchStyle = TextStyle(
+      backgroundColor: theme.colorScheme.primary,
+      color: theme.colorScheme.onPrimary,
+    );
     return Semantics(
       label: AppLocalizations.of(context).markdownEditorLabel,
       textField: true,
@@ -204,5 +312,61 @@ class _LongPressContextMenuState extends State<_LongPressContextMenu> {
     render.handleTapDown(TapDownDetails(globalPosition: globalPosition));
     render.selectWord(cause: SelectionChangedCause.longPress);
     state.showToolbar();
+  }
+}
+
+/// A text controller that paints [matches] behind the text.
+///
+/// [TextEditingController.buildTextSpan] is the one hook a field gives for
+/// styling ranges of its own content, and unlike the field's selection it is
+/// painted whether or not the field has focus — which is the whole reason find
+/// highlights use it: while the user is typing a query, focus is in the find
+/// field, and an unfocused [TextField] paints no selection at all.
+class _HighlightingTextEditingController extends TextEditingController {
+  _HighlightingTextEditingController({super.text});
+
+  List<TextRange> matches = const <TextRange>[];
+  int activeMatch = -1;
+  TextStyle? matchStyle;
+  TextStyle? activeMatchStyle;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (matches.isEmpty) {
+      return super.buildTextSpan(
+        context: context,
+        style: style,
+        withComposing: withComposing,
+      );
+    }
+    // The composing underline is dropped while matches are shown: an IME
+    // composition and a highlight over the same characters would fight for the
+    // same span, and the highlight is what the user is looking at.
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    for (var i = 0; i < matches.length; i++) {
+      // Clamp: the text can change between a search and the next repaint.
+      final start = matches[i].start.clamp(0, text.length);
+      final end = matches[i].end.clamp(start, text.length);
+      if (start < cursor) continue;
+      if (start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, start)));
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(start, end),
+          style: i == activeMatch ? activeMatchStyle : matchStyle,
+        ),
+      );
+      cursor = end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+    return TextSpan(style: style, children: spans);
   }
 }

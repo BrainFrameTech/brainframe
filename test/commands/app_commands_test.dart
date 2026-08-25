@@ -165,4 +165,62 @@ void main() {
       reason: 'a publisher only writes; it must not rebuild on its own writes',
     );
   });
+
+  group('find, which has a publisher of its own', () {
+    test('the two channels do not clear each other', () {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      void find() {}
+
+      commands.publishFind(find);
+      commands.publish(newNote: () {}); // the browser re-publishing its own
+      expect(commands.find, same(find), reason: 'Find is not the browser\'s');
+
+      commands.publishFind(null);
+      expect(commands.newNote, isNotNull);
+    });
+
+    test('it notifies only when availability changes', () {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      var notifications = 0;
+      commands.addListener(() => notifications++);
+
+      commands.publishFind(() {});
+      expect(notifications, 1);
+      commands.publishFind(() {}); // a different, equally available callback
+      expect(notifications, 1);
+      commands.publishFind(null);
+      expect(notifications, 2);
+    });
+
+    test('withdrawing is scoped to the pane that published it', () {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      void outgoing() {}
+      void incoming() {}
+
+      commands.publishFind(outgoing);
+      commands.publishFind(incoming); // the next pane mounts first…
+      commands.withdrawFind(outgoing); // …and only then does this one go
+
+      expect(
+        commands.find,
+        same(incoming),
+        reason: 'a departing pane must not withdraw its successor',
+      );
+
+      commands.withdrawFind(incoming);
+      expect(commands.find, isNull);
+    });
+
+    test('withdrawing after dispose is quietly accepted', () {
+      final commands = AppCommands();
+      void find() {}
+      commands.publishFind(find);
+      commands.dispose();
+
+      expect(() => commands.withdrawFind(find), returnsNormally);
+    });
+  });
 }

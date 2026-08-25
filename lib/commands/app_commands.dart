@@ -20,13 +20,18 @@ class OpenPreferencesIntent extends Intent {
   const OpenPreferencesIntent();
 }
 
+/// Opens the find bar for the document on screen.
+class FindInPageIntent extends Intent {
+  const FindInPageIntent();
+}
+
 /// The app-wide commands the desktop menu bar and its hotkeys invoke.
 ///
 /// The menu bar lives above the [Navigator] (so it stays put across routes and
 /// under dialogs), which puts it out of reach of the screens that actually
 /// perform these actions. This is the seam between them: the engram browser
-/// publishes what it can currently do, and the menu bar renders each item
-/// enabled or greyed accordingly. A command is null when it is unavailable —
+/// publishes what it can currently do (and the open document pane publishes
+/// [find]), and the menu bar renders each item enabled or greyed accordingly. A command is null when it is unavailable —
 /// before the browser has mounted, or for a read-only engram, which cannot be
 /// written to at all.
 class AppCommands extends ChangeNotifier {
@@ -42,11 +47,18 @@ class AppCommands extends ChangeNotifier {
   VoidCallback? _help;
   VoidCallback? _about;
 
+  VoidCallback? _find;
+
   VoidCallback? get newNote => _newNote;
   VoidCallback? get newFolder => _newFolder;
   VoidCallback? get preferences => _preferences;
   VoidCallback? get help => _help;
   VoidCallback? get about => _about;
+
+  /// Opens find-in-page for the document on screen, or null when nothing on
+  /// screen can be searched (no file open, a format with no text, or a viewer
+  /// that has no find of its own).
+  VoidCallback? get find => _find;
 
   /// Publishes the browser's commands, passing null for each one that is not
   /// available right now.
@@ -77,9 +89,33 @@ class AppCommands extends ChangeNotifier {
     if (changed && !_disposed) notifyListeners();
   }
 
-  /// Withdraws every command — used when the publisher unmounts, so the menu
-  /// never holds a callback into a dead widget.
+  /// Publishes find-in-page, or null when it is unavailable.
+  ///
+  /// A channel of its own because it has a different owner: Find belongs to the
+  /// document pane on screen, which mounts and unmounts independently of the
+  /// browser that publishes everything else. [publish] therefore leaves it
+  /// alone, and this leaves [publish]'s commands alone.
+  void publishFind(VoidCallback? find) {
+    final changed = (_find == null) != (find == null);
+    _find = find;
+    if (changed && !_disposed) notifyListeners();
+  }
+
+  /// Withdraws every command published by [publish] — used when that publisher
+  /// unmounts, so the menu never holds a callback into a dead widget. Find has
+  /// its own owner, and therefore its own [withdrawFind].
   void withdraw() => publish();
+
+  /// Withdraws the find command [owner] published, used when that document
+  /// pane unmounts.
+  ///
+  /// It is a no-op if something else has published a different one since:
+  /// Flutter mounts a replacement *before* unmounting what it replaced, so a
+  /// pane handing over to the next one would otherwise withdraw the incoming
+  /// pane's Find rather than its own.
+  void withdrawFind(VoidCallback owner) {
+    if (_find == owner) publishFind(null);
+  }
 
   @override
   void dispose() {

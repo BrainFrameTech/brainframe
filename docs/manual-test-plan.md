@@ -322,8 +322,8 @@ format" message naming the file. No crash, no blank pane.
 **Steps:**
 
 1. Open a **writable** engram; select a `.md` file. It opens in **Edit** mode.
-2. Confirm the header shows a breadcrumb, a save-status chip, and an
-   **Edit/Preview** segmented control.
+2. Confirm the header shows a breadcrumb, a **magnifying glass** (F27), a
+   save-status chip, and an **Edit/Preview** segmented control.
 3. Type a new heading in the source.
 4. Switch to **Preview**.
 5. Switch back to **Edit**.
@@ -338,7 +338,8 @@ snapshot.
 | ✓ | ✓ | ✓ | ✓ (on-screen keyboard) | ✓ | ✓ | ✓ but see e-ink editor open item — live keystrokes are the unsolved panel case |
 
 - **Read-only engram:** N/A — a built-in engram shows the reader with **no**
-  toggle and no chip (verify the absence explicitly; F17 checks chrome).
+  toggle, no chip and no magnifying glass (verify the absence explicitly; F17
+  checks chrome).
 - **Declarative-trap probe:** toggle Edit→Preview→Edit without typing — the
   editor must show the same text each time (buffer is source of truth), and
   Preview must reflect the last edit, not a cached render.
@@ -807,9 +808,11 @@ Quit (Cmd+Q) live in the **BrainFrame** application menu, not under File/Edit.
 9. **File ▸ Quit**, then relaunch and quit again with **Ctrl/Cmd+Q**.
 
 **Expected:** File holds New note / New folder / Quit; Edit holds Cut / Copy /
-Paste / Select all / Preferences; Help holds Help / About — with the macOS
-re-layout above. Every item that has an accelerator displays it, Select all
-included (**Ctrl+A**, Cmd+A on macOS).
+Paste / Select all / **Find…** / Preferences (Find sits between separators, as
+it acts on the document rather than the focused field); Help holds Help / About
+— with the macOS re-layout above. Every item that has an accelerator displays
+it, Select all included (**Ctrl+A**, Cmd+A on macOS) and Find (**Ctrl+F**,
+Cmd+F on macOS — F27).
 Step 2: New note and New folder are **greyed out** for a read-only engram
 (nothing can be written there), while Quit stays enabled. Steps 3–4 create
 beside the open file, exactly as the sidebar buttons do (F11 step 6). Step 6
@@ -942,6 +945,72 @@ built-in engrams are read-only here.
 - **State survival:** the rename persists across an app restart, and the engram
   reopens under its new name (F1).
 
+### F27 — Find in page (the open document)
+
+**Steps:**
+
+1. Open a writable `.md` file with a word that occurs several times. Click the
+   **magnifying glass** in the editor header. A **Find** bar appears under the
+   header with the caret in it.
+2. Type a few letters. Watch the counter and the document.
+3. Press **Enter** repeatedly, then **Shift+Enter** repeatedly, past both ends
+   of the list.
+4. Type a query that matches **nothing**.
+5. Type a query in the *other* case (e.g. `MARSH` for "Marsh").
+6. Press **Escape**. Look at where the caret is, and type a character.
+7. Reopen find with **Ctrl+F** (Cmd+F on macOS), and again from **Edit ▸
+   Find…**. Look at the query field.
+8. With find open, type into the **document** so a new match appears (and so one
+   disappears). Watch the counter.
+9. With find open, select a **different file** in the tree.
+10. Switch to **Preview**, then press **Ctrl/Cmd+F**.
+11. Open an **image** or an unsupported file (F7, F8), then open **Edit** in the
+    menu bar. Do the same with a **read-only** engram open.
+12. Search for something far down a long file and step to it.
+
+**Expected:**
+
+- Every match is highlighted at once; the **current** one is highlighted
+  differently from the rest, and the counter reads `3 of 12`.
+- Enter steps forward, Shift+Enter back, and both **wrap** around the ends. The
+  caret stays in the find field the whole time — Enter works more than once.
+- No match: the counter reads **"No results"**, the ▲/▼ steppers grey out, and
+  nothing in the document is highlighted.
+- Matching is **case-insensitive**: `MARSH` finds "Marsh".
+- Escape closes the bar and leaves the caret **on the match you stopped at**,
+  selected — typing replaces it. With no match, the document is left alone.
+- Reopening offers the **previous query, selected**, so typing replaces it; the
+  count is recomputed against the file that is open now.
+- Editing the document with find open keeps the count **current**, and the
+  highlight does not drift off the text it belongs to.
+- Selecting another file re-runs the same query against the new file.
+- Find works on the **source**, so opening it from Preview switches back to
+  **Edit** first.
+- Step 11: **Edit ▸ Find…** is **greyed out** — an image, an unsupported format
+  and a read-only engram have no searchable document pane. Ctrl/Cmd+F there does
+  nothing (and is not swallowed).
+- Step 12: stepping to an off-screen match **scrolls it into view** without
+  animating (an e-ink-friendly jump).
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ (Cmd+F; menu item under **Edit**) | ✓ | ✓ via the magnifying glass; **N/A** for the menu item (no menu bar, F24) and for the hotkey unless a hardware keyboard is attached | ✓ as Android | ✓ as Android | ✓ for the button and the stepping; typing a query is the same unsolved live-keystroke case as F9 |
+
+- **Read-only engrams:** find is deliberately **not** offered there today — it
+  lives on the editor header, which the reader has no equivalent of. Searching a
+  built-in guide (and searching a whole engram) is still in
+  [Not yet testable](#not-yet-testable-the-frontier).
+- **Layout switch:** narrow the window past the 720 px breakpoint with find
+  open. The bar closes with the layout change; reopen it from the glass. (A
+  divider drag, which does *not* cross the breakpoint, leaves it alone.)
+- **A11y:** the query field announces its **Find** label; the counter is a live
+  region, so a screen reader hears `3 of 12` change as you type; the glass, both
+  steppers and the close button all announce a label and their enabled state,
+  and the glass announces itself as **toggled** while the bar is open.
+- **Declarative-trap probe:** step 8 is the interesting one — the highlights are
+  painted from ranges recomputed on every keystroke, so a stale highlight
+  hanging over text that has since moved is a real bug.
+
 ---
 
 ## Bug-class deep-dives
@@ -1065,7 +1134,7 @@ cases for these until the code exists.
 | **Wikilinks `[[…]]` & backlinks** | Explicitly out of scope in the markdown-editing plan; only relative-path Markdown links resolve (F6). |
 | **Graph view** | Obsidian-style graph is vision-level; no widget exists. |
 | **Tagging** | No tag parsing, tag UI, or tag index in code. |
-| **Search / full-text find** | No search field or index in the browser. |
+| **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which has no editor header to hang it on. |
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
 | **Sync / multi-device** | No sync layer; engrams are local folders. |

@@ -65,6 +65,7 @@ void main() {
     VoidCallback? preferences,
     VoidCallback? help,
     VoidCallback? about,
+    VoidCallback? find,
   }) {
     final commands = AppCommands()
       ..publish(
@@ -73,7 +74,8 @@ void main() {
         preferences: preferences,
         help: help,
         about: about,
-      );
+      )
+      ..publishFind(find);
     addTearDown(commands.dispose);
     return commands;
   }
@@ -461,6 +463,46 @@ void main() {
 
       expect(opened, 1);
     });
+
+    testWidgets('Find opens the document find bar and shows Ctrl+F', (
+      tester,
+    ) async {
+      var finds = 0;
+      await tester.pumpWidget(
+        harness(
+          publishedCommands(find: () => finds++),
+          platform: TargetPlatform.linux,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+      expect(
+        itemNamed(tester, 'Find…').shortcut,
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true),
+      );
+      await tester.tap(find.text('Find…'));
+      await tester.pumpAndSettle();
+
+      expect(finds, 1);
+    });
+
+    testWidgets('Find greys out when nothing on screen can be searched', (
+      tester,
+    ) async {
+      // No document pane mounted — an image, an unsupported format, or nothing
+      // selected at all.
+      await tester.pumpWidget(
+        harness(publishedCommands(), platform: TargetPlatform.linux),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+
+      expect(itemNamed(tester, 'Find…').onPressed, isNull);
+    });
   });
 
   group('the Help menu', () {
@@ -523,7 +565,13 @@ void main() {
       expect(labelsOf(menus), ['BrainFrame', 'File', 'Edit', 'Help']);
       expect(labelsOf(menus[0].menus), ['About', 'Preferences', 'Quit']);
       expect(labelsOf(menus[1].menus), ['New note', 'New folder']);
-      expect(labelsOf(menus[2].menus), ['Cut', 'Copy', 'Paste', 'Select all']);
+      expect(labelsOf(menus[2].menus), [
+        'Cut',
+        'Copy',
+        'Paste',
+        'Select all',
+        'Find…',
+      ]);
       expect(labelsOf(menus[3].menus), ['Help']);
     });
 

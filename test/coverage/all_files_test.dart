@@ -39,6 +39,7 @@ import 'package:brainframe/engram/ui/file_path_breadcrumb.dart';
 import 'package:brainframe/engram/ui/file_tree.dart';
 import 'package:brainframe/engram/ui/file_tree_node.dart';
 import 'package:brainframe/engram/ui/file_viewer.dart';
+import 'package:brainframe/engram/ui/find_in_page.dart';
 import 'package:brainframe/engram/ui/folder_picker.dart';
 import 'package:brainframe/engram/ui/help_overlay.dart';
 import 'package:brainframe/engram/ui/markdown_editor_pane.dart';

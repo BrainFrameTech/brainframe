@@ -1,3 +1,5 @@
+import 'dart:ui' show Size;
+
 import 'package:args/args.dart';
 
 /// Startup options parsed from the process command line.
@@ -8,11 +10,12 @@ import 'package:args/args.dart';
 /// every platform (an empty list yields the default behavior).
 ///
 /// These options exist for development and testing. See [engramPath],
-/// [ignoreConfig], and [showHelp].
+/// [ignoreConfig], [windowSize], and [showHelp].
 class StartupOptions {
   const StartupOptions({
     this.engramPath,
     this.ignoreConfig = false,
+    this.windowSize,
     this.showHelp = false,
   });
 
@@ -30,17 +33,35 @@ class StartupOptions {
   /// engram, window geometry, and theme are neither loaded nor overwritten.
   final bool ignoreConfig;
 
+  /// An explicit startup size for the desktop window
+  /// (`--window-size <W>x<H>`), overriding both the remembered geometry and
+  /// the built-in default. Null when the flag is absent, malformed, or
+  /// non-positive.
+  ///
+  /// The override is transient in both directions: a session started with it
+  /// neither restores the saved geometry nor records the one it was given, so
+  /// a size chosen for a screen recording never becomes the size the app
+  /// opens at afterwards. Sizes below the window's minimum are clamped by the
+  /// window manager, not rejected here.
+  final Size? windowSize;
+
   /// Print [usage] and exit without starting the app (`--help` or `-h`). When
   /// set it takes precedence over every other option.
   final bool showHelp;
 
   /// Parses [args] with [ArgParser], recognizing `--engram <path>` /
-  /// `--engram=<path>`, `--ignore-config`, and `--help` / `-h`.
+  /// `--engram=<path>`, `--ignore-config`, `--window-size <W>x<H>`, and
+  /// `--help` / `-h`.
   ///
   /// Never throws: if [args] can't be parsed — an unknown option, a malformed
   /// value — it falls back to defaults so a stray or injected argument can never
   /// stop the app from launching. (Bare positional arguments are simply ignored
   /// and do not trigger the fallback.)
+  ///
+  /// A malformed `--window-size` value is dropped on its own rather than
+  /// discarding the whole command line: the other options were still spelled
+  /// correctly, and losing `--ignore-config` over a typo in an unrelated flag
+  /// would be the more damaging failure.
   factory StartupOptions.parse(List<String> args) {
     final ArgResults results;
     try {
@@ -53,6 +74,7 @@ class StartupOptions {
     return StartupOptions(
       engramPath: (engram != null && engram.isNotEmpty) ? engram : null,
       ignoreConfig: results['ignore-config'] as bool,
+      windowSize: _parseWindowSize(results['window-size'] as String?),
       showHelp: results['help'] as bool,
     );
   }
@@ -88,9 +110,34 @@ final ArgParser _parser = ArgParser(usageLineLength: 80)
         'registry, last-opened engram, window geometry, and theme. Handy for '
         'a clean-slate testing session.',
   )
+  ..addOption(
+    'window-size',
+    valueHelp: 'WxH',
+    help: 'Open the window at <W>x<H> logical pixels (e.g. 1600x1000) instead '
+        'of the remembered size. Transient: the saved geometry is neither '
+        'read nor overwritten, so a size used for a recording does not '
+        'become the size the app opens at next time.',
+  )
   ..addFlag(
     'help',
     abbr: 'h',
     negatable: false,
     help: 'Print this message and exit.',
   );
+
+/// Parses a `<width>x<height>` value into a [Size], or null if it is absent or
+/// does not describe a positive whole-pixel size.
+///
+/// Deliberately strict — `1600x1000` only. Accepting decimals or stray
+/// whitespace would invite values that survive parsing but land the window
+/// somewhere unintended, and a rejected value degrades to the ordinary startup
+/// size rather than to something surprising.
+Size? _parseWindowSize(String? value) {
+  if (value == null) return null;
+  final match = RegExp(r'^(\d+)[xX](\d+)$').firstMatch(value);
+  if (match == null) return null;
+  final width = int.parse(match.group(1)!);
+  final height = int.parse(match.group(2)!);
+  if (width <= 0 || height <= 0) return null;
+  return Size(width.toDouble(), height.toDouble());
+}

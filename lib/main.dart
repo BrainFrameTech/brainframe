@@ -39,8 +39,9 @@ Future<void> main(List<String> args) async {
 
   // Restore the desktop window's size/position before the first frame.
   // No-op on web and mobile. With --ignore-config nothing is saved to restore,
-  // so the window opens at its default geometry.
-  await initWindowManager();
+  // so the window opens at its default geometry. An explicit --window-size
+  // overrides both, and is neither restored from nor written back.
+  await initWindowManager(startupSize: options.windowSize);
 
   // The engram registry lives in shared preferences; user engrams sit in the
   // app documents container by default. On web the container resolver throws,

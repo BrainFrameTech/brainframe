@@ -815,9 +815,15 @@ remembered geometry; unparseable args degrade to defaults.
   opened. What it is really testing is that the *next* ordinary launch is
   unchanged.
 - **`./brainframe.sh` bundles the flags** for the fixture + clean-slate case and
-  pins the window to appshot's 1600x1000 at scale 1, so a screen recording
-  matches the captures in `tool/appshot.sh`. It is a convenience, not a
-  substitute for running the flags by hand in steps 1-7.
+  asks for a 1600x1000 window. It is a convenience, not a substitute for running
+  the flags by hand in steps 1-7.
+- **It is not the tool for screenshots or recordings.** On a Wayland desktop the
+  compositor owns the scale factor, so the same 1600x1000 window is captured at
+  whatever resolution the desktop's scaling implies — 3200x2000 at 1.5x, since
+  GTK3 has no fractional scaling and the compositor rounds up. For captures that
+  match the visual-verification screenshots, use `tool/appshot.sh drive` and
+  `tool/appshot.sh record`, which run on a private X server where 1600x1000
+  means 1600x1000.
 
 ### F24 — Desktop menu bar & its hotkeys
 

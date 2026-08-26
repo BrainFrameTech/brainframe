@@ -60,10 +60,54 @@ Other sharp edges the script encodes so nobody re-derives them:
   so `APPSHOT_WM=none` is a clean A/B for "does this depend on window
   management?" and never moves the target.
 
+## Driving it yourself, and recording
+
+`launch` and `watch` export the display read-only on purpose. When *you* are the
+one at the controls — a demo, a screen recording, a stream — that is the wrong
+default, so `drive` re-exports the same display read-write and opens the viewer:
+
+```bash
+tool/appshot.sh drive          # viewer is now read-write; work the app by hand
+tool/appshot.sh record         # start capturing; prints the .mp4 path
+tool/appshot.sh stop-record    # finalize the file
+```
+
+A server already running in the other mode is restarted rather than reused.
+Handing back a view-only session to someone who asked to drive would present as
+"my clicks do nothing", which is precisely the class of silent failure this tool
+exists to avoid.
+
+**Why record here rather than on your desktop.** A recording of your own session
+cannot be made to match the screenshots, because on Wayland the compositor owns
+the scale factor and the app does not get a say:
+
+- `GDK_SCALE` / `GDK_DPI_SCALE` are X11-era variables. A Wayland compositor
+  ignores them, so they cannot pin the device pixel ratio there. They work on
+  the private display precisely because it is a real X server with no
+  compositor.
+- GTK3 has no fractional scaling. At a fractional desktop scale the compositor
+  rounds *up* to the next integer buffer scale, so a 1600x1000 window is handed
+  to the recorder as 3200x2000 — the right window at the wrong resolution.
+
+On the private display none of that applies: 1600x1000 means 1600x1000, and the
+same numbers come out on any machine.
+
+**The video and the PNGs cover the same pixels.** `record` grabs the window's
+own rectangle, read from `xwininfo`, so a frame of the video and a `shot` of the
+same moment are the same image. Use `xwininfo` and not
+`xdotool getwindowgeometry` if you ever touch this: xdotool reports an origin one
+pixel off from the client's absolute position, and one pixel is invisible
+side-by-side while putting the video on different pixels than the screenshots
+(~20dB PSNR against `shot` output, versus ~47dB once aligned).
+
+**What it is not good for.** The private display has no GPU — Flutter renders in
+software. That suits this app, whose e-ink constraint rules out animation
+anyway, but it would not suit capturing something heavily animated.
+
 ## Requirements
 
 ```bash
-sudo apt install xvfb x11-utils xdotool maim openbox x11vnc remmina
+sudo apt install xvfb x11-utils xdotool maim openbox x11vnc remmina ffmpeg
 ```
 
 Plus the Flutter Linux desktop toolchain (already needed to build the app).
@@ -80,9 +124,11 @@ required for the app itself — that part works over SSH and in CI.
 `launch` exports the private display over VNC and opens remmina on your real
 desktop, so you can watch the app being driven:
 
-- The x11vnc server is **view-only** and bound to **localhost**. You can watch
-  but not type or click, which is deliberate — it preserves the isolation the
-  private display bought. To interact, drive through the subcommands.
+- The x11vnc server started by `launch`/`watch` is **view-only** and bound to
+  **localhost**. You can watch but not type or click, which is deliberate — it
+  preserves the isolation the private display bought, so watching an automated
+  run cannot perturb it. To interact, drive through the subcommands — or take
+  the controls yourself with `drive` (below).
 - `tool/appshot.sh watch` reopens the viewer if you closed it.
 - `APPSHOT_VIEW=0` disables it; `APPSHOT_VNC_PORT` changes the port (5900).
 - x11vnc decides it is "on Wayland" from `WAYLAND_DISPLAY` /
@@ -108,14 +154,19 @@ tool/appshot.sh key NAME [OUT]         # send a key/combo (Escape, ctrl+a), capt
 tool/appshot.sh type TEXT [OUT]        # type literal text, capture
 tool/appshot.sh resize W H [OUT]       # resize the window, capture
 tool/appshot.sh watch                  # (re)open the view-only VNC viewer
+tool/appshot.sh drive [PROJECT_DIR]    # open the viewer read-write, to drive by hand
+tool/appshot.sh record [OUT]           # start recording the app region to OUT (mp4)
+tool/appshot.sh stop-record            # stop recording and finalize the file
 tool/appshot.sh deps                   # check dependencies, print the apt line
 tool/appshot.sh status                 # state of every moving part
 tool/appshot.sh quit                   # tear down viewer, VNC, app, WM, display
 ```
 
-`status` reports `display= wm= running= window= vnc= viewer=`. `viewer=` is a
-live TCP connection to the VNC port, not a process we started — remmina hands
-off to its own daemon and exits, so its pid proves nothing.
+`status` reports
+`display= wm= running= window= vnc= mode= viewer= recording=`. `mode=` is which
+mode the VNC server is in (`view`, `drive`, or `-` when it is not running).
+`viewer=` is a live TCP connection to the VNC port, not a process we started —
+remmina hands off to its own daemon and exits, so its pid proves nothing.
 
 - Capturing subcommands print the PNG path on stdout.
 - **Coordinates are 1:1.** The window is moved to the origin at a fixed

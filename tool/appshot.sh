@@ -13,10 +13,17 @@
 # (view-only) and opens remmina on your real desktop, so the run is visible live
 # without your pointer being able to disturb it. `quit` tears all of it down.
 #
+# You can also take the controls yourself. `drive` re-exports the same display
+# read-write, so you work the app by hand at exactly the geometry the
+# screenshots are taken at, and `record` captures that display to a video file.
+# A recording made this way is framed identically to `shot` output — same
+# window, same origin, same 1:1 pixels — which no capture of your desktop
+# session can promise, because there the compositor owns the scale factor.
+#
 # Linux only. Run from the repo root as `tool/appshot.sh …`, or by absolute path
 # from anywhere.
 #
-#   sudo apt install xvfb x11-utils xdotool maim openbox x11vnc remmina
+#   sudo apt install xvfb x11-utils xdotool maim openbox x11vnc remmina ffmpeg
 #
 # `tool/appshot.sh deps` checks these and prints exactly that line for whatever
 # is missing. The window manager and the viewer are only required when they are
@@ -35,6 +42,9 @@
 #   tool/appshot.sh type TEXT [OUT]        # type literal text, settle, shot
 #   tool/appshot.sh resize W H [OUT]       # resize the window to W×H px, settle, shot
 #   tool/appshot.sh watch                  # (re)open the view-only VNC viewer
+#   tool/appshot.sh drive                  # (re)open the viewer read-write, to drive by hand
+#   tool/appshot.sh record [OUT]           # start recording the app region to OUT (mp4)
+#   tool/appshot.sh stop-record            # stop recording and finalize the file
 #   tool/appshot.sh deps                   # check dependencies, print the apt line
 #   tool/appshot.sh status                 # print the state of every moving part
 #   tool/appshot.sh quit                   # tear down viewer, VNC, app, WM, display
@@ -46,6 +56,13 @@
 #   APPSHOT_WM       window manager, or `none` (default openbox)
 #   APPSHOT_VIEW     1 to auto-open the viewer, 0 for headless (default 1)
 #   APPSHOT_VNC_PORT VNC port (default 5900)
+#   APPSHOT_FPS      recording frame rate (default 30)
+#
+# Recording notes: `record` grabs the window's own rectangle, so the video and
+# the PNGs from `shot` cover exactly the same pixels. The private display has no
+# GPU — Flutter renders in software here — which suits this app (its e-ink
+# constraint rules out animation anyway) but would not suit capturing something
+# heavily animated.
 #
 # Each capturing command prints the PNG path on stdout. Window pixels map 1:1 to
 # the coordinates you pass: the window is moved to the screen origin at launch
@@ -141,16 +158,23 @@ readonly OPENBOX_RC
 # desktop) where starting a viewer would be pointless or impossible.
 readonly APPSHOT_VIEW="${APPSHOT_VIEW:-1}"
 readonly VNC_PORT="${APPSHOT_VNC_PORT:-5900}"
+readonly REC_FPS="${APPSHOT_FPS:-30}"
 
 readonly STATE_DIR="${TMPDIR:-/tmp}/brainframe-appshot"
 readonly PIDFILE="$STATE_DIR/app.pid"
 readonly XVFB_PIDFILE="$STATE_DIR/xvfb.pid"
 readonly WM_PIDFILE="$STATE_DIR/wm.pid"
 readonly VNC_PIDFILE="$STATE_DIR/x11vnc.pid"
+readonly REC_PIDFILE="$STATE_DIR/ffmpeg.pid"
+# Which mode the running x11vnc was started in, so `watch` and `drive` can tell
+# whether the server they found is the one they need (see start_viewer).
+readonly VNC_MODEFILE="$STATE_DIR/vnc.mode"
 readonly RUNLOG="$STATE_DIR/run.log"
 readonly XVFB_LOG="$STATE_DIR/xvfb.log"
 readonly WM_LOG="$STATE_DIR/wm.log"
 readonly VNC_LOG="$STATE_DIR/x11vnc.log"
+readonly REC_LOG="$STATE_DIR/ffmpeg.log"
+readonly REC_OUTFILE="$STATE_DIR/recording.path"
 readonly VIEWER_LOG="$STATE_DIR/viewer.log"
 readonly MAIM_ERR="$STATE_DIR/maim.err"
 readonly DEFAULT_OUT="$STATE_DIR/shot.png"
@@ -172,9 +196,12 @@ log() { printf 'appshot: %s\n' "$*" >&2; }
 # are actually switched on, so a headless run needs neither.
 #
 # binary:package pairs (the two differ often enough to be worth spelling out).
-readonly CORE_DEPS='Xvfb:xvfb xdpyinfo:x11-utils xdotool:xdotool maim:maim'
+readonly CORE_DEPS='Xvfb:xvfb xdpyinfo:x11-utils xwininfo:x11-utils xdotool:xdotool maim:maim'
 readonly WM_DEPS='openbox:openbox'
 readonly VIEW_DEPS='x11vnc:x11vnc remmina:remmina'
+# Only needed to record; a launch/shot workflow never touches ffmpeg, so this
+# tier is checked by `record` and reported by `deps`, never required by launch.
+readonly REC_DEPS='ffmpeg:ffmpeg'
 
 # Print the missing packages for the given binary:package list, if any.
 missing_pkgs() {
@@ -202,6 +229,7 @@ alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
 # Is our VNC server listening, and is anyone actually watching through it?
 vnc_up() { ss -ltn 2>/dev/null | grep -q ":$VNC_PORT[[:space:]]"; }
+recording() { alive "$REC_PIDFILE"; }
 viewer_connected() {
   ss -tn state established 2>/dev/null | grep -q ":$VNC_PORT[[:space:]]"
 }
@@ -277,23 +305,47 @@ start_wm() {
 
 # Export the private display over VNC and open the viewer on the real one.
 #
-# -viewonly is the point: the human watches without being able to inject input,
-# so watching a run cannot perturb it. That preserves exactly the property the
-# private display bought us. -localhost keeps it off the network.
+# Two modes, and the difference matters:
+#
+#   view  (default) -viewonly. The human watches but cannot inject input, so
+#         watching an automated run cannot perturb it. This preserves exactly
+#         the property the private display bought us, and is why it stays the
+#         default for `launch` and `watch`.
+#   drive           read-write, for `drive`. The human *is* the driver — for a
+#         screen recording or a live demo — so input has to reach the app. The
+#         isolation that still matters here is the other direction: the app sits
+#         on its own display at a fixed geometry, so a recording is reproducible
+#         and your desktop's scale factor never enters into it.
+#
+# -localhost keeps it off the network in both modes.
+#
+# A server already running in the *other* mode is replaced rather than reused:
+# silently handing back a view-only session to someone who asked to drive is the
+# kind of failure that reads as "my clicks do nothing", which is precisely the
+# symptom this tool exists never to produce.
 start_viewer() {
+  local mode="${1:-view}" viewonly=()
+  [ "$mode" = view ] && viewonly=(-viewonly)
   [ "$APPSHOT_VIEW" = 1 ] || return 0
+  if vnc_up && [ "$(cat "$VNC_MODEFILE" 2>/dev/null)" != "$mode" ]; then
+    log "VNC is up in another mode; restarting it as $mode…"
+    stop_pidfile "$VNC_PIDFILE"
+    local _
+    for _ in $(seq 1 20); do vnc_up || break; sleep 0.25; done
+  fi
   if ! vnc_up; then
     command -v x11vnc >/dev/null || { log "x11vnc not installed"; return 1; }
-    log "exporting $APPSHOT_DISPLAY over VNC on localhost:$VNC_PORT (view-only)…"
+    log "exporting $APPSHOT_DISPLAY over VNC on localhost:$VNC_PORT ($mode)…"
     # x11vnc refuses to start if it *thinks* it is on Wayland — and it decides
     # that from WAYLAND_DISPLAY/XDG_SESSION_TYPE in the environment, never
     # looking at the display it was actually handed. Inheriting the desktop's
     # session variables therefore kills it on a pure X display, with an error
     # about Wayland that has nothing to do with :99. Scrub them.
+    printf '%s' "$mode" >"$VNC_MODEFILE"
     spawn "$VNC_PIDFILE" "$VNC_LOG" \
       env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 \
       x11vnc -display "$APPSHOT_DISPLAY" -rfbport "$VNC_PORT" \
-        -localhost -viewonly -nopw -forever -shared
+        -localhost "${viewonly[@]}" -nopw -forever -shared
     local _
     for _ in $(seq 1 40); do
       vnc_up && break
@@ -315,6 +367,87 @@ start_viewer() {
     DISPLAY="$HOST_DISPLAY" setsid nohup \
       remmina -c "vnc://localhost:$VNC_PORT" >"$VIEWER_LOG" 2>&1 &
   fi
+  return 0
+}
+
+# Start recording the app's own rectangle to a video file.
+#
+# The region comes from the live window geometry rather than WIN_W/H, so a
+# session that was resized records what is actually on screen — and so the video
+# covers exactly the pixels `shot` would capture. That equivalence is the whole
+# point: a recording and a screenshot of the same moment are the same image.
+#
+# ffmpeg is stopped with SIGINT, never SIGKILL, because only a clean shutdown
+# writes the trailer that makes an mp4 playable. See stop_record.
+start_record() {
+  local out="${1:-}"
+  recording && { log "already recording ($(cat "$REC_OUTFILE" 2>/dev/null))"; return 1; }
+  command -v ffmpeg >/dev/null || {
+    log "ffmpeg not installed (sudo apt install ffmpeg)"; return 69; }
+
+  local wid; wid=$(find_window)
+  [ -n "$wid" ] || { log "no ${APP_TITLE} window — launch first"; return 1; }
+
+  # xwininfo, not `xdotool getwindowgeometry`. xdotool reports an origin one
+  # pixel off from the client's own absolute position here, and a one-pixel
+  # shift is invisible in a side-by-side yet puts the video and the PNGs on
+  # different pixels — measured at ~20dB PSNR against `shot` output versus
+  # ~47dB once aligned. Silent misalignment is the failure mode this whole tool
+  # exists to avoid, so read the origin from the authority.
+  local x y w h
+  eval "$(xwininfo -id "$wid" | awk '
+    /Absolute upper-left X/ { print "x=" $NF }
+    /Absolute upper-left Y/ { print "y=" $NF }
+    /^  Width:/             { print "w=" $NF }
+    /^  Height:/            { print "h=" $NF }')"
+  [ -n "${x:-}" ] && [ -n "${w:-}" ] || {
+    log "could not read window geometry from xwininfo"; return 1; }
+
+  if [ -z "$out" ]; then
+    local n=1
+    while [ -e "$STATE_DIR/recording-$n.mp4" ]; do n=$((n + 1)); done
+    out="$STATE_DIR/recording-$n.mp4"
+  fi
+  printf '%s' "$out" >"$REC_OUTFILE"
+
+  log "recording ${w}x${h} at +${x},${y} on $APPSHOT_DISPLAY at ${REC_FPS}fps…"
+  # yuv420p is what players and streaming platforms expect, and it requires even
+  # dimensions — pad rather than fail on an odd-sized window.
+  spawn "$REC_PIDFILE" "$REC_LOG" \
+    ffmpeg -y -f x11grab -draw_mouse 1 -framerate "$REC_FPS" \
+      -video_size "${w}x${h}" -i "${APPSHOT_DISPLAY}+${x},${y}" \
+      -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' \
+      -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p "$out"
+
+  local _
+  for _ in $(seq 1 20); do
+    recording && { echo "$out"; return 0; }
+    sleep 0.25
+  done
+  log "ffmpeg did not start — tail of $REC_LOG:"; tail -n 10 "$REC_LOG" >&2
+  return 1
+}
+
+# Stop recording and wait for the file to be finalized.
+#
+# SIGINT (not the SIGTERM stop_pidfile sends, and certainly not SIGKILL) is what
+# makes ffmpeg flush and write the moov atom. Killed any other way the file is
+# unplayable, which you discover long after the take is gone.
+stop_record() {
+  recording || { log "not recording"; return 0; }
+  local pid out; pid=$(cat "$REC_PIDFILE"); out=$(cat "$REC_OUTFILE" 2>/dev/null)
+  kill -INT "$pid" 2>/dev/null
+  local _
+  for _ in $(seq 1 40); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.25
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    log "warning: ffmpeg did not exit after SIGINT; the file may be unplayable"
+    kill "$pid" 2>/dev/null
+  fi
+  rm -f "$REC_PIDFILE"
+  [ -n "$out" ] && echo "$out"
   return 0
 }
 
@@ -441,8 +574,12 @@ point_at() {
 # loop until nothing is left — so no ad-hoc cleanup (bare pkill/pgrep) is ever
 # needed outside this allowlisted script.
 quit_app() {
-  # Outside-in: the VNC server first, then the app, the WM, and finally the
-  # display everything else was sitting on.
+  # A recording first, and gracefully: killing the app out from under ffmpeg
+  # would leave the take without its trailer, i.e. unplayable.
+  stop_record >/dev/null
+
+  # Then outside-in: the VNC server, the app, the WM, and finally the display
+  # everything else was sitting on.
   #
   # Remmina is deliberately left alone. It is single-instance, so the session is
   # held inside the user's own `remmina -i` daemon — killing that would close
@@ -517,8 +654,25 @@ case "$cmd" in
           xdotool windowsize "$wid" "$1" "$2"; sleep 1; capture "${3:-}" ;;
   watch)  check_deps || exit $?
           start_xvfb || exit 1
-          start_viewer || exit 1 ;;
-  deps)   if check_deps; then log "all dependencies present"; else exit $?; fi ;;
+          start_viewer view || exit 1 ;;
+  drive)  [ "$APPSHOT_VIEW" = 1 ] || {
+            log "APPSHOT_VIEW=0 disables the viewer; drive has nothing to open"
+            exit 64; }
+          check_deps || exit $?
+          launch "${1:-}" >/dev/null || exit 1
+          start_viewer drive || exit 1
+          log "viewer is read-write — the app is yours to drive" ;;
+  record) ready; start_record "${1:-}" || exit 1 ;;
+  stop-record) stop_record ;;
+  deps)   if check_deps; then
+            missing=$(missing_pkgs "$REC_DEPS")
+            if [ -n "$missing" ]; then
+              log "all dependencies present except recording. Install it with:"
+              log "  sudo apt install$missing"
+            else
+              log "all dependencies present"
+            fi
+          else exit $?; fi ;;
   quit)   quit_app ;;
   status) display=0; display_up && display=1
           wm=0; alive "$WM_PIDFILE" && wm=1
@@ -528,7 +682,10 @@ case "$cmd" in
           viewer=0; viewer_connected && viewer=1
           running=$(pgrep -cf "$APP_BUNDLE_RE" 2>/dev/null || true)
           window=$(find_window | grep -c . || true)
-          echo "display=${display} wm=${wm} running=${running:-0} window=${window:-0} vnc=${vnc} viewer=${viewer}" ;;
-  *) log "usage: appshot.sh {launch [DIR]|shot [OUT]|run DIR [OUT]|hover X Y [OUT]|click X Y [OUT]|rclick X Y [OUT]|key NAME [OUT]|type TEXT [OUT]|resize W H [OUT]|watch|deps|status|quit}"
+          rec=0; recording && rec=1
+          mode=$(cat "$VNC_MODEFILE" 2>/dev/null || echo -)
+          [ "$vnc" = 0 ] && mode=-
+          echo "display=${display} wm=${wm} running=${running:-0} window=${window:-0} vnc=${vnc} mode=${mode} viewer=${viewer} recording=${rec}" ;;
+  *) log "usage: appshot.sh {launch [DIR]|shot [OUT]|run DIR [OUT]|hover X Y [OUT]|click X Y [OUT]|rclick X Y [OUT]|key NAME [OUT]|type TEXT [OUT]|resize W H [OUT]|watch|drive [DIR]|record [OUT]|stop-record|deps|status|quit}"
      exit 64 ;;
 esac

@@ -42,7 +42,7 @@ arguments):
 | Option | Effect |
 | --- | --- |
 | `--engram <path>` | Open the engram at `<path>` at startup instead of the last-opened one. If the folder isn't an engram yet, a marker is created in place. The choice is transient — it isn't added to the registry or remembered next launch. |
-| `--ignore-config` | Start without reading or writing saved configuration. Preferences are backed by an ephemeral in-memory store, so the engram registry, last-opened engram, window geometry, and theme are neither loaded nor overwritten. |
+| `--ignore-config` | Start without reading or writing saved configuration. Preferences are backed by an ephemeral in-memory store, so the engram registry, last-opened engram, window geometry, and theme are neither loaded nor overwritten. The engram container is swapped for an empty temporary directory too, so the session discovers **none** of your real engrams — nothing you own is named in the switcher, and anything you create lands in the throwaway container. |
 | `--help`, `-h` | Print usage to the terminal and exit without starting the app. |
 
 Pass them to a built binary directly, or through `flutter run`'s
@@ -58,7 +58,9 @@ flutter run -d linux --dart-entrypoint-args=--engram=/path/to/engram,--ignore-co
 
 Combining them — `--engram <fixture> --ignore-config` — opens a known engram in
 a clean-slate session that leaves your real configuration untouched, which is
-the intended testing setup.
+the intended testing setup. It is also the setup to use for screenshots and
+demos: the session can name only the fixture and the built-ins, so a private
+engram cannot appear in a capture.
 
 ## Development
 

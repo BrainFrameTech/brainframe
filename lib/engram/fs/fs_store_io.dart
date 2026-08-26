@@ -336,6 +336,37 @@ Future<String> applicationEngramContainerPath() async {
   return directory.path;
 }
 
+/// A throwaway container for a session that must not touch the user's real
+/// engrams — the filesystem half of the `--ignore-config` startup flag.
+///
+/// Neutering preferences is not enough on its own. Discovery has two sources,
+/// and only one of them is preferences: it also scans the container returned by
+/// [applicationEngramContainerPath] one level deep, so a session backed by that
+/// path lists every engram in the user's documents directory no matter how
+/// thoroughly its saved configuration was ignored. That is a disclosure rather
+/// than an inconvenience — an engram the user considers private is named in the
+/// switcher, and in any screenshot taken of it.
+///
+/// This resolver hands out an empty temporary directory instead, so discovery
+/// finds nothing real and anything the session creates lands somewhere
+/// disposable. The directory is created once per process and reused, so
+/// discovery and creation agree on one container for the session's lifetime; it
+/// is deliberately not removed at exit, since it holds whatever that session
+/// made and the system reaps its temp tree anyway.
+Future<String> ephemeralEngramContainerPath() =>
+    _ephemeralContainer ??= _createEphemeralContainer();
+
+/// Memoized as the [Future], not its result, so two concurrent callers share
+/// one directory instead of racing to create two.
+Future<String>? _ephemeralContainer;
+
+Future<String> _createEphemeralContainer() async {
+  final directory = await Directory.systemTemp.createTemp(
+    'brainframe-ephemeral-',
+  );
+  return directory.path;
+}
+
 /// Scans [containerPath] one level deep and opens every child directory that
 /// carries a valid marker.
 ///

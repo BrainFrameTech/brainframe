@@ -17,6 +17,7 @@ import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/commands/text_editing_commands.dart';
 import 'package:brainframe/engram/asset_engram_store.dart';
 import 'package:brainframe/engram/built_in_engrams.dart';
+import 'package:brainframe/engram/container_resolver.dart';
 import 'package:brainframe/engram/desktop_folder_adoption.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_file_ops.dart';

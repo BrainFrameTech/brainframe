@@ -147,7 +147,13 @@ That single rule covers every subcommand, including the self-cleaning `quit`.
 
 The app is always launched with `--engram test/fixtures/engram` and
 `--ignore-config`, so it opens the committed manual-testing fixture backed by an
-ephemeral in-memory config store. It never reads or writes the real app config
-or your real engrams, so **destructive flows are safe to drive** — rename,
-delete, and create are all fair game. Restore the fixture afterwards with
+ephemeral in-memory config store and an empty temporary engram container. It
+never reads or writes the real app config or your real engrams, so
+**destructive flows are safe to drive** — rename, delete, and create are all
+fair game. Restore the fixture afterwards with
 `git checkout -- test/fixtures/engram`.
+
+That container swap is what makes a screenshot safe to publish: without it,
+`--ignore-config` still scanned the real app documents directory, so the engram
+switcher named every engram you own in any capture of it. If you are on an older
+build, check a switcher shot before you share it.

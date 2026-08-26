@@ -764,13 +764,25 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
    the tutorial/normal resolution — and nothing you change this session is
    written back. Relaunch once more without the flag: your earlier config is
    **intact** (it was never overwritten).
-4. **Bad argument:** run with an unknown flag such as `--nope`. Expected: the app
+4. **`--ignore-config` hides your real engrams:** you need at least one engram
+   in the **app container** (the app documents directory) for this — create one
+   from the switcher in a normal session if you have none, and note its name.
+   Relaunch with `--ignore-config` and open the engram switcher. Expected: the
+   switcher lists the two built-ins **only** — your container engram is **not**
+   named, not even as an unavailable row. Now create an engram in this session:
+   it appears and works, and is gone on the next launch, having been written to
+   a temporary container rather than your documents directory. Relaunch without
+   the flag: your real container engram is listed again, unharmed.
+   *This is the privacy case — the registry being empty is not enough, because
+   discovery also scans the container directly. Anything on screen here can end
+   up in a screenshot.*
+5. **Bad argument:** run with an unknown flag such as `--nope`. Expected: the app
    still launches normally with defaults — a stray argument never aborts it.
 
 **Expected:** summarized per step above — `--help` is terminal-only and never
 starts the UI; `--engram` opens a folder transiently; `--ignore-config` is a
-read-nothing/write-nothing clean-slate session; unparseable args degrade to
-defaults.
+read-nothing/write-nothing clean-slate session that cannot see or name your real
+engrams; unparseable args degrade to defaults.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -780,7 +792,9 @@ defaults.
   Master-detail / Full-panel columns and the in-UI bug-class probes don't apply.
 - **`--ignore-config` is itself a testing aid:** it's the cleanest way to run the
   Settings / theme / layout cases (F19, F20, D5) without polluting — or being
-  polluted by — your real saved config.
+  polluted by — your real saved config. It is also the flag to run under for
+  **screenshots and demos**, since step 4 is what keeps a private engram's name
+  out of the frame.
 - **`--engram` transience is a state check:** confirm it does **not** become the
   last-opened engram, i.e. the override doesn't leak into normal resolution.
 

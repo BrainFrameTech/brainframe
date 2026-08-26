@@ -5,9 +5,9 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 
 import 'app.dart';
 import 'cli_output.dart';
+import 'engram/container_resolver.dart';
 import 'engram/engram.dart';
 import 'engram/engram_repository.dart';
-import 'engram/fs/fs_store.dart';
 import 'settings/app_settings_controller.dart';
 import 'settings/settings_store.dart';
 import 'startup_options.dart';
@@ -45,9 +45,17 @@ Future<void> main(List<String> args) async {
   // The engram registry lives in shared preferences; user engrams sit in the
   // app documents container by default. On web the container resolver throws,
   // and discovery degrades to the built-in tutorial and help engrams.
+  //
+  // --ignore-config swaps the container too, not just the preferences above.
+  // Discovery scans the container directly, so leaving it pointed at the real
+  // documents directory would list every engram the user owns — including
+  // private ones — in a session that is supposed to know nothing about them.
+  // The ephemeral resolver hands out an empty temporary directory instead.
   final repository = EngramRepository(
     preferences: SharedPreferencesAsync(),
-    containerPathResolver: applicationEngramContainerPath,
+    containerPathResolver: engramContainerResolver(
+      ignoreConfig: options.ignoreConfig,
+    ),
   );
 
   // Look-and-feel state (the device-default theme), restored from the settings

@@ -776,13 +776,26 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
    *This is the privacy case — the registry being empty is not enough, because
    discovery also scans the container directly. Anything on screen here can end
    up in a screenshot.*
-5. **Bad argument:** run with an unknown flag such as `--nope`. Expected: the app
+5. **`--window-size <W>x<H>`:** in a normal session, resize the window to
+   something distinctive and quit, so a geometry is remembered. Relaunch with
+   `--window-size=1280x800`. Expected: the window opens at 1280x800, centered,
+   **not** at the size you left it — and not maximized even if it was. Resize
+   it again during this session, then quit and relaunch **without** the flag:
+   expected the window returns to the geometry you left in the *first* step —
+   neither the requested size nor the one you dragged it to while the flag was
+   in force was written back.
+6. **Malformed `--window-size`:** relaunch with `--window-size=1280by800`
+   alongside `--ignore-config`. Expected: the bad value is ignored (default
+   geometry) but `--ignore-config` still takes effect — one unparseable value
+   must not discard the rest of the command line.
+7. **Bad argument:** run with an unknown flag such as `--nope`. Expected: the app
    still launches normally with defaults — a stray argument never aborts it.
 
 **Expected:** summarized per step above — `--help` is terminal-only and never
 starts the UI; `--engram` opens a folder transiently; `--ignore-config` is a
 read-nothing/write-nothing clean-slate session that cannot see or name your real
-engrams; unparseable args degrade to defaults.
+engrams; `--window-size` sizes the window for one session without disturbing the
+remembered geometry; unparseable args degrade to defaults.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -797,6 +810,14 @@ engrams; unparseable args degrade to defaults.
   out of the frame.
 - **`--engram` transience is a state check:** confirm it does **not** become the
   last-opened engram, i.e. the override doesn't leak into normal resolution.
+- **`--window-size` transience is the same kind of check,** and the one worth
+  being careful about: step 5 fails silently if you only look at the window that
+  opened. What it is really testing is that the *next* ordinary launch is
+  unchanged.
+- **`./brainframe.sh` bundles the flags** for the fixture + clean-slate case and
+  pins the window to appshot's 1600x1000 at scale 1, so a screen recording
+  matches the captures in `tool/appshot.sh`. It is a convenience, not a
+  substitute for running the flags by hand in steps 1-7.
 
 ### F24 — Desktop menu bar & its hotkeys
 

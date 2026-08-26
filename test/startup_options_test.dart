@@ -1,3 +1,5 @@
+import 'dart:ui' show Size;
+
 import 'package:brainframe/startup_options.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,6 +9,7 @@ void main() {
       final options = StartupOptions.parse(const []);
       expect(options.engramPath, isNull);
       expect(options.ignoreConfig, isFalse);
+      expect(options.windowSize, isNull);
       expect(options.showHelp, isFalse);
     });
 
@@ -26,6 +29,7 @@ void main() {
     test('the usage text names every option', () {
       expect(StartupOptions.usage, contains('--engram'));
       expect(StartupOptions.usage, contains('--ignore-config'));
+      expect(StartupOptions.usage, contains('--window-size'));
       expect(StartupOptions.usage, contains('--help'));
     });
 
@@ -50,6 +54,70 @@ void main() {
       final options = StartupOptions.parse(['--ignore-config']);
       expect(options.ignoreConfig, isTrue);
       expect(options.engramPath, isNull);
+    });
+
+    group('--window-size', () {
+      test('parses <W>x<H> into a size', () {
+        expect(
+          StartupOptions.parse(['--window-size=1600x1000']).windowSize,
+          const Size(1600, 1000),
+        );
+      });
+
+      test('accepts the space-separated form and a capital X', () {
+        expect(
+          StartupOptions.parse(['--window-size', '1280X800']).windowSize,
+          const Size(1280, 800),
+        );
+      });
+
+      test('is absent by default, leaving the remembered geometry alone', () {
+        expect(StartupOptions.parse(const []).windowSize, isNull);
+      });
+
+      test('a malformed value is dropped without losing the other options', () {
+        // The damaging failure would be discarding --ignore-config over a typo
+        // in an unrelated flag, so only the bad value is dropped.
+        final options = StartupOptions.parse([
+          '--window-size=1600by1000',
+          '--ignore-config',
+          '--engram=/z',
+        ]);
+        expect(options.windowSize, isNull);
+        expect(options.ignoreConfig, isTrue);
+        expect(options.engramPath, '/z');
+      });
+
+      test('rejects values that are not positive whole pixels', () {
+        for (final bad in [
+          '0x1000',
+          '1600x0',
+          '-1600x1000',
+          '1600.5x1000',
+          '1600 x 1000',
+          '1600x',
+          'x1000',
+          '1600',
+          '',
+        ]) {
+          expect(
+            StartupOptions.parse(['--window-size=$bad']).windowSize,
+            isNull,
+            reason: '"$bad" should not yield a size',
+          );
+        }
+      });
+
+      test('combines with the other options', () {
+        final options = StartupOptions.parse([
+          '--engram=/z',
+          '--ignore-config',
+          '--window-size=1600x1000',
+        ]);
+        expect(options.windowSize, const Size(1600, 1000));
+        expect(options.ignoreConfig, isTrue);
+        expect(options.engramPath, '/z');
+      });
     });
 
     test('both options together, in any order', () {

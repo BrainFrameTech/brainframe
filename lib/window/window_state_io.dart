@@ -19,6 +19,13 @@ SettingsStore _deviceStore(SharedPreferencesAsync prefs) => SettingsStore(
   engram: () => const NullSettingsBackend(),
 );
 
+/// True for a session started with an explicit `--window-size`. Unlike
+/// [_persistenceSuspended] this is never cleared: the override is transient by
+/// design, so even a deliberate resize during such a session is not recorded.
+/// Without it, opening at a recording size would quietly become the size the
+/// app opens at from then on.
+bool _persistenceDisabled = false;
+
 /// True from a "reset to defaults" until the user next resizes or moves the
 /// window. While set, geometry is not persisted — otherwise the save-on-close
 /// (or a stray event) would immediately rewrite the geometry the user just
@@ -30,6 +37,13 @@ bool _persistenceSuspended = false;
 /// No-op where there is no OS window (see the stub).
 void suspendWindowStatePersistence() {
   _persistenceSuspended = true;
+}
+
+/// Resets the module-level persistence flags between tests.
+@visibleForTesting
+void resetWindowStatePersistenceForTesting() {
+  _persistenceDisabled = false;
+  _persistenceSuspended = false;
 }
 
 bool get _isDesktop =>
@@ -47,15 +61,21 @@ bool get _isDesktop =>
 /// silently ignores client requests to move a window, so position is neither
 /// meaningfully restorable nor savable there. Size and maximized state work on
 /// all desktops; position additionally works on X11, macOS, and Windows.
-Future<void> initWindowManager() async {
+Future<void> initWindowManager({Size? startupSize}) async {
   if (!_isDesktop) return;
 
   await windowManager.ensureInitialized();
   final store = _deviceStore(SharedPreferencesAsync());
-  final saved = await _readSaved(store);
+  // An explicit --window-size takes the session off the saved geometry
+  // entirely: nothing is restored (so no stale position or maximized state
+  // fights the requested size) and nothing is written back. Leaving the read in
+  // would also mean restoring a maximized state that ignores the size asked
+  // for.
+  _persistenceDisabled = startupSize != null;
+  final saved = startupSize != null ? null : await _readSaved(store);
 
   final options = WindowOptions(
-    size: saved?.size ?? _defaultSize,
+    size: startupSize ?? saved?.size ?? _defaultSize,
     minimumSize: _minimumSize,
     center: saved == null,
     title: 'BrainFrame',
@@ -130,7 +150,7 @@ class WindowStatePersister extends WindowListener {
   }
 
   Future<void> _save() async {
-    if (_persistenceSuspended) return;
+    if (_persistenceDisabled || _persistenceSuspended) return;
     final isMaximized = await windowManager.isMaximized();
 
     if (isMaximized) {

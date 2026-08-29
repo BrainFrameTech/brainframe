@@ -341,6 +341,13 @@ The CRDT is the authority for a `fugueText` note. The `.md` file is a
 projection of it, and **only the materializer writes it**. Nothing else in the
 app calls `writeString` on a note path.
 
+**One exception, and it is bounded: a history-pending note.** A note whose ULID
+was adopted from the identity map but whose op-log has not arrived yet has no
+`CRDTDocument` to project from (Decision 7). It is written directly, the way
+notes were written before this design, and its content hash still tracks drift
+so that the eventual arrival of the log is an ordinary reconciliation. The
+exception ends the moment the log lands.
+
 That inverts today's flow, where the editor's buffer is the authority and the
 file is where it lands. Consequences are covered in Decision 6.
 
@@ -492,7 +499,21 @@ The scan compares the catalog against what is actually on disk:
 
 - **A path in neither the catalog nor any content match** — a new note. Mint a
   ULID, create the `CRDTDocument`, seed it with the file's full text as a single
-  insert.
+  insert, and take the seed claim (Decision 9).
+- **A path the identity map knows but this device has no op-log for** — an
+  adopted note. Record the ULID and **do not seed**. The note is
+  *history pending*: readable and editable as an ordinary file (Decision 4),
+  with no `CRDTDocument` until one arrives over **#67**, at which point the
+  local file reconciles against it as ordinary drift.
+
+  **Never seed a document under a ULID this device did not mint.** Fugue merges
+  on *element* identity — the per-character `(peerId, counter)` pairs that live
+  only in the op-log — so two devices that independently seed one document id
+  hold disjoint character universes, and the merge concatenates both texts
+  rather than recognising them as one. That is content corruption, and it is
+  strictly worse than the divergent-ULID case the identity map exists to fix.
+  Pinned by
+  [independent_seed_duplication_test.dart](../../test/crdt/independent_seed_duplication_test.dart).
 - **A catalog path that is gone, plus a new path whose content hash matches** —
   a move. Keep the id and history; update the path. This is exactly how `git`
   detects renames.
@@ -624,8 +645,9 @@ Four properties define the file itself:
   unions every file's rows, including its own. Peers appear as files, so
   nothing needs to be discovered.
 - **Deterministically merged, by two rules answering different questions.**
-  Each row is `(ulid, path, merge_policy, deleted, hlc, peer)`, where `hlc` and
-  `peer` stamp the moment the writing device recorded it.
+  Each row is
+  `(ulid, path, merge_policy, deleted, seeded_by, seed_hlc, hlc, peer)`, where
+  `hlc` and `peer` stamp the moment the writing device recorded the row.
 
   1. **Contradictions about one ULID** — two files each carrying a row for it —
      resolve by the **locked tiebreak comparator**: HLC first, peerID second.
@@ -669,6 +691,34 @@ file with no live catalog row and mints a fresh ULID for it. Content survives,
 history does not, and Decision 7 already requires that class of loss to be
 surfaced rather than silent. A lost rename race is cheaper still — one of two
 paths wins and the other device moves its file to match.
+
+**A writer writes the whole row, never a delta.** Resolution is per row, not
+per field, so a device that changed only the path must still carry forward
+`merge_policy`, `deleted`, and the seed claim as it currently understands them.
+Since every writer reads the directory before writing, it always has a merged
+row to copy forward. A partial write would silently blank whatever field its
+author did not happen to know about.
+
+**The seed claim decides who may create the first history.** `seeded_by` and
+`seed_hlc` record which device seeded the document, and only the holder of that
+claim may do so:
+
+- **The minting device takes the claim at mint time**, in the same row that
+  first announces the ULID. This is the ordinary case, and it means an adopting
+  device can always tell that a history exists somewhere.
+- **An adopting device does not seed.** The note is history-pending
+  (Decision 7) until a log arrives.
+- **An adopting device may take an unclaimed seed** — a row with no
+  `seeded_by`, which means the map outlived every op-log that ever backed it —
+  when the user first edits the note. It records the claim as it seeds.
+
+Two devices taking an unclaimed seed while both offline is the one remaining
+race. It resolves by the locked comparator on `seed_hlc`, and the loser can
+repair itself precisely because it knows exactly which operations were its own
+seed: it deletes the elements it seeded, leaving the winner's, then reconciles
+its file against the result as ordinary drift. Content survives, that note's
+local history does not, and it is the same trade Decision 7 already makes below
+the similarity threshold.
 
 **The identity map is authoritative for adoption, advisory otherwise.** When
 the local catalog has no row for a path, the map's ULID is adopted. When the
@@ -820,6 +870,11 @@ materializer, the reconciler, and the policy table. Above it:
 - File-management and move detection gain a write to the shared database, not
   only to the catalog. A rename or delete that updates the catalog and stops
   there leaves the map stale, which is the silent failure Decision 9 describes.
+- A **history-pending** note state that the catalog, the editor, and the
+  materializer all understand: identity known, no `CRDTDocument`, written
+  directly rather than projected (Decision 4), and promoted to a normal note
+  when #67 delivers its log. `DocumentEditController` keeps its pre-CRDT
+  `writeString` path for exactly this case rather than losing it.
 - File-management operations (new note, rename, delete, move) route through the
   catalog so the app's own moves are recorded rather than rediscovered by
   content matching on the next scan.
@@ -869,6 +924,21 @@ expensively otherwise:
   ULID and that the loser's history survives re-keying intact. Separately, have
   two devices write contradictory rows for *one* ULID; assert both resolve to
   the same row under the locked comparator.
+- **Independent seeding duplicates content.**
+  [independent_seed_duplication_test.dart](../../test/crdt/independent_seed_duplication_test.dart)
+  pins the hazard behind Decision 7's never-seed rule, and its companion case
+  pins that adopting without seeding merges cleanly. Neither tests BrainFrame
+  code; they exist so that the rule is never "simplified" away by someone who
+  reasons that identical text must merge to identical text.
+- **An adopted note stays history-pending.** Cold-copy an engram with its
+  identity map, open it, and assert no `CRDTDocument` is created and no
+  operations are generated for adopted notes — then deliver a log and assert
+  the note is promoted and local edits reconcile as drift rather than
+  duplicating.
+- **A contested seed heals.** Have two devices take an unclaimed seed while
+  offline, then merge; assert the comparator picks one, that the loser retracts
+  its seeded elements, and that the resulting content matches the file on disk
+  exactly once.
 - **A non-minting device's rename propagates.** Device A mints a note; device B
   detects the rename and records it; assert a third device reading the
   directory finds the note at its new path and adopts the original ULID. This
@@ -934,10 +1004,16 @@ sees the other's edits as ordinary file drift and reconciles them as a minimal
 diff. What differs is that each holds its own private history of how it got
 there.
 
-**That is what makes #67 an ordinary merge.** Two histories over one document
-combine the way any two replicas of one document combine. There is no winning
-ULID to elect and no losing history to discard, which is precisely the outcome
-a device-local catalog could not offer.
+**That is what makes #67 an ordinary merge** — once a log exists to merge with.
+Two histories over one document combine the way any two replicas of one
+document combine, with no winning ULID to elect and no losing history to
+discard.
+
+The qualifier is load-bearing. Agreeing on a ULID does **not** make two
+independently seeded documents compatible, because Fugue merges on element
+identity rather than on text. A device that adopts an identity therefore waits
+for the log instead of manufacturing one — Decision 7's rule, and Decision 9's
+seed claim decides who is entitled to manufacture the first one.
 
 **The exception is a copy that leaves `.brainframe/shared/` behind** — selective
 sync, a `cp` of the markdown alone, an archive built by a tool that skips
@@ -992,6 +1068,14 @@ installed dependency and it decides how defensive the importer must be.
 
 ### Decided during review — recorded so it is not relitigated
 
+- **Seeding a document under an adopted ULID: decided, never.** Review found
+  that adopting a ULID without its op-log and seeding from the markdown
+  produces *duplicated content* on merge, because Fugue merges on element
+  identity rather than on text — strictly worse than the divergent-ULID case
+  the map exists to prevent. Decision 7 forbids it, adopted notes are
+  history-pending until a log arrives, and Decision 9's seed claim decides who
+  may create the first history. Measured and pinned by
+  [independent_seed_duplication_test.dart](../../test/crdt/independent_seed_duplication_test.dart).
 - **Retractions and non-owner updates in the identity map: decided.** Review
   found that Decision 9's original "union by ULID, lowest wins" rested on an
   assumption that each ULID is only ever written by the device that minted it.

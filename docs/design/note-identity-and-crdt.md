@@ -390,24 +390,65 @@ For each note whose file has drifted:
 2. Materialize the CRDT to `crdtText`.
 3. Compute a **minimal edit script** from `crdtText` to the file's current text.
 4. Apply that script as `insert`/`delete` operations on the Fugue handler,
-   stamped with this device's peerID and current HLC.
+   inside **one** `CRDTDocument.runInTransaction`, stamped with this device's
+   peerID and current HLC.
 5. Re-materialize. If the result differs from the file — which it will whenever
    unmerged operations from another device were also pending — write it back
    through Decision 4's path.
 6. Commit the new `materialized_hash`.
+
+**Steps 3 and 4 are `crdt_lf`'s to perform, not ours.** The library already
+ships both halves: `myersDiff(oldText, newText)` returns coalesced
+equal/insert/remove segments, and `CRDTFugueTextHandler.change(newText)` runs
+that diff and converts each segment into handler `insert`/`delete` calls.
+
+Using the library's application path matters more than using its diff. The
+offset-to-identity conversion is the invariant the frozen suite exists to
+defend, and it is upstream's code, tested upstream and shared with every other
+consumer. Reimplementing it here would be strictly more risk for no gain.
 
 **The minimality of step 3 is the single most important rule in this
 document.** The naive implementation — delete everything, insert the new text —
 converges, passes a two-replica test, and is catastrophically wrong: it
 tombstones every element another device might concurrently be editing, so every
 concurrent remote insertion is discarded. Nothing about it looks broken until a
-second device exists. A line-level diff refined to characters within changed
-regions keeps operation counts proportional to the actual edit.
+second device exists. Myers is a genuine shortest-edit-script algorithm, so it
+satisfies this rule where a replace-all does not.
 
-The edit script must be computed in **identity space, not offset space**, which
-is the invariant the frozen suite exists to defend. A diff naturally produces
-offsets; converting them to handler operations is where that invariant is at
-risk, and it is the place to be most careful.
+**But `change()` must never be handed a whole note.** `myersDiff` trims the
+common prefix and suffix, then runs Myers on the remaining middle with **no
+size guard**. Its `_shortestEditScript` snapshots the whole frontier array once
+per edit-distance step, so memory is O(D x (n+m)) — a product, not a sum.
+
+The trigger is not a large note; it is a **dispersed** edit, and the ordinary
+one is a line-ending change. A note round-tripped through a Windows editor
+comes back CRLF, so every line differs, prefix trimming stops at the first line
+ending and buys nothing, and `D` becomes the line count. A 100 KB note of ~2000
+lines then wants roughly 2000 x 400,001 ints — about **6.4 GB** — to diff a
+change that is semantically trivial. Trailing-whitespace stripping and a
+markdown reflow have the same shape. "Edited in another tool and synced back"
+is precisely the case this decision exists to serve, so this is the common
+path, not an exotic one.
+
+**So: chunk by line, refine by character.** Diff line sequences first, and call
+`myersDiff` only within a changed region. That bounds `D` to the size of one
+region rather than the whole note, which is what makes the memory profile
+linear instead of a product. This is the one place the design deliberately
+wraps the library rather than calling it directly, and the reason is the
+missing guard, not a disagreement about the algorithm.
+
+**One transaction for the whole script.** `change()` registers an operation per
+segment and does not open a transaction itself — its own documentation only
+recommends one. Without it, reconciliation is not atomic, and a crash partway
+through leaves a half-applied edit that Decision 5's write ordering assumes
+cannot exist.
+
+**Surrogate pairs need a test, not an assumption.** `myersDiff` operates on
+UTF-16 code units, so an edit boundary can fall between the halves of an
+astral-plane character. The materialized string still reconstructs correctly,
+but the two halves become independently addressable Fugue elements, and a
+concurrent edit could tombstone one of them. An emoji-bearing reconciliation
+test is cheap; reasoning about it in the abstract is not.
 
 **Attribution is honest by construction.** Synthesized operations carry this
 device's peerID because we genuinely do not know who made the external edit.
@@ -416,8 +457,12 @@ than a limitation.
 
 **This is the same machinery #85 replaces.** A CRDT-aware editor emits real
 operations instead of a reconstructed diff, and when it lands it bypasses steps
-2–4 for the in-app path. The reconciliation path stays, because external edits
+2-4 for the in-app path. The reconciliation path stays, because external edits
 never stop arriving.
+
+See "Performance envelope" below for the measured cost of the operations this
+decision generates, and the note size at which the storage model itself becomes
+the limit.
 
 ### Decision 7 — creations, moves, and deletions are inferred from the scan
 
@@ -638,6 +683,53 @@ before showing a single note.
   being restored onto another device is now a handled case rather than a
   hazard. Nothing here needs a platform manifest change.
 
+## Performance envelope
+
+The locked storage model puts **one Fugue element per character**, so a note's
+cost in memory is set by its length, not by its edit history. Measured against
+`crdt_lf` 3.5.0 on Linux desktop, building a handler from a single insert and
+then materializing it:
+
+| Characters | Build | `value` | 100 scattered edits | Resident |
+| ---: | ---: | ---: | ---: | ---: |
+| 120,000 | 153 ms | 9 ms | 5 ms | 87 MB |
+| 240,000 | 235 ms | 16 ms | 2 ms | 113 MB |
+| 480,000 | 541 ms | 31 ms | 2 ms | 225 MB |
+
+Two of those columns are reassuring and one is not.
+
+**The operations are cheap and the scaling is linear.** Build and
+materialization are both O(n) with small constants, and a hundred scattered
+single-character edits cost about 2 ms even at half a million characters — so
+index-to-node resolution is not a linear scan, and the operation volume
+Decision 6 generates is not the problem. A dispersed reconciliation is
+affordable once its diff is chunked.
+
+**Memory is the constraint, at roughly 470 bytes per character.** That is the
+cost of the tree itself: a `Map<FugueElementID, FugueNodeTriple>` entry per
+character, each holding two element IDs and two child lists. Extrapolating
+linearly — which the measurements support — a 3.2 MB note such as *War and
+Peace* as a single note needs on the order of **1.5 GB resident** to be open,
+with materialization around 200 ms every time Decision 6 re-materializes it.
+
+That is a structural property of the locked storage model, not a tuning
+problem, and it lands hardest exactly where headroom is smallest: iOS
+terminates around 1-2 GB, and a 2 GB Raspberry Pi cannot open such a note at
+all. Desktop absorbs it; the other targets do not.
+
+Nothing here is a reason to reopen the storage model, which is settled and
+correct for the notes people actually write. It is a reason to know the ceiling
+before a user finds it, and to decide deliberately what happens above it —
+refuse to open, open read-only without CRDT backing, or split the note — rather
+than discovering the answer as an out-of-memory kill. That decision is recorded
+as an open question below rather than made here, because the right answer
+depends on measurements from the other targets that do not exist yet.
+
+To reproduce: build a `CRDTFugueTextHandler` at each size, timing the insert,
+the `value` getter, and a transaction of scattered inserts, sampling
+`ProcessInfo.currentRss` around each. Numbers above are one desktop run and are
+indicative, not a budget.
+
 ## What changes in `lib/`
 
 A new `lib/engram/crdt/` holding the catalog, the op-log adapter, the
@@ -678,6 +770,17 @@ expensively otherwise:
   device B holds an unmerged concurrent insertion; assert B's insertion
   survives. This is the test that catches a replace-all diff, and a
   single-replica test cannot.
+- **A dispersed edit stays cheap.** Reconcile a note whose line endings all
+  changed CRLF to LF. This is the case that makes an unchunked `myersDiff`
+  allocate gigabytes, and it is indistinguishable from a trivial edit until the
+  diff is actually run — so it needs a test rather than a comment.
+- **Reconciliation is atomic.** Interrupt a multi-segment edit script partway
+  and assert the note is either fully reconciled or untouched, never half
+  applied. This is what the single `runInTransaction` in Decision 6 buys, and
+  nothing else in the suite would notice its removal.
+- **Surrogate pairs survive a diff boundary.** Reconcile a note containing
+  emoji where the edit lands adjacent to an astral-plane character; assert the
+  materialized text is byte-identical and that no element was split.
 - **Crash-ordering recovery.** Write the file, skip the catalog commit,
   rescan; assert self-healing with no lost or duplicated content.
 - **Move detection**, including rename-with-edit and the below-threshold
@@ -815,9 +918,13 @@ installed dependency and it decides how defensive the importer must be.
   bound, and the point at which that stops being acceptable has not been
   measured. The same question as the one above, arriving from the export side;
   tracked together as **#118**.
-- **Large notes.** The frozen suite explicitly excludes performance. A
-  multi-megabyte note as one Fugue sequence has a cost that should be measured
-  before it is discovered.
+- **What happens above the note-size ceiling.** "Performance envelope" above
+  measures roughly 470 bytes per character, putting a 3.2 MB note near 1.5 GB
+  resident — comfortable on desktop, fatal on iOS and on a 2 GB Pi. The
+  measurement exists; the *policy* does not. Refuse to open, open read-only
+  with no CRDT backing, or split the note are all defensible, and choosing
+  between them needs per-target numbers rather than the single desktop run
+  recorded above.
 
 ### Deliberate design choice, still open
 

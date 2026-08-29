@@ -1,6 +1,6 @@
 # Note identity and local CRDT storage
 
-- **Status:** draft (2026-08-16) — *not accepted*; open for refinement
+- **Status:** accepted (2026-08-29)
 - **Author:** Claude
 - **Date:** 2026-08-16
 

@@ -123,9 +123,9 @@ in step.
 The id lives in a **catalog table** (Decision 2), keyed to the note's current
 engram-relative path, in `metadata.db` locally and in the exported state file
 that travels with the engram. It is **not** written into the markdown file.
-Ids therefore agree across devices that receive the state directory, and are
-re-minted by a device that does not — see "Consequence: note identity travels,
-but only with the state directory" below.
+Ids therefore agree across devices that receive the engram's identity map, and
+are re-minted by a device that does not — see "Consequence: identity is shared,
+history is not" below.
 
 ULID rather than UUIDv7 for consistency with `EngramMetadata.id`, which already
 uses one and already has an `isCanonicalUlid` validator in
@@ -157,51 +157,56 @@ match and falls through to content matching (Decision 6), the mergeable-text
 objection does not apply to that role. This is a one-column, one-code-path
 addition if interop ever demands it, so it is reserved rather than built.
 
-### Decision 2 — a device-local cache and a portable export
+### Decision 2 — one local database, plus a small shared identity map
 
-Each engram has exactly **two** SQLite artifacts. They have different jobs,
-different lifetimes, and different rules, and keeping them straight is what
-makes the rest of this design small.
+Two artifacts, sized very differently, and the size difference is the design.
 
-| Artifact | Where | Role |
+| Artifact | Where | Holds |
 | --- | --- | --- |
-| `metadata.db` | platform app-data directory, keyed by engram ULID | device-local **working cache** |
-| `<peerId>.sqlite` | `<engram>/.brainframe/state/` | this device's **durable export** |
+| `metadata.db` | platform app-data directory, keyed by engram ULID | op-log, catalog, this device's peerID, content hashes, scan state |
+| `ids/<peerId>.sqlite` | `<engram>/.brainframe/ids/` | path, ULID, and merge policy for notes this device minted |
 
 ```text
 <app data root>/                    <engram>/
   engrams/                            .brainframe/
     <engram ULID>/                      engram.json
-      metadata.db  ← cache              state/
-                                          <peerId>.sqlite  ← durable
+      metadata.db  ← everything         ids/
+                                          <peerId>.sqlite  ← identity only
 ```
 
 BrainFrame opens `metadata.db` itself and injects the CRDT schema via
-`CRDTSqlite.fromDatabase`, so the catalog, the op-log, this device's peerID,
-and later the search and graph indexes all share one connection and one
-transaction boundary. Decision 9 covers how the export is produced and read.
+`CRDTSqlite.fromDatabase`, so the catalog and the op-log share one connection
+and one transaction boundary. Decision 9 covers the map.
 
-**`metadata.db` is a cache — a guarantee, not a description.** Everything in it
-is either exported (Decision 9) or rebuildable by scanning the engram's
-markdown. So the recovery action for *any* problem this design can produce — a
-wrong id, a stale catalog, a corrupt database, a device restored from someone
-else's backup — is one sentence:
+**The op-log is local; identity is shared.** That division is the whole
+decision, and each half has an independent reason.
 
-> **Delete `metadata.db`. It rebuilds.**
+*History stays local* because moving it is **#67**'s job. A network transport
+that exchanges `Change` objects is the designed path for that, and building a
+second, file-based transport alongside it would mean two mechanisms carrying
+one payload — with the file-based one inheriting every hazard of putting a
+mutable database in a synced folder.
 
-That is the entire diagnostic tree, and it is deliberate. A power user should
-never need to reason about op-logs, peers, or version vectors to repair an
-engram; they need one safe action that cannot make things worse. Two
-constraints keep the promise honest:
+*Identity travels* because without it, two devices opening one engram mint
+**different** ULIDs for the same file. Their op-logs are then keyed to
+different documents, and #67 can only elect a winner and discard the loser's
+history. Sharing a few kilobytes of path-to-ULID mapping converts that into an
+ordinary merge: both devices build on the same `document_id`, so when P2P
+connects the two histories combine instead of competing.
 
-- **The export runs on clean shutdown**, not only on its debounce timer, so
-  deleting the cache costs at most a crash's worth of *history* — never
-  content, which is on disk as markdown regardless.
-- **Human-relevant tables stay human-readable.** `path`, `ulid`,
-  `merge_policy`, `peer`, `last_seen` are plain columns, so
-  `sqlite3 metadata.db 'select path, ulid from catalog'` answers a real
-  question in any SQLite browser. Operation payloads stay opaque blobs —
-  nothing a person needs to read does.
+**What is deliberately *not* shared.** `materialized_hash`, and the size and
+mtime beside it, are device-local — see Decision 5, which explains why sharing
+them silently destroys edits rather than merging them. Scan state and the
+peerID are local for the same reason: they describe a device, not a note.
+
+**Recovery.** Deleting `metadata.db` costs **history, never content, and never
+identity**. The markdown is on disk, and the identity map is in the engram, so
+a rebuilt database re-adopts the same ULIDs it had before. That is the whole
+diagnostic tree for this design, and it is why the human-relevant tables —
+`path`, `ulid`, `merge_policy` — must be plain columns rather than blobs, so
+`sqlite3 metadata.db 'select path, ulid from catalog'` answers a question in
+any SQLite browser. Operation payloads stay opaque; nothing a person needs to
+read does.
 
 **Where `metadata.db` goes.** There is no single directory name across the six
 targets, and — as the Windows row shows — the two obvious `path_provider` calls
@@ -221,37 +226,34 @@ called ad hoc at each use site:
 
 **Windows takes `getApplicationCacheDirectory()` on purpose.**
 `getApplicationSupportDirectory()` maps to **`RoamingAppData`** on Windows, and
-a roaming profile is copied between machines at logon and logoff. A roamed
-cache is not a correctness disaster now that the nonce in Decision 8 catches a
-cloned identity, but it is still a live database copied out from under its
-writer, and it would silently inflate a roaming profile that users already
-complain is slow. `getApplicationCacheDirectory()` is the only `path_provider`
-call that reaches the non-roaming `LocalAppData`; its name is an abstraction
-leak, not a claim that the contents are disposable. Pin the mapping with a test
-asserting the resolved path is under `LocalAppData`, because nothing else stops
-an upstream change — or a well-meaning cleanup that "fixes" the odd-looking
-call — from moving it back. The same call must **not** be reused on Linux,
-where it resolves to `$XDG_CACHE_HOME` and invites a disk cleaner to delete an
-op-log mid-session.
+a roaming profile is copied between machines at logon and logoff — a live
+database copied out from under its writer, and an op-log silently inflating a
+roaming profile users already complain is slow. `getApplicationCacheDirectory()`
+is the only `path_provider` call reaching the non-roaming `LocalAppData`; its
+name is an abstraction leak, not a claim the contents are disposable. Pin the
+mapping with a test asserting the resolved path is under `LocalAppData`, since
+nothing else stops an upstream change — or a well-meaning cleanup that "fixes"
+the odd-looking call — from moving an op-log into a roaming profile. The same
+call must **not** be reused on Linux, where it resolves to `$XDG_CACHE_HOME`
+and invites a disk cleaner to delete history mid-session.
 
-`$XDG_DATA_HOME` rather than `$XDG_CACHE_HOME` on Linux is deliberate for the
-same reason. The word "cache" in this decision means *rebuildable from the
-engram*, not *disposable at any moment by another program*.
+`$XDG_DATA_HOME` rather than `$XDG_CACHE_HOME` on Linux follows from the same
+reasoning: an op-log is not derived from anything and cannot be rebuilt by
+rescanning.
 
 **Debug and release builds are separate stores, by construction.** Every path
 above derives from the platform application identity, and
 [debug-build-identity.md](../debug-build-identity.md) already gives debug
 builds a `.debug` suffix wherever there is an OS-level identity to suffix. A
-debug build and a release build on one machine therefore hold different caches,
-different peerIDs, and — writing to the same engram — two different export
-files. They are two independent peers that happen to edit the same markdown,
-which is the intended arrangement: the app stays usable in one window while
-being developed in another. This is a **required property, not a side effect**,
-and one target does not yet satisfy it — see "Platform consequences" for the
-Windows fix.
+debug build and a release build on one machine therefore hold different
+databases and different peerIDs while sharing one engram's markdown and one
+identity map. They are two independent peers, which is the intended
+arrangement: the app stays usable in one window while being developed in
+another. This is a **required property, not a side effect**, and one target
+does not yet satisfy it — see "Platform consequences" for the Windows fix.
 
-**Why the live database is not in the engram, but the export is.** The
-distinction is *mutation*, not SQLite.
+**Why the database is not in the engram, but the map is.** The distinction is
+*mutation*, not SQLite.
 
 A live database is opened, held across a session, and written in place. It is a
 page-structured binary with invariants spanning pages, plus `-wal` and `-shm`
@@ -264,21 +266,9 @@ live database. This keeps
 [engram-storage.md](engram-storage.md)'s existing rule intact rather than
 amending it.
 
-An export is the opposite in every respect that matters: written once by a
-single named writer, complete and self-contained when it appears, replaced
-atomically, and never modified in place. Decision 9 is where those properties
-are established and defended. A file with those properties is safe in a synced
-folder — not because any particular sync service is trusted, but because there
-is no interleaving for one to get wrong.
-
-**One database, not one per note or per peer.** `crdt_lf_sqlite`'s `changes`
-table is keyed `PRIMARY KEY (document_id, change_id)`, and `change_id` is
-`OperationId.toString()`, which renders as `peerId@hlc`. The peer is therefore
-*already* part of every row's key, so changes from any number of peers coexist
-in one table with no possibility of collision, and `document_id` separates the
-notes. Splitting by peer or by note would buy nothing the schema does not
-already give — which is also why one export file can hold every peer's history
-without ambiguity.
+The map is the opposite: written by a single named writer, complete when it
+appears, replaced atomically, never modified in place, and small enough that
+rewriting it whole costs nothing. Decision 9 establishes those properties.
 
 `metadata.db` rather than a narrower name like `catalog.db`: the catalog is the
 first tenant, not the only one. Per-engram state that is device-local and not
@@ -286,24 +276,20 @@ user content — snapshot bookkeeping, scan state, later the search and graph
 indexes — belongs in the same file, and a name describing only the first table
 leaves the next reader wondering whether they are in the right place.
 
-**What this costs, stated plainly.** History now travels with the engram
-folder, which an earlier draft of this decision said it could not. The cost
-moved rather than vanished: the engram directory grows by the size of the
-op-log, and a device that copies an engram *without* `.brainframe/state/`
-— a selective sync, a `cp` of only the markdown, an export from a tool that
-does not know about the directory — still arrives with no history and mints
-fresh ids. That case is now the exception rather than the default, and its
-degradation is the one described under "Consequence: note identity travels,
-but only with the state directory" below.
+**One database, not one per note or per peer.** `crdt_lf_sqlite`'s `changes`
+table is keyed `PRIMARY KEY (document_id, change_id)`, and `change_id` renders
+as `peerId@hlc`. The peer is therefore already part of every row's key, so
+changes from any number of peers coexist in one table with no possibility of
+collision once #67 delivers them, and `document_id` separates the notes.
 
 **One note on the shared-database test.**
 [sqlite_shared_database_test.dart](../../test/crdt/sqlite_shared_database_test.dart)
 still asserts exactly the right thing — BrainFrame's tables and the CRDT tables
 must co-exist in one consumer-owned database — and that property stays
-load-bearing here, for both artifacts. Only its header's stated *motivation*
-("one file per engram is what makes an engram copyable, backup-able, and
-syncable as a unit") needs correcting: that is now the export's job, and the
-file it describes is the cache.
+load-bearing. Only its header's stated *motivation* ("one file per engram is
+what makes an engram copyable, backup-able, and syncable as a unit") needs
+correcting: the file it describes is device-local, and what makes an engram
+portable is the markdown plus the identity map beside it.
 
 ### Decision 3 — merge policy is per note, recorded in the catalog
 
@@ -319,6 +305,15 @@ deliberate: character-merging two versions of a PNG produces a corrupt file
 that no one can recover, while last-writer-wins on a text file loses one edit
 that still exists in the loser's history. Default toward the recoverable
 failure.
+
+**Policy travels with identity, not with the device.** `merge_policy` is a
+property of the note, so it lives in the shared identity map (Decision 9)
+beside the ULID, and the catalog holds the local copy. Two devices that
+disagreed about a note's policy would apply incompatible semantics to one
+op-log — character-merging what the other treats as an opaque blob — which is
+corruption rather than divergence. In v1 policy is derived from the extension,
+so devices would usually agree by construction; "usually agree by accident" is
+a worse guarantee than one shared column.
 
 **Policy is fixed at note creation for v1.** Changing it mid-life means
 reinterpreting an existing op-log under different semantics, which needs a
@@ -370,6 +365,22 @@ semantic difference, and re-records the hash. The failure mode is a redundant
 diff, not a lost or duplicated edit — self-healing, which is the property being
 bought. Committing the hash *before* the write inverts this into silent data
 loss, so the ordering is load-bearing rather than stylistic.
+
+**`materialized_hash` is device-local, and must never be shared.** It records
+what *this device's* materializer last wrote, not a property of the note, and
+two devices legitimately hold different values at the same instant. Sharing it
+converts drift detection into silent data loss:
+
+1. Device A materializes and writes the file; the recorded hash becomes `H_A`.
+2. Device B — holding unmerged local operations — reads the shared `H_A`.
+3. B hashes the file, gets `H_A`, and concludes there is **no drift**.
+4. B therefore never reconciles A's edit into its own CRDT.
+5. B materializes later and writes its own content over the file. A's edit is
+   now gone from disk as well as from B's history.
+
+That is the exact failure the write ordering above exists to prevent, arriving
+through a different door. The same reasoning covers the size and mtime
+pre-filter: all three describe a device's own last write.
 
 Store the file's size and mtime alongside the hash as a cheap pre-filter — if
 both are unchanged, skip hashing. This is an optimization and must never be the
@@ -490,7 +501,7 @@ and the file is confirmed absent. The storage design already carries an
 "unavailable" state for engrams; notes need the same state for the same
 reason.
 
-### Decision 8 — device identity is per device, per engram, and self-correcting
+### Decision 8 — device identity is per device, per engram
 
 `crdt_lf` needs a stable `PeerId` — a UUID — for this device. It is minted on
 first write to an engram and stored in that engram's `metadata.db`, alongside
@@ -498,104 +509,115 @@ the op-log its operations are stamped with. Scoping per engram rather than one
 identity per device keeps engrams independent and avoids leaking a correlatable
 device identifier across unrelated engrams.
 
-The property that must hold is narrow and absolute: **two live writers must
-never share a peerID.** Two devices stamping operations with one identity makes
-genuinely concurrent operations indistinguishable rather than merely tied,
-which breaks the tiebreak comparator's uniqueness assumption outright.
+The property that must hold is narrow: **two live writers must never share a
+peerID.** Two devices stamping operations with one identity makes genuinely
+concurrent operations indistinguishable rather than merely tied, which breaks
+the tiebreak comparator's uniqueness assumption.
 
 "Device" here means **build install, not machine**. A debug and a release build
-on one computer resolve to different caches (Decision 2) and are therefore
-different peers, deliberately: developing the app in one window while using it
-in another must not produce two writers on one identity.
+on one computer resolve to different databases (Decision 2) and are therefore
+different peers, deliberately.
 
-**The claim nonce.** `metadata.db` stores `(peer_id, nonce)`, where the nonce is
-a random value minted with the peerID. This device's export file carries the
-same nonce. Before every export, the writer reads the nonce out of the existing
-`<peerId>.sqlite`:
+**A cloned identity is detected where it matters, which is #67.** Copying or
+restoring a `metadata.db` onto a second machine duplicates its peerID. That is
+harmless for exactly as long as the two logs never meet: each device edits its
+own markdown, Decision 6 reconciles the content through the file, and neither
+log observes the other. The damage requires two logs carrying one peerID to
+**merge** — and there is precisely one place that happens.
 
-- **Nonce matches, or the file is absent** — this device owns that peerID.
-  Export proceeds.
-- **Nonce differs** — some other install owns it. Mint a fresh peerID and
-  nonce, and export under the new name. The previous file is left untouched.
+So collision detection belongs in **#67**'s handshake, where two peers announce
+themselves before exchanging changes and a duplicate is both visible and
+actionable (the newer install re-mints and re-stamps nothing, since its
+operations are still its own). This design hands #67 that requirement rather
+than solving it here.
 
-That is the whole mechanism, and it replaces an entire apparatus. A
-`metadata.db` restored from a phone backup, cloned to a second machine, or
-copied by an image-based restore now **detects itself on first export** and
-steps aside. Because the export is regenerable from the cache, the worst case
-is one cycle of one device's export being overwritten before both settle on
-distinct identities.
+**Why not exclude the database from backups.** Considered and rejected. It
+needs platform configuration on Android (`dataExtractionRules`) and iOS
+(`NSURLIsExcludedFromBackupKey`); it is unenforceable on the three desktops
+against `restic`, Backblaze, or image-based backup; and when it fails it fails
+**silently**. It would also be defending against a state that is harmless until
+the moment #67 can see it directly.
 
-**Why not exclude the database from backups instead.** That was the obvious
-alternative and it is worse on every axis. It needs platform configuration on
-Android (`dataExtractionRules`) and iOS (`NSURLIsExcludedFromBackupKey`); it is
-unenforceable on the three desktops against `restic`, Backblaze, or image-based
-backup; and when it fails it fails **silently**, with two devices already
-writing under one identity. The nonce is a check this codebase runs itself, on
-every export, on every platform, with nothing for a user to configure and
-nothing for an administrator to override. Depending on both would be worse than
-depending on either, because the unverifiable mechanism would mask bugs in the
-verifiable one.
-
-**Why not tie the peerID to hardware.** Also considered, also rejected:
+**Why not tie the peerID to hardware.** Also rejected:
 
 - **It does not deliver uniqueness.** `/etc/machine-id` is baked into golden
   images and cloned across VM fleets; MAC addresses are randomized on modern
   mobile and cloned by hypervisors; iOS `identifierForVendor` resets when the
   last app from a vendor is deleted; Android exposes no stable device id to
   unprivileged apps. The result is an identifier that is sometimes duplicated
-  and sometimes reset — worse than random at the one job it was chosen for.
+  and sometimes reset — worse than random at its one job.
 - **It is a privacy regression.** A hardware identifier stamped into every
   operation and shipped to every peer at #67 is a permanent, correlatable
-  fingerprint in a log that never forgets, which is the opposite of the
-  per-engram scoping above.
-- **It detects rather than prevents**, and the nonce already detects, without
-  reading anything about the machine.
+  fingerprint in a log that never forgets — the opposite of the per-engram
+  scoping above.
+- **It detects rather than prevents**, and the handshake already detects,
+  without reading anything about the machine.
 
 **The cost of minting freely.** `VersionVector` is `Map<PeerId, HLC>` — one
-entry per peer ever seen, 24 bytes each — and it is embedded in every
-`Snapshot`, which is per note. Peers are therefore not free. The count is
-bounded by *distinct installs written from*, not by sessions, because a
-returning install reuses its stored identity; the genuine worst case is
-non-persistent VDI, where the cache is wiped every logon and a peer is minted
-daily. Peer retirement is a Housekeeping job, not a runtime concern.
+entry per peer ever seen, 24 bytes each — embedded in every `Snapshot`, which
+is per note. The count is bounded by distinct installs written from, not by
+sessions. Peer retirement is a Housekeeping job, not a runtime concern.
 
-### Decision 9 — the export is a whole-database snapshot, one file per peer
+### Decision 9 — the identity map: one file per peer, in the engram
 
-Each device periodically writes everything it knows to
-`<engram>/.brainframe/state/<peerId>.sqlite`. Four properties define it, and
-each one closes a specific failure:
+Each device writes the notes it has minted to
+`<engram>/.brainframe/ids/<peerId>.sqlite`: a small table of engram-relative
+path, ULID, and merge policy. No op-log, no content, no hashes. A busy engram's
+map is measured in kilobytes.
 
-- **Self-contained and internally consistent.** Produced with
-  `VACUUM INTO`, which yields a fresh, compact, transactionally consistent
-  database with no `-wal` or `-shm` sidecars, taken against the live cache
-  without quiescing writers. (The Dart `sqlite3` binding exposes no online
-  backup API; `VACUUM INTO` is plain SQL and needs none.)
-- **Atomically replaced.** `VACUUM INTO` refuses a destination that already
-  exists, so the sequence is: vacuum to a temporary name, then rename over the
-  target. A sync service never observes a partially written file.
+Four properties define it:
+
 - **Single-writer.** The filename *is* the writer's identity, so no two
-  installs ever write one path. There is no conflict to resolve because none
-  can be created — and Decision 8's nonce is what keeps that true when a cache
-  is cloned.
-- **Complete.** Each file holds the entire op-log this device knows, its own
-  and every peer's, plus the catalog. Any single file is therefore enough to
-  reconstruct a working engram, which is what makes a partial sync or a
-  vanished peer survivable. The cost is redundancy across files; compaction
-  bounds it.
+  installs write one path. There is no conflict to resolve because none can be
+  created.
+- **Atomically replaced.** Written with `VACUUM INTO` to a temporary name, then
+  renamed over the target — `VACUUM INTO` refuses a destination that exists.
+  The result is self-contained and internally consistent, with no `-wal` or
+  `-shm` sidecars, and a sync service never observes a partial file. Because
+  the map is tiny, rewriting it whole costs nothing; this is the discipline
+  that would have been ruinous applied to an op-log.
+- **Read every file, write exactly one.** A device scans the directory and
+  unions every file's rows, including its own. Peers appear as files, so
+  nothing needs to be discovered.
+- **Deterministically merged.** Rows union by ULID. If two devices minted
+  different ULIDs for one path — the only real collision, since a ULID never
+  changes once assigned — the **lowest ULID wins**, and the loser re-keys. Both
+  devices reach the same answer without coordinating.
 
-**Read every file, write exactly one.** Synchronization scans the directory,
-imports every file that is not its own, and exports to the one that is.
-Before #67 there is only ever one file and the loop is trivial — but writing it
-as "resolve my file" would bake in the wrong shape, and the correct loop is not
-larger.
+**Re-keying is cheap, which is what makes the tiebreak affordable.** A `Change`
+carries its `OperationId`, its dependencies, and its payload — never a document
+id. The document id exists only as the `document_id` column in
+`crdt_lf_sqlite`'s tables, so adopting a different ULID is two `UPDATE`
+statements against `changes` and `snapshots`, with history preserved intact.
 
-**Causally-unready changes are dropped, not buffered.** `importChanges`
-topologically sorts the batch, applies what it can, and catches *every*
-exception a change raises — `CausallyNotReadyException` included — skipping it
-silently. A change whose dependencies are absent is never stored, so supplying
-its ancestors afterwards does not heal it. The only signal available is the
-return value, which counts changes actually applied. Measured against
-`crdt_lf` 3.5.0 and pinned by
+**The map is authoritative for adoption, advisory otherwise.** When the local
+catalog has no row for a path, the map's ULID is adopted. When the catalog
+already has one, the map is reconciled against it by the rule above. The
+catalog remains the operational source of truth for everything the running app
+does.
+
+**No sync mechanism is named or supported.** This design does not promise that
+Dropbox, OneDrive, iCloud Drive, Syncthing, a roaming profile, or a network
+share works. It promises properties:
+
+> Files in `.brainframe/ids/` are written by exactly one device each, replaced
+> atomically, and never modified in place. Any mechanism that transfers whole
+> files and preserves renames carries them correctly.
+
+That statement is testable, does not age, and does not commit the project to a
+vendor matrix.
+
+**What the map does not carry.** A device that cold-copies an engram gets the
+right ULIDs and an **empty op-log**. Identity travels; history does not. That
+is the trade, and it is why the map stays small enough to be safe in a synced
+folder.
+
+**A constraint this hands to #67.** When changes finally do cross the network,
+`importChanges` topologically sorts a batch, applies what it can, and catches
+*every* exception a change raises — `CausallyNotReadyException` included —
+skipping it silently. A change whose dependencies are absent is never stored,
+so supplying its ancestors afterwards does not heal it. The only signal is the
+return value. Measured against `crdt_lf` 3.5.0 and pinned by
 [import_causal_readiness_test.dart](../../test/crdt/import_causal_readiness_test.dart):
 
 | Import | Applied | Result |
@@ -605,48 +627,9 @@ return value, which counts changes actually applied. Measured against
 | the orphan again | 1 of 1 | fully recovered |
 | the complete set, reversed | 3 of 3 | correct; the sort handles the order |
 
-Two consequences follow, and they are the reason this was worth settling before
-implementation rather than after:
-
-- **Import each peer file as one batch.** Because every file holds everything
-  its device knows, a file is causally self-contained, and a self-contained
-  batch is order-independent. Orphans then cannot arise at all. This is a
-  second dividend from the completeness property above — it was chosen for
-  bootstrap, and it happens to make the importer's hardest case unreachable.
-- **Treat a short return count as a retry signal, not a success.** If
-  `importChanges` returns fewer than it was given, changes were discarded and
-  must be offered again. Nothing else will ever report it: there is no
-  exception, no log, and no queue to inspect. An importer that ignores the
-  return value loses data silently.
-
-**No sync mechanism is named or supported.** This design does not promise that
-Dropbox, OneDrive, iCloud Drive, Syncthing, a roaming profile, or a network
-share works. It promises properties:
-
-> Files in `.brainframe/state/` are written by exactly one device each,
-> replaced atomically, and never modified in place. Any mechanism that
-> transfers whole files and preserves renames carries them correctly.
-
-That statement is testable, does not age, and does not commit the project to a
-vendor matrix or to chasing behavior changes in software it does not own. It
-also tells an advanced user why an untested tool will work, without anyone
-having tried it.
-
-**Costs to hold in view.** `VACUUM INTO` copies the whole database each cycle —
-O(total size), not O(changes since last export) — so the debounce interval must
-be generous, gated on a dirty flag, and revisited if engrams grow large enough
-to make it the wrong shape. Each peer's file grows without snapshot-and-prune,
-making compaction a real Housekeeping job rather than a someday one. A retired
-device's file lingers until retired explicitly. And import should skip
-unchanged peers on mtime and size, or every cycle re-parses everything.
-
-**Startup must not replay.** Opening an engram is a `SELECT` against the
-materialized catalog, never a replay of the op-log, and the scan fast-paths on
-mtime and size with full content hashing only where those disagree. Import of
-peer files happens in the background *after* the UI is live. This is a stated
-requirement because the alternative is technically correct and unusable: an
-engram with thousands of changes would spend its startup replaying history
-before showing a single note.
+So #67 must import a causally-complete batch and must treat a short return
+count as a retry signal rather than a success. An importer that ignores the
+return value loses data with no exception, no log, and no queue to inspect.
 
 ## Platform consequences
 
@@ -659,29 +642,27 @@ before showing a single note.
   store and offers only the read-only built-in engrams, so it needs neither a
   catalog nor an op-log. The seam must keep SQLite behind the existing
   conditional-import boundary so a web build never reaches it.
-- **Read-only engrams have neither catalog nor op-log.** The asset-backed
-  tutorial and help engrams cannot drift and cannot be edited. `Engram.readOnly`
-  already gates this.
+- **Read-only engrams have neither catalog, op-log, nor identity map.** The
+  asset-backed tutorial and help engrams cannot drift and cannot be edited.
+  `Engram.readOnly` already gates this, and nothing may be written into an
+  asset-backed engram's `.brainframe/`.
 - **Windows needs a `Runner.rc` fix before debug and release are separable.**
   `path_provider_windows` builds its directory from `CompanyName\ProductName`
   in the `VERSIONINFO` resource, and
   [Runner.rc](../../windows/runner/Runner.rc) sets both unconditionally — so
   Windows is the **only** target where a debug build and a release build
-  resolve to the *same* `metadata.db`. Decision 8's nonce does not save this
-  case and is not meant to: the two builds do not hold cloned caches, they hold
-  one cache, with the same peerID and the same nonce, opened by two processes.
-  The fix is local — give `ProductName` a `_DEBUG` variant
+  resolve to the *same* `metadata.db`, with the same peerID, opened by two
+  processes. The fix is local — give `ProductName` a `_DEBUG` variant
   (`BrainFrame.debug`), which the same file already does for the dev icon. This
   is a prerequisite of Decision 2, not a polish item, and it is already a
   present-day settings bug: `shared_preferences_windows` writes into that same
   `CompanyName\ProductName` directory, so the two builds share device settings
   today. Tracked as **#117**.
-- **No backup-exclusion configuration is required on any platform.** An earlier
-  draft called for `dataExtractionRules` on Android and
-  `NSURLIsExcludedFromBackupKey` on iOS. Decision 8's nonce makes both
-  unnecessary: `metadata.db` may be backed up and restored freely, because
-  being restored onto another device is now a handled case rather than a
-  hazard. Nothing here needs a platform manifest change.
+- **No backup-exclusion configuration is required on any platform.**
+  `metadata.db` may be backed up and restored freely. A restored copy
+  duplicates a peerID, which is inert until two logs meet, and Decision 8 puts
+  detection in #67's handshake where that actually happens. Nothing here needs
+  a platform manifest change.
 
 ## Performance envelope
 
@@ -740,17 +721,14 @@ materializer, the reconciler, and the policy table. Above it:
   reconciliation step 3–5, which is a genuine unification rather than two
   parallel paths.
 - The engram open path gains opening (or creating) `metadata.db`, injecting the
-  CRDT schema, importing any peer files in `.brainframe/state/`, and running a
-  first scan — the last two behind the UI, per Decision 9. The close path
-  exports and then closes the database.
-- A new export/import pair owns `.brainframe/state/`: the debounced
-  `VACUUM INTO`-and-rename writer, the nonce check from Decision 8, and the
-  directory scan that imports every file that is not this device's. It reuses
+  CRDT schema, reading `.brainframe/ids/` to adopt known ULIDs, and running a
+  first scan — the last two behind the UI, per the Performance envelope. The
+  close path writes the map and closes the database.
+- A reader/writer pair owns `.brainframe/ids/`: the `VACUUM INTO`-and-rename
+  writer for this device's file, the directory scan that unions every peer's
+  rows, and the lowest-ULID-wins merge with its re-keying `UPDATE`s. It reuses
   `DocumentEditController`'s existing debounce shape rather than inventing a
   second timer discipline.
-- A rebuild path that reconstructs `metadata.db` from `.brainframe/state/` plus
-  the markdown, so "delete the cache" is an implemented guarantee and not an
-  aspiration.
 - File-management operations (new note, rename, delete, move) route through the
   catalog so the app's own moves are recorded rather than rediscovered by
   content matching on the next scan.
@@ -789,25 +767,27 @@ expensively otherwise:
   tombstone.
 - **Byte-stable materialization** across a save/reload cycle, including
   frontmatter with comments, quoting, and key ordering the user chose.
-- **The cache is rebuildable.** Populate an engram, export, delete
-  `metadata.db`, reopen; assert the catalog, every note ULID, and the op-log
-  come back. This is the test that keeps Decision 2's one-sentence recovery
-  action true, and it is the one most likely to rot silently as tables are
-  added.
-- **A cloned cache steps aside.** Copy a populated `metadata.db` to a second
-  cache location, point both at one engram, export from both; assert two
-  distinct peerIDs, two export files, and no lost operations. This is
-  Decision 8's nonce, and it is the direct replacement for the
-  backup-exclusion configuration that is deliberately absent.
+- **A cold copy adopts, rather than mints.** Copy an engram with its
+  `.brainframe/ids/` to a second machine and open it; assert every note
+  keeps its ULID and no new ones are minted. Then delete the map and repeat;
+  assert fresh ULIDs and unchanged content. These are the two halves of
+  Decision 9's promise, and the second is the degraded path people will
+  actually hit.
+- **The map merges deterministically.** Have two devices mint different ULIDs
+  for one path, then let each read the other's file; assert both converge on
+  the lowest ULID and that the loser's history survives re-keying intact.
+- **The content hash never leaves the device.** Assert `materialized_hash`,
+  size, and mtime appear in no file under `.brainframe/`. This is a
+  one-line test guarding the failure written out in Decision 5, which is
+  invisible until a second device holds unmerged operations.
+- **Deleting `metadata.db` loses history, not content or identity.** Populate
+  an engram, delete the database, reopen; assert every note's ULID is
+  unchanged, content is unchanged, and history is empty.
 - **The import contract still holds.**
   [import_causal_readiness_test.dart](../../test/crdt/import_causal_readiness_test.dart)
   characterizes `crdt_lf`'s silent-drop behaviour. It is not a test of
   BrainFrame code; it exists so that an upstream change to buffering, throwing,
-  or reporting fails here rather than in a user's engram.
-- **An export is consistent under a concurrent writer.** Export while
-  operations are being applied; assert the resulting file opens, passes
-  `PRAGMA integrity_check`, and contains a prefix of history rather than a torn
-  one.
+  or reporting fails here rather than in a user's engram at #67.
 - **Two devices over one folder converge.** Two independent catalogs and
   op-logs (two `metadata.db` files, two peerIDs) pointed at one engram
   directory, edited alternately with a scan between; assert both converge on
@@ -821,71 +801,53 @@ Design is whole; implementation need not land at once.
 
 1. **Catalog, identity, and durable op-log**, with BrainFrame as the only
    writer. Notes get ids and history; nothing external is reconciled yet.
-2. **Export and rebuild** — Decision 9's writer, Decision 8's nonce, and the
-   path that reconstructs `metadata.db` from `.brainframe/state/`. Small, and
-   worth landing early: it is what makes the cache claim in Decision 2 true,
-   and every later step inherits a safe recovery action. **Includes the Windows
-   `Runner.rc` fix (#117)** — without it, Windows debug and release builds share
-   one cache and step 2's guarantees are false on that platform.
+2. **The identity map** — Decision 9's writer, reader, and merge rule, plus the
+   Windows `Runner.rc` fix (**#117**), without which Windows debug and release
+   builds share one database and step 2's guarantees are false there. Small,
+   and worth landing early: a note minted before the map exists is a note whose
+   identity never travels.
 3. **Materialization and editor rewiring.** The file becomes a projection.
 4. **Scan and reconciliation** — Decisions 6 and 7. This is where "locally
    arriving CRDTs work fully" becomes true.
 5. **`blobLww` for binary content.**
 
-Multi-peer **import** is deliberately not in this list. Until #67 or a shared
-folder exists there is only ever one file in `.brainframe/state/`, so the
-import loop has nothing to read; Decision 9 fixes its shape so that adding it
-later is not a rewrite. Step 4 is the one with real difficulty in it; steps 1
-through 3 are mostly plumbing, and are worth landing first precisely so step 4
-has a stable floor.
+Op-log exchange is deliberately not in this list — it is **#67**'s, and this
+design's job is to hand it a merge rather than a conflict. Step 4 is the one
+with real difficulty in it; steps 1 through 3 are mostly plumbing, and are
+worth landing first precisely so step 4 has a stable floor.
 
-## Consequence: note identity travels, but only with the state directory
+## Consequence: identity is shared, history is not
 
 This falls out of Decisions 2 and 9 and deserves stating on its own, because it
 is the one place where a choice made here constrains **#67**.
 
-The catalog — every note's path and ULID — is part of the export. So an engram
-copied *with* `.brainframe/state/` carries its identities: the receiving device
-adopts the existing ULIDs rather than minting new ones, both devices build on
-one document per note, and #67 inherits a single history to merge instead of
-two to reconcile. That is the common case, and it is the reason the identity
-map is a table in the export rather than a separate portable file: it needed a
-container that merges, and the op-log already is one.
+Two devices opening one engram — over Dropbox, a network share, or a plain copy
+— agree on every note's ULID, because the identity map travels with the folder.
+They build **separate op-logs keyed to the same `document_id`**. Content
+converges immediately through Decision 6, with no network code: each device
+sees the other's edits as ordinary file drift and reconciles them as a minimal
+diff. What differs is that each holds its own private history of how it got
+there.
 
-**The exception is a copy that leaves the state directory behind.** Selective
-sync, a `cp` of the markdown alone, an archive built by a tool that does not
-know the directory exists, or an engram created before this design shipped —
-each arrives as ordinary files, and the receiving device mints fresh ULIDs.
+**That is what makes #67 an ordinary merge.** Two histories over one document
+combine the way any two replicas of one document combine. There is no winning
+ULID to elect and no losing history to discard, which is precisely the outcome
+a device-local catalog could not offer.
 
-**Locally, that remains harmless, and the reason is Decision 6.** Each device
-sees the other's edits arriving as ordinary file drift and reconciles them as a
-minimal diff. Content converges on both devices with no network code and no
-corruption; the only thing that differs is that each holds its own private
-history of how it got there.
+**The exception is a copy that leaves `.brainframe/ids/` behind** — selective
+sync, a `cp` of the markdown alone, an archive built by a tool that skips
+dotfiles, or an engram created before this design shipped. Such a copy mints
+fresh ULIDs, and #67 then has to elect a winner per note, with the loser
+keeping content and losing history. Re-keying is two `UPDATE` statements, so
+the machinery is cheap; the loss is the history, not the work.
 
-**At #67 it is a bounded, once-per-device-pair cost.** Two documents describing
-one file cannot be merged into a unified history — a device elects a winning
-ULID and absorbs its own current content into the winner. That is not new
-machinery: it is Decision 6's reconciler pointed at a document that arrived
-over the wire rather than a file that changed on disk. The losing device keeps
-its *content* and loses its *history*.
-
-Re-keying is cheap, which is what makes electing a winner tolerable. A `Change`
-carries its `OperationId`, its dependencies, and its payload — never a document
-id. The document id exists only as the `document_id` **column** in
-`crdt_lf_sqlite`'s tables, so adopting a different ULID for a note is two
-`UPDATE` statements against `changes` and `snapshots`, with the history
-preserved intact. A device that mints an id today can adopt the canonical one
-whenever it learns it.
-
-**So no prompt on open, and no blocking.** An engram whose notes have no
-catalog entries and no state directory is a normal, recoverable situation, not
-an error to interrogate the user about. Minting is reversible, most users
-cannot answer "is this engram from another machine?", and refusing to open an
-engram until an unbuilt transport can reach an unreachable peer would trade a
-possible history loss for a certain outage. Housekeeping surfaces it instead:
-peers seen, last export, and a rebuild action, with history linking available
-once #67 exists.
+**No prompt on open.** An engram whose notes have no catalog entries and no
+identity map is a normal, recoverable situation rather than an error to
+interrogate the user about. Minting is reversible, most users cannot answer "is
+this engram from another machine?", and refusing to open an engram until an
+unbuilt transport can reach an unreachable peer would trade a possible history
+loss for a certain outage. Housekeeping surfaces it instead: peers seen, notes
+adopted from the map, notes minted locally.
 
 ## Open questions
 
@@ -911,13 +873,15 @@ installed dependency and it decides how defensive the importer must be.
   garbage collection can strand a peer below the frontier. Purely local,
   single-device use has no stranded peers, so this can be deferred — but it must
   be settled before **#67**, since that is the moment peers below the frontier
-  become possible. Tracked as **#118**.
-- **Compaction policy for export files.** Decision 9 states that each file
-  holds everything the device knows, which is what makes any single file
-  sufficient to rebuild. Without snapshot-and-prune those files grow without
-  bound, and the point at which that stops being acceptable has not been
-  measured. The same question as the one above, arriving from the export side;
-  tracked together as **#118**.
+  become possible. Tracked as **#118**, whose scope narrows with this revision:
+  there are no export files to compact, only the local op-log.
+- **Tombstones in the identity map.** If a note is deleted and a new file later
+  appears at the same path, a naive lookup adopts the dead note's ULID and
+  resurrects its history under unrelated content. The map needs either
+  tombstones or an explicit reconciliation against Decision 7's deletion
+  inference, and the interaction between a tombstone and a peer that never saw
+  the deletion is real design work rather than a footnote. This is the one gap
+  in Decision 9 that is known and not yet closed.
 - **What happens above the note-size ceiling.** "Performance envelope" above
   measures roughly 470 bytes per character, putting a 3.2 MB note near 1.5 GB
   resident — comfortable on desktop, fatal on iOS and on a 2 GB Pi. The

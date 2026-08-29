@@ -596,17 +596,24 @@ three properties decide membership:
 - **It describes the engram or its notes, never a device.** Content hashes,
   scan state, and the peerID fail this and stay in `metadata.db` — Decision 5
   spells out what sharing a hash destroys.
-- **It has a deterministic merge rule.** Every reader must reach the same
-  answer from the same set of files without coordinating.
+- **It has a deterministic merge rule, and carries the stamp that rule needs.**
+  Every reader must reach the same answer from the same set of files without
+  coordinating. In practice that means every row carries `hlc` and `peer`, so
+  contradictory claims resolve by the locked comparator; a future tenant that
+  cannot be stamped that way does not belong here.
 - **It is bounded, and does not grow with edit history.** The whole-file
   rewrite below is cheap only while the payload is small. The op-log fails this
   test, which is why it is not here.
 
 Four properties define the file itself:
 
-- **Single-writer.** The filename *is* the writer's identity, so no two
-  installs write one path. There is no conflict to resolve because none can be
-  created.
+- **One writer per file — but any device may write about any note.** The
+  filename *is* the writer's identity, so no two installs write one path and no
+  file-level conflict can be created. That is a claim about *files*, not about
+  rows. A rename or a deletion is performed by whichever device notices it,
+  which is frequently not the device that minted the ULID, so each device
+  records what it knows about any note in its own file and contradictions are
+  resolved on read.
 - **Atomically replaced.** Written with `VACUUM INTO` to a temporary name, then
   renamed over the target — `VACUUM INTO` refuses a destination that exists.
   The result is self-contained and internally consistent, with no `-wal` or
@@ -616,10 +623,52 @@ Four properties define the file itself:
 - **Read every file, write exactly one.** A device scans the directory and
   unions every file's rows, including its own. Peers appear as files, so
   nothing needs to be discovered.
-- **Deterministically merged.** Rows union by ULID. If two devices minted
-  different ULIDs for one path — the only real collision, since a ULID never
-  changes once assigned — the **lowest ULID wins**, and the loser re-keys. Both
-  devices reach the same answer without coordinating.
+- **Deterministically merged, by two rules answering different questions.**
+  Each row is `(ulid, path, merge_policy, deleted, hlc, peer)`, where `hlc` and
+  `peer` stamp the moment the writing device recorded it.
+
+  1. **Contradictions about one ULID** — two files each carrying a row for it —
+     resolve by the **locked tiebreak comparator**: HLC first, peerID second.
+     A rename is a row with a new `path`; a deletion is a row with `deleted`
+     set. Both are ordinary field updates needing no special case.
+  2. **Two live ULIDs claiming one path** — both devices cold-minted for the
+     same file — elect the **lowest ULID**, and the loser re-keys. ULIDs are
+     time-ordered, so this is "the earliest mint wins". It deliberately does
+     *not* use the comparator: this is not a last-writer-wins over one value
+     but an election between distinct identities, and the answer that should
+     survive is the earliest rather than the latest.
+
+**Why the rows carry a clock.** An earlier draft had rows union by ULID with no
+stamp, on the assumption that a ULID is minted once and never changes. The
+ULID does not change, but the row about it does, and the mutation is not always
+made by the minter. Without a stamp, this goes wrong silently:
+
+1. Device A mints `01ABC` for `trails/cedar.md` and writes it to `A.db`.
+2. The user renames the file to `journal/cedar.md` outside the app.
+3. Device B scans first and infers the move — correctly, per Decision 7.
+4. B cannot write `A.db`, so if it records nothing the shared map still says
+   `trails/cedar.md`.
+5. Device C opens the engram cold, finds no row for `journal/cedar.md`, and
+   mints a fresh ULID.
+
+The map has then caused exactly the mis-identification it exists to prevent,
+and — unlike a bad adoption, which surfaces — C's fresh ULID is
+indistinguishable from an ordinary new note. Deletion has the same shape:
+without somewhere to record a retraction, a path freed by a delete and reused
+later adopts the dead note's ULID and resurrects its history under unrelated
+content.
+
+The stamp costs nothing that does not already exist. Every device has an HLC
+and a peerID, and "What already exists" already requires that any new
+last-writer-wins rule invoke the locked comparator rather than invent a second
+one — satisfied here by construction.
+
+**What a lost race costs.** If a delete and an edit are concurrent and the
+delete wins, the file is still on disk with its content: the next scan finds a
+file with no live catalog row and mints a fresh ULID for it. Content survives,
+history does not, and Decision 7 already requires that class of loss to be
+surfaced rather than silent. A lost rename race is cheaper still — one of two
+paths wins and the other device moves its file to match.
 
 **The identity map is authoritative for adoption, advisory otherwise.** When
 the local catalog has no row for a path, the map's ULID is adopted. When the
@@ -762,10 +811,15 @@ materializer, the reconciler, and the policy table. Above it:
   first scan — the last two behind the UI, per the Performance envelope. The
   close path writes the map and closes the database.
 - A reader/writer pair owns `.brainframe/shared/`: the `VACUUM INTO`-and-rename
-  writer for this device's file, the directory scan that unions every peer's
-  rows, and the lowest-ULID-wins merge with its re-keying `UPDATE`s. It reuses
-  `DocumentEditController`'s existing debounce shape rather than inventing a
-  second timer discipline.
+  writer for this device's file, the directory scan that reads every peer's
+  rows, and the two-rule merge — comparator per ULID, lowest-ULID election per
+  path — with its re-keying `UPDATE`s. Every row this device writes is stamped
+  with its HLC and peerID, including rows about notes another device minted. It
+  reuses `DocumentEditController`'s existing debounce shape rather than
+  inventing a second timer discipline.
+- File-management and move detection gain a write to the shared database, not
+  only to the catalog. A rename or delete that updates the catalog and stops
+  there leaves the map stale, which is the silent failure Decision 9 describes.
 - File-management operations (new note, rename, delete, move) route through the
   catalog so the app's own moves are recorded rather than rediscovered by
   content matching on the next scan.
@@ -810,9 +864,23 @@ expensively otherwise:
   assert fresh ULIDs and unchanged content. These are the two halves of
   Decision 9's promise, and the second is the degraded path people will
   actually hit.
-- **The map merges deterministically.** Have two devices mint different ULIDs
-  for one path, then let each read the other's file; assert both converge on
-  the lowest ULID and that the loser's history survives re-keying intact.
+- **The map merges deterministically, under both rules.** Have two devices
+  cold-mint different ULIDs for one path; assert both converge on the lowest
+  ULID and that the loser's history survives re-keying intact. Separately, have
+  two devices write contradictory rows for *one* ULID; assert both resolve to
+  the same row under the locked comparator.
+- **A non-minting device's rename propagates.** Device A mints a note; device B
+  detects the rename and records it; assert a third device reading the
+  directory finds the note at its new path and adopts the original ULID. This
+  is the silent failure in Decision 9 — nothing surfaces when it breaks, so
+  only a test catches it.
+- **A freed path does not resurrect a dead note.** Delete a note, create an
+  unrelated file at the same path, rescan; assert a fresh ULID is minted and no
+  history from the deleted note is attached to it.
+- **A lost delete race keeps the content.** Delete on one device while another
+  edits concurrently; assert the delete wins or loses deterministically, and
+  that in either case the file's content still exists on disk and is reachable
+  under some ULID.
 - **The content hash never leaves the device.** Assert `materialized_hash`,
   size, and mtime appear in no file under `.brainframe/`. This is a
   one-line test guarding the failure written out in Decision 5, which is
@@ -916,13 +984,6 @@ installed dependency and it decides how defensive the importer must be.
   be settled before **#67**, since that is the moment peers below the frontier
   become possible. Tracked as **#118**, whose scope narrows with this revision:
   there are no export files to compact, only the local op-log.
-- **Tombstones in the identity map.** If a note is deleted and a new file later
-  appears at the same path, a naive lookup adopts the dead note's ULID and
-  resurrects its history under unrelated content. The map needs either
-  tombstones or an explicit reconciliation against Decision 7's deletion
-  inference, and the interaction between a tombstone and a peer that never saw
-  the deletion is real design work rather than a footnote. This is the one gap
-  in Decision 9 that is known and not yet closed.
 - **The note-size ceiling.** "Performance envelope" above measures roughly 470
   bytes per character, putting a 3.2 MB note near 1.5 GB resident — comfortable
   on desktop, fatal on iOS and on a 2 GB Pi. The measurement exists; the policy
@@ -931,6 +992,14 @@ installed dependency and it decides how defensive the importer must be.
 
 ### Decided during review — recorded so it is not relitigated
 
+- **Retractions and non-owner updates in the identity map: decided.** Review
+  found that Decision 9's original "union by ULID, lowest wins" rested on an
+  assumption that each ULID is only ever written by the device that minted it.
+  Renames and deletions are performed by whichever device notices them, so
+  rows now carry an HLC and peerID stamp and contradictions resolve by the
+  locked comparator. Decision 9 records the reasoning and the silent failure
+  that motivated it. Tombstones are a `deleted` field on an ordinary row rather
+  than a separate mechanism.
 - **Stamping the ULID into YAML frontmatter: decided, no.** Decision 1 reserves
   an `id:` frontmatter key as an additive *hint* — written and read, never
   trusted — and the question was whether to build it now. It is not being

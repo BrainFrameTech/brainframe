@@ -155,7 +155,9 @@ a pure *hint* — read to speed up re-association, never trusted as authority,
 rewritten by us whenever it drifts. Because a hint that garbles simply fails to
 match and falls through to content matching (Decision 6), the mergeable-text
 objection does not apply to that role. This is a one-column, one-code-path
-addition if interop ever demands it, so it is reserved rather than built.
+addition if interop ever demands it, so it is reserved rather than built —
+and the Open questions section records the review that considered building it
+now and declined.
 
 ### Decision 2 — one local database, plus a small shared identity map
 
@@ -342,6 +344,15 @@ app calls `writeString` on a note path.
 That inverts today's flow, where the editor's buffer is the authority and the
 file is where it lands. Consequences are covered in Decision 6.
 
+**We write what the user wrote; we never write what only we can read.** The
+materializer puts the user's own words back on disk, which is why writing their
+file is legitimate at all. It is not licence to add machine tokens to a
+document they own — an id, a checksum, a sync marker — that they did not ask
+for, cannot use, and cannot delete without us silently restoring it. The
+markdown is the user's permanent copy; the op-log and the databases are ours.
+This is the rule that settles the frontmatter-id question below, and it is
+worth checking any future addition against.
+
 The projection must be **byte-stable**: materializing the same CRDT state twice
 produces identical bytes. Anything else makes drift detection (Decision 5)
 report phantom changes forever. Concretely, this forbids re-serializing
@@ -488,10 +499,16 @@ The scan compares the catalog against what is actually on disk:
 - **A catalog path that is gone, plus a new path that is highly similar** — a
   rename *and* edit in one offline window. Re-associate above a similarity
   threshold, then reconcile the content difference as an ordinary drift.
+  Similarity is estimated from a **content sketch** — shingled MinHash or
+  equivalent — stored per note in the catalog beside the hash, so an unmatched
+  path is compared against the sketches of recently-missing notes rather than
+  against their full text. The sketch is device-local derived data: it lives in
+  `metadata.db`, is rebuilt by a scan, and is never shared.
 - **Below the threshold** — treat as a delete plus a create, and **surface it**.
   This loses that note's history, which is a real cost, so it must be visible
-  rather than silent. This case is the honest price of Decision 1's rejection
-  of a frontmatter id, and it is the strongest argument for the reserved hint.
+  rather than silent. This is the honest price of Decision 1's rejection of a
+  frontmatter id, and the sketch above exists to make this cell rare rather
+  than to eliminate it.
 - **A catalog path that is gone, with no candidate** — tombstone the note.
 
 **Absence is not deletion.** A file missing because a drive is unmounted, an
@@ -887,8 +904,12 @@ installed dependency and it decides how defensive the importer must be.
 
 ### Parked — waiting on data that does not exist yet
 
-- **The similarity threshold** in Decision 7 needs a concrete value and metric,
-  which is better chosen against the real fixture engram than in the abstract.
+- **The similarity threshold's value.** Decision 7 now names the metric — a
+  shingled content sketch — but the shingle size, sketch width, and the cutoff
+  itself still need choosing against the real fixture engram rather than in the
+  abstract. Picking them wrongly fails in one direction only: too low
+  re-associates unrelated notes and merges their histories, which is worse than
+  too high, so bias toward missing a match.
 - **Snapshot and compaction policy.** Case 5b of the frozen suite pins that
   garbage collection can strand a peer below the frontier. Purely local,
   single-device use has no stranded peers, so this can be deferred — but it must
@@ -908,32 +929,33 @@ installed dependency and it decides how defensive the importer must be.
   does not, and setting one needs real numbers from the other targets. Tracked
   as **#124**, and hardware-blocked until those targets can be measured.
 
-### Deliberate design choice, still open
+### Decided during review — recorded so it is not relitigated
 
-- **Whether to stamp the ULID into each note's YAML frontmatter as a hint.**
-  Decision 1 rejects frontmatter as the *authority* for a note's id and
-  reserves it as an additive **hint**: an `id:` key we write and read but never
-  trust, falling through to content matching whenever it is missing, garbled,
-  or duplicated. The question is whether to build that now.
+- **Stamping the ULID into YAML frontmatter: decided, no.** Decision 1 reserves
+  an `id:` frontmatter key as an additive *hint* — written and read, never
+  trusted — and the question was whether to build it now. It is not being
+  built.
 
-  The identity map does **not** make it redundant, because the two cover
-  different failures. The map is keyed by path, so a rename outside the app is
-  a lookup miss — it tells a second device which ULID a file *at a known path*
-  has, and says nothing about a file that moved. A frontmatter stamp travels
-  inside the file, so it survives a rename, and survives a rename *with* an
-  edit, which is the case Decision 7 can only guess at with a similarity
-  threshold and where it knowingly discards history below that threshold.
+  The value is narrower than it first appears. A **pure move** is already
+  handled by content-hash match in Decision 7, with no hint and no history
+  lost, so the stamp does nothing there. Its only cell is move *and*
+  significant edit in one window, falling below the similarity threshold — a
+  rare case intersected with a rare case. Nor does the identity map cover it:
+  the map is keyed by path, so a rename is a lookup miss.
 
-  Decision 1's three objections were all against frontmatter as authority and
-  none survive the hint role: a garbled id simply fails to match, a duplicated
-  id is detectable (two files, one id) and repaired by minting a fresh one, and
-  the clutter is a single line in a file that #57 and #104 are already teaching
-  BrainFrame to write.
+  Against that: every note in every engram carries a machine token forever,
+  adopting an existing engram rewrites thousands of files on first open, and
+  ULIDs are ours rather than the user's. Decision 4's rule settles it — the
+  stamp is precisely a thing only we can read.
 
-  The real cost is one Decision 1 does not raise: writing the stamp means the
-  materializer edits every note. Adopting an existing engram would rewrite
-  thousands of files on first open, changing their bytes, their hashes, and
-  their appearance in `git diff` and in every sync client. Doing it lazily —
-  only as a note is next edited — avoids the mass rewrite but leaves coverage
-  partial for exactly the untouched notes most likely to be reorganized in bulk.
-  That trade is the actual open question.
+  The residual risk is bulk reorganization, which is rare but **correlated**:
+  one restructuring touches many notes at once, and history loss goes unnoticed
+  because history is invisible until sought. That is answered by the content
+  sketch in Decision 7, which attacks the same case without touching a file the
+  user owns, and by Decision 7's requirement that the below-threshold case be
+  surfaced rather than silent.
+
+  Reversible if evidence arrives. If real use showed move-with-edit happening
+  often enough for history loss to become routine, the stamp is purely additive
+  and can be built then. Decision 1's reservation stays in place for exactly
+  that reason.

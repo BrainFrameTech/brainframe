@@ -164,14 +164,14 @@ Two artifacts, sized very differently, and the size difference is the design.
 | Artifact | Where | Holds |
 | --- | --- | --- |
 | `metadata.db` | platform app-data directory, keyed by engram ULID | op-log, catalog, this device's peerID, content hashes, scan state |
-| `ids/<peerId>.sqlite` | `<engram>/.brainframe/ids/` | path, ULID, and merge policy for notes this device minted |
+| `shared/<peerId>.db` | `<engram>/.brainframe/shared/` | engram-level shared state; today, the identity map |
 
 ```text
 <app data root>/                    <engram>/
   engrams/                            .brainframe/
     <engram ULID>/                      engram.json
-      metadata.db  ← everything         ids/
-                                          <peerId>.sqlite  ← identity only
+      metadata.db  ← everything         shared/
+                                          <peerId>.db  ← shared state
 ```
 
 BrainFrame opens `metadata.db` itself and injects the CRDT schema via
@@ -558,14 +558,34 @@ entry per peer ever seen, 24 bytes each — embedded in every `Snapshot`, which
 is per note. The count is bounded by distinct installs written from, not by
 sessions. Peer retirement is a Housekeeping job, not a runtime concern.
 
-### Decision 9 — the identity map: one file per peer, in the engram
+### Decision 9 — engram-level shared state, one file per peer
 
-Each device writes the notes it has minted to
-`<engram>/.brainframe/ids/<peerId>.sqlite`: a small table of engram-relative
-path, ULID, and merge policy. No op-log, no content, no hashes. A busy engram's
-map is measured in kilobytes.
+Each device writes a small database to
+`<engram>/.brainframe/shared/<peerId>.db`. Its first tenant is the **identity
+map**: engram-relative path, ULID, and merge policy for the notes this device
+minted. No op-log, no content, no hashes — a busy engram's map is measured in
+kilobytes.
 
-Four properties define it:
+`shared/<peerId>.db` rather than a narrower name like `ids.sqlite`, for the
+same reason Decision 2 chose `metadata.db` over `catalog.db`: the identity map
+is the first tenant, not the only one. Engram-level state that must agree
+across devices — later perhaps saved searches, pinned notes, or template
+definitions — belongs in the same file rather than accreting a new dotfile per
+concern.
+
+**What may live here.** The file is general-purpose but not unbounded, and
+three properties decide membership:
+
+- **It describes the engram or its notes, never a device.** Content hashes,
+  scan state, and the peerID fail this and stay in `metadata.db` — Decision 5
+  spells out what sharing a hash destroys.
+- **It has a deterministic merge rule.** Every reader must reach the same
+  answer from the same set of files without coordinating.
+- **It is bounded, and does not grow with edit history.** The whole-file
+  rewrite below is cheap only while the payload is small. The op-log fails this
+  test, which is why it is not here.
+
+Four properties define the file itself:
 
 - **Single-writer.** The filename *is* the writer's identity, so no two
   installs write one path. There is no conflict to resolve because none can be
@@ -584,23 +604,23 @@ Four properties define it:
   changes once assigned — the **lowest ULID wins**, and the loser re-keys. Both
   devices reach the same answer without coordinating.
 
+**The identity map is authoritative for adoption, advisory otherwise.** When
+the local catalog has no row for a path, the map's ULID is adopted. When the
+catalog already has one, the map is reconciled against it by the rule above.
+The catalog remains the operational source of truth for everything the running
+app does.
+
 **Re-keying is cheap, which is what makes the tiebreak affordable.** A `Change`
 carries its `OperationId`, its dependencies, and its payload — never a document
 id. The document id exists only as the `document_id` column in
 `crdt_lf_sqlite`'s tables, so adopting a different ULID is two `UPDATE`
 statements against `changes` and `snapshots`, with history preserved intact.
 
-**The map is authoritative for adoption, advisory otherwise.** When the local
-catalog has no row for a path, the map's ULID is adopted. When the catalog
-already has one, the map is reconciled against it by the rule above. The
-catalog remains the operational source of truth for everything the running app
-does.
-
 **No sync mechanism is named or supported.** This design does not promise that
 Dropbox, OneDrive, iCloud Drive, Syncthing, a roaming profile, or a network
 share works. It promises properties:
 
-> Files in `.brainframe/ids/` are written by exactly one device each, replaced
+> Files in `.brainframe/shared/` are written by exactly one device each, replaced
 > atomically, and never modified in place. Any mechanism that transfers whole
 > files and preserves renames carries them correctly.
 
@@ -721,10 +741,10 @@ materializer, the reconciler, and the policy table. Above it:
   reconciliation step 3–5, which is a genuine unification rather than two
   parallel paths.
 - The engram open path gains opening (or creating) `metadata.db`, injecting the
-  CRDT schema, reading `.brainframe/ids/` to adopt known ULIDs, and running a
+  CRDT schema, reading `.brainframe/shared/` to adopt known ULIDs, and running a
   first scan — the last two behind the UI, per the Performance envelope. The
   close path writes the map and closes the database.
-- A reader/writer pair owns `.brainframe/ids/`: the `VACUUM INTO`-and-rename
+- A reader/writer pair owns `.brainframe/shared/`: the `VACUUM INTO`-and-rename
   writer for this device's file, the directory scan that unions every peer's
   rows, and the lowest-ULID-wins merge with its re-keying `UPDATE`s. It reuses
   `DocumentEditController`'s existing debounce shape rather than inventing a
@@ -768,7 +788,7 @@ expensively otherwise:
 - **Byte-stable materialization** across a save/reload cycle, including
   frontmatter with comments, quoting, and key ordering the user chose.
 - **A cold copy adopts, rather than mints.** Copy an engram with its
-  `.brainframe/ids/` to a second machine and open it; assert every note
+  `.brainframe/shared/` to a second machine and open it; assert every note
   keeps its ULID and no new ones are minted. Then delete the map and repeat;
   assert fresh ULIDs and unchanged content. These are the two halves of
   Decision 9's promise, and the second is the degraded path people will
@@ -834,7 +854,7 @@ combine the way any two replicas of one document combine. There is no winning
 ULID to elect and no losing history to discard, which is precisely the outcome
 a device-local catalog could not offer.
 
-**The exception is a copy that leaves `.brainframe/ids/` behind** — selective
+**The exception is a copy that leaves `.brainframe/shared/` behind** — selective
 sync, a `cp` of the markdown alone, an archive built by a tool that skips
 dotfiles, or an engram created before this design shipped. Such a copy mints
 fresh ULIDs, and #67 then has to elect a winner per note, with the loser
@@ -882,18 +902,38 @@ installed dependency and it decides how defensive the importer must be.
   inference, and the interaction between a tombstone and a peer that never saw
   the deletion is real design work rather than a footnote. This is the one gap
   in Decision 9 that is known and not yet closed.
-- **What happens above the note-size ceiling.** "Performance envelope" above
-  measures roughly 470 bytes per character, putting a 3.2 MB note near 1.5 GB
-  resident — comfortable on desktop, fatal on iOS and on a 2 GB Pi. The
-  measurement exists; the *policy* does not. Refuse to open, open read-only
-  with no CRDT backing, or split the note are all defensible, and choosing
-  between them needs per-target numbers rather than the single desktop run
-  recorded above.
+- **The note-size ceiling.** "Performance envelope" above measures roughly 470
+  bytes per character, putting a 3.2 MB note near 1.5 GB resident — comfortable
+  on desktop, fatal on iOS and on a 2 GB Pi. The measurement exists; the policy
+  does not, and setting one needs real numbers from the other targets. Tracked
+  as **#124**, and hardware-blocked until those targets can be measured.
 
 ### Deliberate design choice, still open
 
-- **Whether the reserved frontmatter hint should simply be built now.** It
-  turns Decision 7's worst case from "history lost, warning shown" into "always
-  re-associated." The case against it is Decision 1's; the case for it is that
-  Decision 7's fallback is the only place in this design where user data is
-  knowingly discarded.
+- **Whether to stamp the ULID into each note's YAML frontmatter as a hint.**
+  Decision 1 rejects frontmatter as the *authority* for a note's id and
+  reserves it as an additive **hint**: an `id:` key we write and read but never
+  trust, falling through to content matching whenever it is missing, garbled,
+  or duplicated. The question is whether to build that now.
+
+  The identity map does **not** make it redundant, because the two cover
+  different failures. The map is keyed by path, so a rename outside the app is
+  a lookup miss — it tells a second device which ULID a file *at a known path*
+  has, and says nothing about a file that moved. A frontmatter stamp travels
+  inside the file, so it survives a rename, and survives a rename *with* an
+  edit, which is the case Decision 7 can only guess at with a similarity
+  threshold and where it knowingly discards history below that threshold.
+
+  Decision 1's three objections were all against frontmatter as authority and
+  none survive the hint role: a garbled id simply fails to match, a duplicated
+  id is detectable (two files, one id) and repaired by minting a fresh one, and
+  the clutter is a single line in a file that #57 and #104 are already teaching
+  BrainFrame to write.
+
+  The real cost is one Decision 1 does not raise: writing the stamp means the
+  materializer edits every note. Adopting an existing engram would rewrite
+  thousands of files on first open, changing their bytes, their hashes, and
+  their appearance in `git diff` and in every sync client. Doing it lazily —
+  only as a note is next edited — avoids the mass rewrite but leaves coverage
+  partial for exactly the untouched notes most likely to be reorganized in bulk.
+  That trade is the actual open question.

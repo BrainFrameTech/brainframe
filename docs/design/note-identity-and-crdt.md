@@ -532,6 +532,35 @@ The scan compares the catalog against what is actually on disk:
   than to eliminate it.
 - **A catalog path that is gone, with no candidate** — tombstone the note.
 
+**Adopting an existing vault is this scan at scale, and must be gated.** A
+folder with no `.brainframe/` at all — an Obsidian vault, a git repo of notes,
+any directory of markdown — is the first case above applied to every file at
+once. It is the *normal* way a real user starts, so it is a designed operation
+rather than an edge case, and four properties are required of it:
+
+- **Incremental.** Notes are minted and seeded one at a time. Seeding builds a
+  Fugue tree, and the Performance envelope puts that at roughly 470 bytes per
+  character; holding every note's tree at once would make adoption's peak
+  memory the size of the whole vault. Each document is disposed once its seed
+  change is durable.
+- **Resumable.** A half-finished adoption must be a valid state. It already is:
+  a path with no catalog row is simply "a new note" on the next scan, so an
+  interrupted run resumes by continuing. This is claimed deliberately rather
+  than relied on as an accident, because a step that mints ids before the scan
+  is durable would break it.
+- **Non-blocking and visible.** A large vault takes long enough to notice, so
+  adoption runs behind the UI with progress, and the engram is usable while it
+  proceeds. Notes not yet reached behave as history-pending.
+- **Ungated by the network.** Adoption never waits for a peer. The adopting
+  device mints and holds the seed claim for everything it creates, which is
+  exactly what makes this safe with no transport in existence.
+
+**Adopting the same folder on two machines is expected, not exceptional.** A
+vault in Dropbox opened on a desktop and a laptop before either syncs produces
+two ULIDs for every path — the collision Decision 9's second merge rule exists
+for. It resolves per note, the losing device retires its seed-only document,
+and the content survives the reconcile exactly once.
+
 **Absence is not deletion.** A file missing because a drive is unmounted, an
 engram is unavailable, or iCloud has not materialized a `.icloud` placeholder
 must never tombstone anything. Only tombstone when the scan is known-complete
@@ -654,11 +683,12 @@ Four properties define the file itself:
      A rename is a row with a new `path`; a deletion is a row with `deleted`
      set. Both are ordinary field updates needing no special case.
   2. **Two live ULIDs claiming one path** — both devices cold-minted for the
-     same file — elect the **lowest ULID**, and the loser re-keys. ULIDs are
-     time-ordered, so this is "the earliest mint wins". It deliberately does
-     *not* use the comparator: this is not a last-writer-wins over one value
-     but an election between distinct identities, and the answer that should
-     survive is the earliest rather than the latest.
+     same file — elect the **lowest ULID**. ULIDs are time-ordered, so this is
+     "the earliest mint wins". It deliberately does *not* use the comparator:
+     this is not a last-writer-wins over one value but an election between
+     distinct identities, and the answer that should survive is the earliest
+     rather than the latest. What the loser does is **not** a re-key; see
+     below.
 
 **Why the rows carry a clock.** An earlier draft had rows union by ULID with no
 stamp, on the assumption that a ULID is minted once and never changes. The
@@ -726,11 +756,29 @@ catalog already has one, the map is reconciled against it by the rule above.
 The catalog remains the operational source of truth for everything the running
 app does.
 
-**Re-keying is cheap, which is what makes the tiebreak affordable.** A `Change`
-carries its `OperationId`, its dependencies, and its payload — never a document
-id. The document id exists only as the `document_id` column in
-`crdt_lf_sqlite`'s tables, so adopting a different ULID is two `UPDATE`
-statements against `changes` and `snapshots`, with history preserved intact.
+**The loser retires its document; it does not re-key.** The obvious move looks
+free — a `Change` carries its `OperationId`, its dependencies, and its payload,
+never a document id, so the id exists only as the `document_id` column in
+`crdt_lf_sqlite`'s tables and could be rewritten with two `UPDATE` statements.
+That is mechanically true and semantically wrong. Both the losing and the
+winning document were **independently seeded**, so re-pointing one at the
+other's id puts two disjoint element universes under one document — the
+duplication pinned by
+[independent_seed_duplication_test.dart](../../test/crdt/independent_seed_duplication_test.dart).
+Re-keying is safe only where nothing already occupies the destination id, which
+is precisely what a contested path is not.
+
+So the losing device adopts the winning ULID as the note's identity, **retires
+its own document** for that note, and reconciles its file against the winner's
+materialized content as ordinary drift (Decision 6). The content survives
+exactly once; that note's local history does not.
+
+**In the case this rule mostly serves, nothing of value is lost.** Two devices
+that independently adopted the same folder hold, for each note, a history
+consisting of one seed — "here is the text that was already on disk." Discarding
+that costs nothing, because the file is reconciled anyway. The loss bites only
+for a note the losing device edited before the two ever met, and even then the
+edits survive as content through the drift diff.
 
 **No sync mechanism is named or supported.** This design does not promise that
 Dropbox, OneDrive, iCloud Drive, Syncthing, a roaming profile, or a network
@@ -863,13 +911,17 @@ materializer, the reconciler, and the policy table. Above it:
 - A reader/writer pair owns `.brainframe/shared/`: the `VACUUM INTO`-and-rename
   writer for this device's file, the directory scan that reads every peer's
   rows, and the two-rule merge — comparator per ULID, lowest-ULID election per
-  path — with its re-keying `UPDATE`s. Every row this device writes is stamped
+  path, with the loser retiring its document rather than re-keying onto the
+  winner's. Every row this device writes is stamped
   with its HLC and peerID, including rows about notes another device minted. It
   reuses `DocumentEditController`'s existing debounce shape rather than
   inventing a second timer discipline.
 - File-management and move detection gain a write to the shared database, not
   only to the catalog. A rename or delete that updates the catalog and stops
   there leaves the map stale, which is the silent failure Decision 9 describes.
+- An **adoption path** for a folder with no `.brainframe/`: create the engram
+  marker, then mint and seed incrementally behind the UI, disposing each
+  document as it goes, resumable at any point.
 - A **history-pending** note state that the catalog, the editor, and the
   materializer all understand: identity known, no `CRDTDocument`, written
   directly rather than projected (Decision 4), and promoted to a normal note
@@ -921,7 +973,8 @@ expensively otherwise:
   actually hit.
 - **The map merges deterministically, under both rules.** Have two devices
   cold-mint different ULIDs for one path; assert both converge on the lowest
-  ULID and that the loser's history survives re-keying intact. Separately, have
+  ULID, that the loser's document is retired rather than re-pointed, and that
+  the note's content appears exactly once. Separately, have
   two devices write contradictory rows for *one* ULID; assert both resolve to
   the same row under the locked comparator.
 - **Independent seeding duplicates content.**
@@ -939,6 +992,15 @@ expensively otherwise:
   offline, then merge; assert the comparator picks one, that the loser retracts
   its seeded elements, and that the resulting content matches the file on disk
   exactly once.
+- **Adoption resumes after interruption.** Adopt a fixture vault, kill the run
+  partway, reopen; assert every note ends with exactly one ULID, no note is
+  minted twice, and no content is duplicated. This is the property that makes
+  adoption safe to interrupt, and nothing else in the suite would notice it
+  regressing.
+- **Two machines adopting one folder converge.** Adopt the same fixture vault
+  on two independent caches with no shared identity map, then let each read the
+  other's map file; assert both converge on the same ULID per path and that
+  each note's content appears exactly once — not doubled by the loser's seed.
 - **A non-minting device's rename propagates.** Device A mints a note; device B
   detects the rename and records it; assert a third device reading the
   directory finds the note at its new path and adopts the original ULID. This
@@ -1018,9 +1080,9 @@ seed claim decides who is entitled to manufacture the first one.
 **The exception is a copy that leaves `.brainframe/shared/` behind** — selective
 sync, a `cp` of the markdown alone, an archive built by a tool that skips
 dotfiles, or an engram created before this design shipped. Such a copy mints
-fresh ULIDs, and #67 then has to elect a winner per note, with the loser
-keeping content and losing history. Re-keying is two `UPDATE` statements, so
-the machinery is cheap; the loss is the history, not the work.
+fresh ULIDs, and #67 then has to elect a winner per note. The losing device
+retires its document and reconciles its file against the winner's, so the
+content survives the diff and that note's local history does not.
 
 **No prompt on open.** An engram whose notes have no catalog entries and no
 identity map is a normal, recoverable situation rather than an error to
@@ -1068,6 +1130,14 @@ installed dependency and it decides how defensive the importer must be.
 
 ### Decided during review — recorded so it is not relitigated
 
+- **What a ULID-collision loser does: decided, retire rather than re-key.**
+  Review found the two corrections in tension: Decision 9 told the loser of a
+  path collision to re-key its document onto the winner's ULID, which is
+  exactly the independent-seed duplication the same document forbids elsewhere.
+  Re-keying is safe only where nothing occupies the destination id. The loser
+  now retires its document and reconciles content as drift — which in the case
+  the rule mostly serves, two machines adopting one folder, discards only a
+  seed and therefore nothing of value.
 - **Seeding a document under an adopted ULID: decided, never.** Review found
   that adopting a ULID without its op-log and seeding from the markdown
   produces *duplicated content* on merge, because Fugue merges on element

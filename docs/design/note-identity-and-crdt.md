@@ -180,6 +180,25 @@ BrainFrame opens `metadata.db` itself and injects the CRDT schema via
 `CRDTSqlite.fromDatabase`, so the catalog and the op-log share one connection
 and one transaction boundary. Decision 9 covers the map.
 
+**The engram ULID is not assumed immutable.** Two devices that adopt one folder
+before syncing each mint their own engram ULID in `.brainframe/engram.json`,
+and a sync service will pick one arbitrarily. Reconciling that is **#67**'s
+election — the same mechanism it already needs for contested note ULIDs, one
+level up — and nothing local can resolve it, since a disconnected device cannot
+know a competing claim exists.
+
+The local consequence is bounded, and deliberately so: the engram ULID names
+the *directory* and appears nowhere inside `metadata.db`. The catalog is keyed
+by note ULID, the op-log by `document_id` and `change_id`, and the peerID is a
+standalone value. A device whose claim loses therefore renames its directory
+and is finished; every byte inside is already correct. Keeping it out of the
+database is what makes that true, so nothing should later key a table on it.
+
+The one case needing a decision rather than a rename is a destination that
+already exists — this device holds two stores for what is now one engram, which
+means it adopted the same folder twice locally. Surface it; do not silently
+merge or clobber.
+
 **The op-log is local; identity is shared.** That division is the whole
 decision, and each half has an independent reason.
 
@@ -919,6 +938,9 @@ materializer, the reconciler, and the policy table. Above it:
 - File-management and move detection gain a write to the shared database, not
   only to the catalog. A rename or delete that updates the catalog and stops
   there leaves the map stale, which is the silent failure Decision 9 describes.
+- The `metadata.db` resolver gains one case: an engram whose ULID no longer
+  matches the directory holding its database renames the directory, or reports
+  a collision if the destination is occupied.
 - An **adoption path** for a folder with no `.brainframe/`: create the engram
   marker, then mint and seed incrementally behind the UI, disposing each
   document as it goes, resumable at any point.
@@ -997,6 +1019,12 @@ expensively otherwise:
   minted twice, and no content is duplicated. This is the property that makes
   adoption safe to interrupt, and nothing else in the suite would notice it
   regressing.
+- **A changed engram ULID relocates the store intact.** Adopt an engram, then
+  change the ULID in `engram.json` as an election would; assert the local
+  database is found under the new name with every note ULID, catalog row, and
+  operation unchanged. The test is trivial only while nothing inside the
+  database references the engram ULID, which is exactly the property it
+  defends.
 - **Two machines adopting one folder converge.** Adopt the same fixture vault
   on two independent caches with no shared identity map, then let each read the
   other's map file; assert both converge on the same ULID per path and that

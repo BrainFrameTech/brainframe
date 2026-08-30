@@ -232,9 +232,13 @@ read does.
 **Where `metadata.db` goes.** There is no single directory name across the six
 targets, and — as the Windows row shows — the two obvious `path_provider` calls
 do not agree on which one is correct. Resolution goes through a single injected
-resolver, mirroring `applicationEngramContainerPath()` in
-[fs_store_io.dart](../../lib/engram/fs/fs_store_io.dart), rather than being
-called ad hoc at each use site:
+resolver rather than being decided ad hoc at each use site, following the
+pattern `engramContainerResolver()` already establishes in
+[container_resolver.dart](../../lib/engram/container_resolver.dart): the choice
+lives in its own unit so it is covered by tests, instead of inline in
+`main.dart`, which the coverage gate excludes as untestable bootstrap. The same
+argument applies here with more force — a resolver that silently picks the
+wrong directory does not fail, it opens an empty engram.
 
 | Platform | Resolver | Release build resolves to |
 | --- | --- | --- |

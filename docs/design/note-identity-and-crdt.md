@@ -646,21 +646,23 @@ sessions. Peer retirement is a Housekeeping job, not a runtime concern.
 
 ### Decision 9 — engram-level shared state, one file per peer
 
-Each device writes a small database to
-`<engram>/.brainframe/shared/<peerId>.db`. Its first tenant is the **identity
-map**: engram-relative path, ULID, and merge policy for the notes this device
-minted. No op-log, no content, no hashes — a busy engram's map is measured in
-kilobytes.
+Each device writes **exactly one** small database into the engram, at
+`<engram>/.brainframe/shared/<peerId>.db`. One file per device, never more; a
+directory holding three files means three devices have written to this engram.
+
+Its first table is the **identity map**: engram-relative path, ULID, and merge
+policy for the notes this device minted. No op-log, no content, no hashes — a
+busy engram's map is measured in kilobytes.
 
 `shared/<peerId>.db` rather than a narrower name like `ids.sqlite`, for the
 same reason Decision 2 chose `metadata.db` over `catalog.db`: the identity map
-is the first tenant, not the only one. Engram-level state that must agree
-across devices — later perhaps saved searches, pinned notes, or template
-definitions — belongs in the same file rather than accreting a new dotfile per
-concern.
+is the first table in it, not the only one it will ever hold. Engram-level
+state that must agree across devices — later perhaps saved searches, pinned
+notes, or template definitions — belongs in the same file rather than
+accreting a new dotfile per concern.
 
-**What may live here.** The file is general-purpose but not unbounded, and
-three properties decide membership:
+**What may live in it.** The file is general-purpose but not unbounded, and
+three properties decide whether a future table belongs here:
 
 - **It describes the engram or its notes, never a device.** Content hashes,
   scan state, and the peerID fail this and stay in `metadata.db` — Decision 5
@@ -668,13 +670,13 @@ three properties decide membership:
 - **It has a deterministic merge rule, and carries the stamp that rule needs.**
   Every reader must reach the same answer from the same set of files without
   coordinating. In practice that means every row carries `hlc` and `peer`, so
-  contradictory claims resolve by the locked comparator; a future tenant that
-  cannot be stamped that way does not belong here.
+  contradictory claims resolve by the locked comparator; a table that cannot be
+  stamped that way does not belong here.
 - **It is bounded, and does not grow with edit history.** The whole-file
   rewrite below is cheap only while the payload is small. The op-log fails this
   test, which is why it is not here.
 
-Four properties define the file itself:
+**How it is written and read.** Four properties govern that same file:
 
 - **One writer per file — but any device may write about any note.** The
   filename *is* the writer's identity, so no two installs write one path and no

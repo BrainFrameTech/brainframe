@@ -147,6 +147,38 @@ class FileSystemEngramStore extends EngramStore {
     await _atomicWrite(file, Uint8List.fromList(utf8.encode(text)));
   }
 
+  /// The marker file carrying this engram's identity (see [readMetadata]).
+  File get _metadataFile =>
+      File('$_rootPath/$_markerDirectoryName/$_metadataFileName');
+
+  @override
+  Future<EngramMetadata?> readMetadata() async {
+    final file = _metadataFile;
+    if (!await file.exists()) return null;
+    // Deliberately unguarded, unlike readSettings: a malformed marker is a real
+    // fault, so it propagates as EngramMetadataException for the caller to show.
+    return EngramMetadata.decode(await file.readAsString());
+  }
+
+  @override
+  Future<EngramMetadata> setDisplayName(String displayName) async {
+    final current = await readMetadata();
+    if (current == null) {
+      throw StateError('No engram marker at $_rootPath');
+    }
+    final updated = current.withDisplayName(displayName);
+    // Atomic like every other marker write: an interrupted rename must never
+    // leave an engram with a half-written identity.
+    await _atomicWrite(
+      _metadataFile,
+      Uint8List.fromList(utf8.encode(updated.encode())),
+    );
+    return updated;
+  }
+
+  @override
+  String? get locationDescription => _rootPath;
+
   /// Writes [bytes] to [file] atomically (Decision 5): write a sibling temp
   /// file with the data flushed to disk, then `rename` it over [file]. Rename
   /// is atomic within a filesystem, so an interrupted write (crash, power loss)
@@ -301,6 +333,37 @@ Future<Engram> openFileSystemEngram(EngramLocation location) async {
 /// container resolver, not this thin wrapper, is where that case is handled.
 Future<String> applicationEngramContainerPath() async {
   final directory = await getApplicationDocumentsDirectory();
+  return directory.path;
+}
+
+/// A throwaway container for a session that must not touch the user's real
+/// engrams — the filesystem half of the `--ignore-config` startup flag.
+///
+/// Neutering preferences is not enough on its own. Discovery has two sources,
+/// and only one of them is preferences: it also scans the container returned by
+/// [applicationEngramContainerPath] one level deep, so a session backed by that
+/// path lists every engram in the user's documents directory no matter how
+/// thoroughly its saved configuration was ignored. That is a disclosure rather
+/// than an inconvenience — an engram the user considers private is named in the
+/// switcher, and in any screenshot taken of it.
+///
+/// This resolver hands out an empty temporary directory instead, so discovery
+/// finds nothing real and anything the session creates lands somewhere
+/// disposable. The directory is created once per process and reused, so
+/// discovery and creation agree on one container for the session's lifetime; it
+/// is deliberately not removed at exit, since it holds whatever that session
+/// made and the system reaps its temp tree anyway.
+Future<String> ephemeralEngramContainerPath() =>
+    _ephemeralContainer ??= _createEphemeralContainer();
+
+/// Memoized as the [Future], not its result, so two concurrent callers share
+/// one directory instead of racing to create two.
+Future<String>? _ephemeralContainer;
+
+Future<String> _createEphemeralContainer() async {
+  final directory = await Directory.systemTemp.createTemp(
+    'brainframe-ephemeral-',
+  );
   return directory.path;
 }
 

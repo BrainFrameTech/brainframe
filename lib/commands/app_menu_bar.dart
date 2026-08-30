@@ -141,6 +141,15 @@ class _AppMenuBarState extends State<AppMenuBar> {
               onPressed: _text.selectAll,
             ),
             const Divider(),
+            // Not a clipboard item: Find acts on the open *document*, not on
+            // whichever field has focus, so it comes from AppCommands and is
+            // greyed whenever nothing searchable is on screen.
+            MenuItemButton(
+              shortcut: shortcuts.find,
+              onPressed: commands.find,
+              child: Text(l10n.menuFind),
+            ),
+            const Divider(),
             MenuItemButton(
               shortcut: shortcuts.preferences,
               onPressed: commands.preferences,
@@ -260,6 +269,17 @@ class _AppMenuBarState extends State<AppMenuBar> {
             label: l10n.menuSelectAll,
             shortcut: shortcuts.selectAll,
             onSelected: _text.canSelectAll ? _text.selectAll : null,
+          ),
+          // Its own group, so macOS draws a separator between the clipboard
+          // items and Find — which acts on the document, not the focused field.
+          PlatformMenuItemGroup(
+            members: <PlatformMenuItem>[
+              PlatformMenuItem(
+                label: l10n.menuFind,
+                shortcut: shortcuts.find,
+                onSelected: commands.find,
+              ),
+            ],
           ),
         ],
       ),

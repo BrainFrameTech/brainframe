@@ -91,6 +91,7 @@ void main() {
         ),
         const SingleActivator(LogicalKeyboardKey.keyQ, control: true),
         const SingleActivator(LogicalKeyboardKey.comma, control: true),
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true),
       });
     });
   });
@@ -146,6 +147,21 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 
       expect(opened, 1);
+    });
+
+    testWidgets('Ctrl+F opens find in page', (tester) async {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      var finds = 0;
+      commands.publishFind(() => finds++);
+      await tester.pumpWidget(harness(commands));
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+      expect(finds, 1);
     });
 
     testWidgets('an unavailable command leaves its key unhandled rather than '

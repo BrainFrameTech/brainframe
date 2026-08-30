@@ -111,6 +111,31 @@ class EngramMetadata {
     );
   }
 
+  /// A copy of this metadata carrying [displayName] instead, leaving the
+  /// machine-owned fields ([id], [createdUtc], [schemaVersion]) untouched.
+  ///
+  /// This is the only field a user edits, so renaming an engram goes through
+  /// here rather than rebuilding metadata from scratch — an existing marker
+  /// keeps the schema version it was written with rather than being silently
+  /// upgraded. Throws [ArgumentError] on a blank name, which the parser would
+  /// reject on the way back in.
+  EngramMetadata withDisplayName(String displayName) {
+    final trimmed = displayName.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(
+        displayName,
+        'displayName',
+        'must not be blank',
+      );
+    }
+    return EngramMetadata(
+      schemaVersion: schemaVersion,
+      id: id,
+      displayName: trimmed,
+      createdUtc: createdUtc,
+    );
+  }
+
   /// The schema version this build writes and is the newest it can read.
   static const int currentSchemaVersion = 1;
 

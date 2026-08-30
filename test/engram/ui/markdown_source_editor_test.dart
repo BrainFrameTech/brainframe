@@ -240,4 +240,181 @@ void main() {
       expect(find.text('Copy'), findsOneWidget);
     });
   });
+
+  group('find highlights', () {
+    /// The spans the field actually paints, flattened to (text, hasBackground)
+    /// pairs — what a reader sees, rather than how it is built.
+    List<(String, bool)> paintedSpans(WidgetTester tester) {
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      final span = editable.controller.buildTextSpan(
+        context: tester.element(find.byType(EditableText)),
+        withComposing: false,
+      );
+      final children = span.children;
+      if (children == null) return [(span.text ?? '', false)];
+      return [
+        for (final child in children.cast<TextSpan>())
+          (child.text ?? '', child.style?.backgroundColor != null),
+      ];
+    }
+
+    testWidgets('paints every match, and only the active one differently', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          const MarkdownSourceEditor(
+            initialText: 'one two one',
+            matches: [TextRange(start: 0, end: 3), TextRange(start: 8, end: 11)],
+            activeMatch: 1,
+          ),
+        ),
+      );
+
+      expect(paintedSpans(tester), [
+        ('one', true),
+        (' two ', false),
+        ('one', true),
+      ]);
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      final span = editable.controller.buildTextSpan(
+        context: tester.element(find.byType(EditableText)),
+        withComposing: false,
+      );
+      final spans = span.children!.cast<TextSpan>();
+      expect(
+        spans[0].style?.backgroundColor,
+        isNot(spans[2].style?.backgroundColor),
+        reason: 'the active match must stand out from the rest',
+      );
+    });
+
+    testWidgets('no matches leaves the text as one plain span', (tester) async {
+      await tester.pumpWidget(
+        _host(const MarkdownSourceEditor(initialText: 'one two one')),
+      );
+
+      expect(paintedSpans(tester), [('one two one', false)]);
+    });
+
+    testWidgets('a stale range is clamped rather than thrown', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          const MarkdownSourceEditor(
+            initialText: 'short',
+            matches: [TextRange(start: 3, end: 99)],
+            activeMatch: 0,
+            key: ValueKey('slot'),
+          ),
+        ),
+      );
+
+      expect(paintedSpans(tester), [('sho', false), ('rt', true)]);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an out-of-range active index highlights none of them', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          const MarkdownSourceEditor(
+            initialText: 'one two',
+            matches: [TextRange(start: 0, end: 3)],
+            activeMatch: 7,
+          ),
+        ),
+      );
+
+      expect(paintedSpans(tester), [('one', true), (' two', false)]);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('the caret handle', () {
+    testWidgets('selectRange selects the range and focuses the field', (
+      tester,
+    ) async {
+      final controller = SourceEditorController();
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'one two one',
+            controller: controller,
+          ),
+        ),
+      );
+      expect(controller.isAttached, isTrue);
+
+      controller.selectRange(const TextRange(start: 8, end: 11));
+      await tester.pumpAndSettle();
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(
+        editable.controller.selection,
+        const TextSelection(baseOffset: 8, extentOffset: 11),
+      );
+      expect(editable.focusNode.hasFocus, isTrue);
+    });
+
+    testWidgets('a range past the end of the text is clamped, not thrown', (
+      tester,
+    ) async {
+      final controller = SourceEditorController();
+      await tester.pumpWidget(
+        _host(MarkdownSourceEditor(initialText: 'abc', controller: controller)),
+      );
+
+      controller.selectRange(const TextRange(start: 2, end: 99));
+      await tester.pumpAndSettle();
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(
+        editable.controller.selection,
+        const TextSelection(baseOffset: 2, extentOffset: 3),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('it detaches with the editor, and is a no-op after', (
+      tester,
+    ) async {
+      final controller = SourceEditorController();
+      await tester.pumpWidget(
+        _host(MarkdownSourceEditor(initialText: 'abc', controller: controller)),
+      );
+      await tester.pumpWidget(_host(const SizedBox()));
+
+      expect(controller.isAttached, isFalse);
+      controller.selectRange(const TextRange(start: 0, end: 1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('swapping the handle moves the attachment', (tester) async {
+      final first = SourceEditorController();
+      final second = SourceEditorController();
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'abc',
+            controller: first,
+            key: const ValueKey('slot'),
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'abc',
+            controller: second,
+            key: const ValueKey('slot'),
+          ),
+        ),
+      );
+
+      expect(first.isAttached, isFalse);
+      expect(second.isAttached, isTrue);
+    });
+  });
 }

@@ -18,6 +18,7 @@ class AppShortcuts {
     this.newFolder,
     this.quit,
     this.preferences,
+    this.find,
     this.cut,
     this.copy,
     this.paste,
@@ -42,6 +43,7 @@ class AppShortcuts {
             LogicalKeyboardKey.comma,
             control: true,
           ),
+          find: SingleActivator(LogicalKeyboardKey.keyF, control: true),
           cut: SingleActivator(LogicalKeyboardKey.keyX, control: true),
           copy: SingleActivator(LogicalKeyboardKey.keyC, control: true),
           paste: SingleActivator(LogicalKeyboardKey.keyV, control: true),
@@ -60,6 +62,7 @@ class AppShortcuts {
           ),
           quit: SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
           preferences: SingleActivator(LogicalKeyboardKey.comma, meta: true),
+          find: SingleActivator(LogicalKeyboardKey.keyF, meta: true),
           cut: SingleActivator(LogicalKeyboardKey.keyX, meta: true),
           copy: SingleActivator(LogicalKeyboardKey.keyC, meta: true),
           paste: SingleActivator(LogicalKeyboardKey.keyV, meta: true),
@@ -77,6 +80,7 @@ class AppShortcuts {
   final SingleActivator? newFolder;
   final SingleActivator? quit;
   final SingleActivator? preferences;
+  final SingleActivator? find;
   final SingleActivator? cut;
   final SingleActivator? copy;
   final SingleActivator? paste;
@@ -108,6 +112,7 @@ class AppShortcuts {
   static const _newFolder = NewFolderIntent();
   static const _quit = QuitAppIntent();
   static const _preferences = OpenPreferencesIntent();
+  static const _find = FindInPageIntent();
 
   /// The in-app key bindings.
   ///
@@ -122,6 +127,7 @@ class AppShortcuts {
       ?newFolder: _newFolder,
       ?quit: _quit,
       ?preferences: _preferences,
+      ?find: _find,
     };
   }
 }
@@ -150,6 +156,7 @@ class AppCommandShortcuts extends StatelessWidget {
           OpenPreferencesIntent: _CommandAction<OpenPreferencesIntent>(
             commands.preferences,
           ),
+          FindInPageIntent: _CommandAction<FindInPageIntent>(commands.find),
           QuitAppIntent: _CommandAction<QuitAppIntent>(
             () => unawaited(requestAppQuit()),
           ),

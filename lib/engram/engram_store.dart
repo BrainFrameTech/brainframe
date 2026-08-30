@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'metadata.dart';
+
 /// The content-access contract for every engram.
 ///
 /// Backends implement the read primitives — [list], [readBytes] — and
@@ -129,6 +131,42 @@ abstract class EngramStore {
   /// on `Engram.readOnly` rather than catching it.
   Future<void> writeSettings(Map<String, Object?> settings) async =>
       throw UnsupportedError('This store is read-only; cannot write settings.');
+
+  /// This engram's on-disk marker ([EngramMetadata], from `engram.json`), or
+  /// null for a backend that has no marker (the asset-backed built-ins).
+  ///
+  /// Identity, not content or configuration: the ULID, the display name, the
+  /// creation stamp, and the schema version. It is read straight from disk
+  /// rather than from the in-memory `Engram` so the "about this engram" pane
+  /// reports what is actually stored — that is the point of showing it.
+  /// A malformed marker throws [EngramMetadataException] rather than degrading
+  /// to null, because a diagnostic surface that hides the fault is worse than
+  /// useless.
+  ///
+  /// Defaults to none; the filesystem store overrides it.
+  Future<EngramMetadata?> readMetadata() async => null;
+
+  /// Rewrites the marker's display name, returning the metadata as stored.
+  ///
+  /// The only mutable field in the marker (see
+  /// [EngramMetadata.withDisplayName]) — id, creation stamp and schema version
+  /// are preserved, so an engram's identity survives any number of renames and
+  /// nothing cross-referencing it breaks. The folder itself is *not* renamed:
+  /// the on-disk name and the display name are deliberately independent.
+  ///
+  /// Read-only stores (the asset bundle) throw [UnsupportedError]; callers gate
+  /// on `Engram.readOnly` rather than catching it.
+  Future<EngramMetadata> setDisplayName(String displayName) =>
+      throw UnsupportedError('This store is read-only; cannot be renamed.');
+
+  /// Where this engram lives, in whatever terms the backend has — a filesystem
+  /// path for an on-disk engram — or null for a backend with no meaningful
+  /// location (the asset bundle).
+  ///
+  /// Diagnostic only: it is shown to the user in the engram pane and never
+  /// parsed or used to reach content, which still goes through the
+  /// engram-relative path methods above.
+  String? get locationDescription => null;
 
   /// Releases any resources this store holds — an open location handle, a file
   /// watcher — when its engram is switched away from or the app tears down.

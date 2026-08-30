@@ -27,6 +27,10 @@ void main() {
     expect(() => applicationEngramContainerPath(), throwsUnsupportedError);
   });
 
+  test('ephemeralEngramContainerPath is unsupported on the web stub', () {
+    expect(() => ephemeralEngramContainerPath(), throwsUnsupportedError);
+  });
+
   test('discoverContainerEngrams is unsupported on the web stub', () {
     expect(() => discoverContainerEngrams('/anywhere'), throwsUnsupportedError);
   });

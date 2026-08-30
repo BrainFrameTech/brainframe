@@ -20,9 +20,36 @@ intended visual tell between debug and release is the **dev icon** (see
 | Android | `tech.brainframe.app.debug` (applicationId) | `android/app/build.gradle.kts` — `applicationIdSuffix = ".debug"` on the `debug` build type |
 | iOS | `tech.brainframe.app.debug` (bundle ID) | `ios/Runner.xcodeproj/project.pbxproj` — `PRODUCT_BUNDLE_IDENTIFIER` in the Debug config |
 | macOS | `tech.brainframe.app.debug` (bundle ID) | `macos/Runner.xcodeproj/project.pbxproj` — `PRODUCT_BUNDLE_IDENTIFIER` override in the Runner Debug config (base value lives in `Configs/AppInfo.xcconfig`) |
-| Windows | window class `FLUTTER_RUNNER_WIN32_WINDOW_DEBUG` | `windows/runner/win32_window.cpp` — `#ifdef _DEBUG` (Windows has no OS-level app ID; the window class is the closest analog and lets external tooling target the debug window) |
+| Windows | `VERSIONINFO` `ProductName` of `BrainFrame.debug`, plus window class `FLUTTER_RUNNER_WIN32_WINDOW_DEBUG` | `windows/runner/Runner.rc` and `windows/runner/win32_window.cpp` — both `#ifdef _DEBUG` (Windows has no OS-level app ID; `ProductName` is what per-app *storage* is keyed on, and the window class lets external tooling target the debug window) |
 
 Profile builds share the **release** identity on every platform.
+
+### Windows: `ProductName` is the per-app storage key
+
+Windows is the one target where the identity that separates *windows* is not
+the identity that separates *data*. `path_provider_windows` builds its
+directory as `CompanyName\ProductName`, read back out of the `VERSIONINFO`
+resource at runtime, for both `getApplicationSupportDirectory()`
+(`RoamingAppData`) and `getApplicationCacheDirectory()` (`LocalAppData`).
+`shared_preferences_windows` sits on top of that.
+
+So while the window class made the debug *window* addressable, a single
+`ProductName` still pointed both builds at one directory — they shared device
+settings, and would have shared the `metadata.db` and peerID that
+[note identity and local CRDT storage](design/note-identity-and-crdt.md)
+introduces. Two live writers sharing one peerID is the one thing that design's
+Decision 8 requires never happen, which is why the suffix is a prerequisite
+there rather than a tidiness fix.
+
+Two things this deliberately does **not** change:
+
+- **The window title.** It is the literal `L"BrainFrame"` in
+  `windows/runner/main.cpp`, so the visible label rule above still holds.
+- **Anything the app displays.** `package_info_plus` reports `appName` from
+  this same `ProductName`, but nothing in `lib/` reads `appName` — the About
+  screen takes only `version` and `buildNumber`. The suffix is visible in
+  Explorer's file properties for the debug `.exe`, which is the OS-level
+  identity it is meant to be.
 
 The Linux visual-verification tool (`tool/appshot.sh`) relies on this: it
 targets only the `tech.brainframe.app.debug` window, so a release build left

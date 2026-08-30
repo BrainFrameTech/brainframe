@@ -1048,6 +1048,42 @@ built-in engrams are read-only here.
 
 ---
 
+### F28 — Debug and release builds are separate installs
+
+Unlike every case above, this one needs **two builds of the same commit**
+installed side by side. It is developer-facing rather than user-facing, but it
+is load-bearing: `tool/appshot.sh` targets only the debug window so a
+dogfooded release build is never driven, and the CRDT design's Decision 8
+requires that two live writers never share a device identity.
+
+**Steps:**
+
+1. Build and run a **release** (or profile) build. Settings → Appearance →
+   set **Default theme** to a distinctive value (e.g. **Dark**). Quit.
+2. Build and run a **debug** build of the same commit.
+3. Confirm its **Default theme** is *not* the value from step 1 — the debug
+   build starts from its own device settings.
+4. Set the debug build's default theme to a different distinctive value. Quit.
+5. Relaunch the **release** build; confirm it still shows the step 1 value.
+6. Confirm the two carry different launcher/taskbar icons (the dev icon on
+   debug).
+
+**Expected:** the two builds keep entirely separate device settings and never
+observe each other's.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ — the case this was written for (**#117**). Also check directly: `%APPDATA%\tech.brainframe\` holds **both** `BrainFrame\` and `BrainFrame.debug\` | ✓ (distinct bundle IDs) | ✓ (distinct GApplication ID / `WM_CLASS`) | ✓ (`applicationIdSuffix`; both install side by side) | ✓ as Android | ✓ in principle; installing both at once needs provisioning for two bundle IDs, so this may be **deferred** rather than run | ✓ for the settings separation; step 6 is **N/A** — flutter-pi has no launcher or taskbar icon |
+
+- **Windows was the exception until #117.** `path_provider_windows` keys
+  per-app storage on `CompanyName\ProductName` from the `VERSIONINFO`
+  resource, and both builds set one `ProductName`, so they shared device
+  settings. Step 3 failing on Windows is that bug, not a new one.
+- **Reference:** [debug-build-identity.md](debug-build-identity.md) has the
+  per-platform table of where each identity is set.
+
+---
+
 ## Bug-class deep-dives
 
 Run these as focused sweeps; they cut across features and are cheaper to do once

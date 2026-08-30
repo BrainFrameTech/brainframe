@@ -102,7 +102,20 @@ BEGIN
             VALUE "InternalName", "brainframe" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 tech.brainframe. All rights reserved." "\0"
             VALUE "OriginalFilename", "brainframe.exe" "\0"
+            // `path_provider_windows` keys per-application storage on
+            // `CompanyName\ProductName` read back out of this resource, and
+            // `shared_preferences_windows` sits on top of it. A single
+            // ProductName therefore puts a debug build and a release build in
+            // one directory, sharing device settings and (once it exists) one
+            // metadata.db and peerID. Suffixing it here is the Windows half of
+            // the `.debug` identity rule — see docs/debug-build-identity.md.
+            // This is the VERSIONINFO product string, not the window title
+            // (main.cpp) and not anything the app displays.
+#ifdef _DEBUG
+            VALUE "ProductName", "BrainFrame.debug" "\0"
+#else
             VALUE "ProductName", "BrainFrame" "\0"
+#endif
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

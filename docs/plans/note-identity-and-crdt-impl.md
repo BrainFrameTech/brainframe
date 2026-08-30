@@ -212,10 +212,42 @@ ULID. Re-keying is two `UPDATE` statements and is semantically wrong: both
 documents were independently seeded, so re-pointing one at the other's id
 puts two disjoint element universes under one document.
 
-The seed claim becomes real here — the minter takes it at mint time, an
-adopting device does not seed, and an adopting device may take an *unclaimed*
-seed when the user first edits the note. History-pending becomes a state the
-catalog, the editor, and the materializer all understand.
+The seed claim becomes real here, and **"adopt" means two different things**
+that must not be run together. *Adopting a folder* (step 12) mints and seeds
+every note in it automatically on first open — nothing waits for the user.
+*Adopting a ULID* from another device's map file records the identity
+immediately and never seeds. Three cases, and only the third waits for an
+edit:
+
+| What the scan finds | What happens |
+| --- | --- |
+| No catalog row and no map row — the user's own vault, first open | Mint, seed from the file's text, take the claim |
+| A map row carrying a `seeded_by` claim | Record the ULID, do **not** seed; the note is history-pending |
+| A map row with no `seeded_by` — the map outlived every op-log that backed it | Record the ULID; seed, and claim, on the user's first edit |
+
+Row two never seeds because seeding under a ULID another device already
+seeded is the duplication hazard
+[independent_seed_duplication_test.dart](../../test/crdt/independent_seed_duplication_test.dart)
+pins: Fugue merges on element identity, so two independent seeds of identical
+text merge to *doubled* text rather than to identical text.
+
+Row three defers to an edit so that merely *opening* an engram does not stake
+a claim — two devices that both open it while offline would otherwise race
+for a seed neither is using. The race stays handled if it happens (comparator
+on `seed_hlc`, the loser retracts its seeded elements); deferring only stops
+it being provoked.
+
+History-pending becomes a state the catalog, the editor, and the materializer
+all understand.
+
+- **A consequence that lands before #67.** A device in row two has working
+  notes with **no local history** — edits save, drift reconciles, and
+  Decision 4's direct-write path carries them, but no version history exists
+  for those notes until sync delivers the log. On a two-machine shared folder
+  today, whichever machine did not mint a note stays in that state
+  indefinitely. It is the deliberate trade, since the alternative corrupts
+  content, but it is invisible unless someone goes looking for history — so
+  step 13 surfaces the count.
 
 - **Tests that matter:** a cold copy adopts rather than mints, and deleting
   the map then reopening mints fresh ULIDs with unchanged content — the two
@@ -351,6 +383,10 @@ it. Non-blocking, with progress, and never waiting for a peer.
 Settings › Housekeeping gains what Decision 9 promises instead of a prompt on
 open: peers seen, notes adopted from the map, notes minted locally, and the
 below-threshold history-loss reports step 11 raises.
+
+"Notes adopted from the map" is not a curiosity. Before **#67** exists it is
+exactly the set of notes with no local history (step 6), and this panel is
+the only place that state is visible at all.
 
 This is where "no prompt on open" pays out — minting is reversible, most
 users cannot answer "is this engram from another machine?", and refusing to

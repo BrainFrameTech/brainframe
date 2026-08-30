@@ -654,6 +654,36 @@ Its first table is the **identity map**: engram-relative path, ULID, and merge
 policy for the notes this device minted. No op-log, no content, no hashes — a
 busy engram's map is measured in kilobytes.
 
+**The peerID in the filename is authorship, not scope.** Every row in every one
+of these files is shared state that every device reads. Nothing peer-specific
+lives here — that is `metadata.db`'s job (Decision 2). The name answers "who
+wrote this file", never "who is this file for".
+
+**Why not a single `engram.db`.** Because a sync service does not merge binary
+files; it picks a winner and drops the loser, or leaves a conflicted copy
+beside it. `VACUUM INTO` and an atomic rename make each *write* internally
+consistent, and do nothing whatsoever about two devices replacing one path.
+
+The failure is not exotic — it is the case an adopting user hits first. A vault
+in a shared folder, opened on two machines before either syncs:
+
+1. The desktop adopts it, mints 500 ULIDs, and writes `engram.db`.
+2. The laptop, offline, adopts the same vault, mints 500 *different* ULIDs, and
+   writes `engram.db`.
+3. The sync service sees two versions of one path and keeps one.
+
+Five hundred ULIDs and their seed claims are gone, silently. The merge rules
+below never run, because there is nothing left to merge — one file replaced the
+other whole. Read-modify-write does not rescue it either: two devices that both
+read state S and write S+a and S+b produce a lost update, and there is no lock
+available across machines that may never be online simultaneously.
+
+Sharding by author converts that into a union of independent files, which is
+what lets the merge rules exist at all. It is worth seeing that the sharding
+and the map itself stand or fall together: if devices never write one folder
+concurrently, there is no need to shard — but there is also no need for the
+map, because **#67** would be carrying identity instead.
+
 `shared/<peerId>.db` rather than a narrower name like `ids.sqlite`, for the
 same reason Decision 2 chose `metadata.db` over `catalog.db`: the identity map
 is the first table in it, not the only one it will ever hold. Engram-level
@@ -682,9 +712,15 @@ three properties decide whether a future table belongs here:
   filename *is* the writer's identity, so no two installs write one path and no
   file-level conflict can be created. That is a claim about *files*, not about
   rows. A rename or a deletion is performed by whichever device notices it,
-  which is frequently not the device that minted the ULID, so each device
-  records what it knows about any note in its own file and contradictions are
-  resolved on read.
+  which is frequently not the device that minted the ULID, so any device may
+  write a row about any note.
+
+  A device writes rows only for notes it **authored** — those it minted, and
+  those whose path or deleted status it changed. It never rewrites a row it
+  merely learned by reading another file. The files are therefore disjoint
+  except where two devices genuinely made claims about one note, which is
+  precisely the case the comparator resolves. Nothing is replicated for its
+  own sake.
 - **Atomically replaced.** Written with `VACUUM INTO` to a temporary name, then
   renamed over the target — `VACUUM INTO` refuses a destination that exists.
   The result is self-contained and internally consistent, with no `-wal` or

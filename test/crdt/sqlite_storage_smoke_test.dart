@@ -7,20 +7,23 @@
 // the tests.
 //
 // It earns its place because crdt_lf_sqlite is the suite's one dependency with
-// a NATIVE component. It rides on `sqlite3`, a dart:ffi package that loads a
-// platform sqlite3 library at runtime rather than compiling one in. A pub
-// resolution proving the Dart API exists says nothing about whether that
-// library can be opened — so without this test the first thing to discover a
-// missing/unloadable sqlite3 would be the sync layer, at runtime, on whichever
-// platform lacks it. Here it fails loudly at `flutter test` instead.
+// a NATIVE component. It rides on `sqlite3`, a dart:ffi package that opens a
+// real sqlite3 library at runtime. A pub resolution proving the Dart API
+// exists says nothing about whether that library can actually be opened — so
+// without this test the first thing to discover an unloadable sqlite3 would be
+// the sync layer, at runtime. Here it fails loudly at `flutter test` instead.
 //
 // PLATFORM SCOPE: dart:ffi does not exist on the web, so this package (and
 // anything importing it) is desktop/mobile only and must never be reached from
-// shared code on a web build. Linux and macOS have a system sqlite3; Android,
-// iOS and Windows generally need `sqlite3_flutter_libs` added to bundle one.
-// That package is intentionally NOT a dependency yet — nothing in lib/ uses
-// sqlite storage, so there is no reason to pull a native build step into every
-// platform target ahead of the sync layer that needs it.
+// shared code on a web build.
+//
+// NO NATIVE-BUNDLING PACKAGE IS NEEDED, and one must not be added.
+// `package:sqlite3` v3 ships its own sqlite3 with the app on every platform
+// through Dart's build hooks, and prefers it over whatever the operating
+// system offers — so every target gets one build with one set of compile-time
+// options, rather than whatever each OS happens to provide. The v2-era
+// `sqlite3_flutter_libs` existed to fill that gap and is obsolete against v3;
+// adding it would ship a second copy of sqlite3 that nothing loads.
 
 import 'package:crdt_lf_sqlite/crdt_lf_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';

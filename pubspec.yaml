@@ -74,12 +74,6 @@ dependencies:
   # async), so it is desktop/mobile only; web has no dart:ffi and must never
   # import it from shared code.
   crdt_lf_sqlite: ^0.1.0+2
-  # Bundles the sqlite3 native library into the app. Linux and macOS usually
-  # have a loadable system sqlite3, but Android, iOS, and Windows generally do
-  # not, so `crdt_lf_sqlite` has nothing to open there without this. Pure
-  # platform glue — no Dart API, and nothing imports it; it is a dependency of
-  # the *build*, which is why `flutter analyze` sees no use of it.
-  sqlite3_flutter_libs: ^0.5.42
 
 dev_dependencies:
   flutter_test:

@@ -878,10 +878,20 @@ return value loses data with no exception, no log, and no queue to inspect.
 
 ## Platform consequences
 
-- **`sqlite3_flutter_libs` becomes a real dependency.** Linux and macOS have a
-  loadable system sqlite3; Android, iOS, and Windows generally do not. The
-  smoke test's header already flags this, and deliberately did not add the
-  package while nothing in `lib/` used SQLite. That changes here.
+- **No native-bundling package is required.** `package:sqlite3` v3 — already
+  resolved through `crdt_lf_sqlite` — ships its own sqlite3 with the app on
+  every platform through Dart's build hooks, and prefers it over whatever the
+  operating system offers. Every target therefore gets one build with one set
+  of compile-time options, which matters more for a durable op-log than merely
+  having *a* sqlite3 present. The v2-era `sqlite3_flutter_libs` existed to fill
+  that gap and is obsolete against v3; adding it would ship a second copy that
+  nothing loads.
+
+  *Corrected after acceptance.* This document, and the smoke test header it
+  cited, both required `sqlite3_flutter_libs` — written against
+  `package:sqlite3` v2, before the build-hook mechanism existed. The
+  requirement was wrong by the time it was implemented, not merely outdated:
+  the dependency tree already resolved v3.
 - **Web has no CRDT, and that is consistent.** `dart:ffi` does not exist on the
   web, so `crdt_lf_sqlite` cannot load there. Web already has no filesystem
   store and offers only the read-only built-in engrams, so it needs neither a

@@ -91,9 +91,15 @@ icon.
   the resource file; the behavioural check happens the first time anyone
   builds on Windows.
 
-### Step 1 — Dependencies and the app-data resolver
+### Step 1 — The app-data resolver
 
-Add `sqlite3_flutter_libs`. Add `app_data_resolver.dart`: an injected
+**No new dependency.** This step was written as "add `sqlite3_flutter_libs`",
+following the design's Platform consequences; both were wrong. `package:sqlite3`
+v3, already resolved through `crdt_lf_sqlite`, ships its own sqlite3 on every
+platform via Dart's build hooks, and that package is the obsolete v2-era way of
+doing the same thing. The design records the correction.
+
+Add `app_data_resolver.dart`: an injected
 `Future<String> Function()` returning this engram's store directory,
 `<app data root>/engrams/<engram ULID>/`, following the pattern
 [container_resolver.dart](../../lib/engram/container_resolver.dart) already

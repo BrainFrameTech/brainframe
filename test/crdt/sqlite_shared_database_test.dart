@@ -9,13 +9,21 @@
 // the CRDT tables can be injected into an existing schema without disturbing
 // it.
 //
-// Why this matters here rather than later: an engram's sqlite file will hold
-// BrainFrame's own tables *and* the CRDT persistence tables together. One file
-// per engram is what makes an engram copyable, backup-able, and syncable as a
-// unit. If the library instead demanded exclusive ownership of a database, that
-// design would have to change — and the time to find that out is now, while the
-// dependency is one line in pubspec.yaml, not after the sync layer is written
-// against the assumption.
+// Why this matters here rather than later: an engram's device-local
+// `metadata.db` holds BrainFrame's own tables *and* the CRDT persistence
+// tables together on one connection, so the catalog and the op-log commit
+// inside one transaction boundary. If the library instead demanded exclusive
+// ownership of a database, that design would have to change — and the time to
+// find that out is now, while the dependency is one line in pubspec.yaml, not
+// after the sync layer is written against the assumption.
+//
+// CORRECTION: an earlier version of this header said one file per engram is
+// what makes an engram "copyable, backup-able, and syncable as a unit". It is
+// not. `metadata.db` lives in the platform app-data directory and never
+// travels — a live database in a synced folder is corrupted rather than merely
+// stale. What travels with an engram is the markdown plus the small identity
+// map in `.brainframe/shared/`. See docs/design/note-identity-and-crdt.md,
+// Decision 2.
 //
 // So these tests pin co-existence in both directions: BrainFrame's tables and
 // data survive the CRDT schema being injected, the CRDT data round-trips
@@ -35,8 +43,14 @@ import 'support/replica.dart';
 /// A stand-in for a BrainFrame-owned table living in the same database as the
 /// CRDT oplog — deliberately not CRDT-related, so any interference between the
 /// two schemas shows up as this table's data going missing or changing.
+///
+/// `bf_`-prefixed because every table BrainFrame creates is (see
+/// lib/engram/crdt/schema.dart). This test is the reason the rule exists: it
+/// is the one place where both schemas are visible side by side, and an
+/// unprefixed `notes` here would model precisely the collision the prefix
+/// prevents.
 const String kNotesDdl = '''
-CREATE TABLE notes (
+CREATE TABLE bf_notes (
   path     TEXT PRIMARY KEY,
   title    TEXT NOT NULL
 );
@@ -53,7 +67,7 @@ Set<String> tableNames(sq.Database db) {
 
 /// Reads back the stand-in consumer table as path -> title.
 Map<String, String> readNotes(sq.Database db) {
-  final rows = db.select('SELECT path, title FROM notes ORDER BY path');
+  final rows = db.select('SELECT path, title FROM bf_notes ORDER BY path');
   return {
     for (final row in rows) row['path'] as String: row['title'] as String,
   };
@@ -87,14 +101,14 @@ void main() {
       db
         ..execute(kNotesDdl)
         ..execute(
-          'INSERT INTO notes (path, title) VALUES (?, ?)',
+          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
           ['inbox/today.md', 'Today'],
         )
         ..execute(
-          'INSERT INTO notes (path, title) VALUES (?, ?)',
+          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
           ['refs/crdt.md', 'CRDT notes'],
         );
-      expect(tableNames(db), {'notes'});
+      expect(tableNames(db), {'bf_notes'});
 
       // 2. The CRDT schema is injected into that SAME connection.
       final crdt = CRDTSqlite.fromDatabase(db);
@@ -103,7 +117,7 @@ void main() {
       // renamed, or replaced.
       expect(
         tableNames(db),
-        {'changes', 'notes', 'snapshots'},
+        {'bf_notes', 'changes', 'snapshots'},
         reason: 'CRDT tables are added alongside the consumer table',
       );
 
@@ -130,16 +144,17 @@ void main() {
       // the consumer can still write to its own table afterwards.
       expect(readNotes(db).length, 2);
       db.execute(
-        'INSERT INTO notes (path, title) VALUES (?, ?)',
+        'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
         ['inbox/later.md', 'Later'],
       );
       expect(readNotes(db).length, 3);
     });
 
-    // The whole point of one file per engram: close it, hand it to a backup or
-    // a sync peer, reopen it, and BOTH halves are still there. This is the
-    // assertion that would fail if the CRDT tables lived somewhere else, or if
-    // either schema were only ever in-memory.
+    // Durability across sessions: close the file, reopen it, and BOTH halves
+    // are still there. This is the assertion that would fail if the CRDT
+    // tables lived somewhere else, or if either schema were only ever
+    // in-memory. (Reopening on *this* device, not handing the file to a peer —
+    // see the correction in the header.)
     test('both schemas survive a close and reopen of the same file', () {
       final path = '${tempDir.path}/engram.db';
 
@@ -148,7 +163,7 @@ void main() {
       first
         ..execute(kNotesDdl)
         ..execute(
-          'INSERT INTO notes (path, title) VALUES (?, ?)',
+          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
           ['inbox/today.md', 'Today'],
         );
       final firstCrdt = CRDTSqlite.fromDatabase(first);
@@ -165,7 +180,7 @@ void main() {
 
       expect(
         tableNames(second),
-        {'changes', 'notes', 'snapshots'},
+        {'bf_notes', 'changes', 'snapshots'},
         reason: 'both schemas persisted to the file',
       );
       expect(readNotes(second), {'inbox/today.md': 'Today'});
@@ -200,7 +215,7 @@ void main() {
       db
         ..execute(kNotesDdl)
         ..execute(
-          'INSERT INTO notes (path, title) VALUES (?, ?)',
+          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
           ['inbox/today.md', 'Today'],
         );
 
@@ -230,7 +245,7 @@ void main() {
         {'inbox/today.md': 'Today'},
         reason: 'consumer tables are outside the CRDT delete scope',
       );
-      expect(tableNames(db), {'changes', 'notes', 'snapshots'});
+      expect(tableNames(db), {'bf_notes', 'changes', 'snapshots'});
     });
   });
 }

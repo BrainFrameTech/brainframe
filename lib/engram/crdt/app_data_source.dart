@@ -19,6 +19,15 @@ enum AppDataSource {
 /// device-local store, one subdirectory per engram ULID.
 const String engramsDirectoryName = 'engrams';
 
+/// The database file inside an engram's store directory.
+///
+/// `metadata.db` rather than a narrower name like `catalog.db`: the catalog is
+/// the first tenant, not the only one. Per-engram state that is device-local
+/// and not user content — scan state, later the search and graph indexes —
+/// belongs in the same file, and a name describing only the first table leaves
+/// the next reader wondering whether they are in the right place.
+const String metadataDatabaseFileName = 'metadata.db';
+
 /// The [AppDataSource] for [operatingSystem], a `Platform.operatingSystem`
 /// value (`linux`, `macos`, `windows`, `android`, `ios`, `fuchsia`).
 ///

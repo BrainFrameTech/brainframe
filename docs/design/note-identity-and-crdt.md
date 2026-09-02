@@ -307,6 +307,32 @@ as `peerId@hlc`. The peer is therefore already part of every row's key, so
 changes from any number of peers coexist in one table with no possibility of
 collision once #67 delivers them, and `document_id` separates the notes.
 
+**Every table BrainFrame creates is prefixed `bf_`.** No exceptions, in any
+database, now or later.
+
+SQLite has no schemas and no namespaces — one file is one flat table
+namespace — and these databases are deliberately shared. `crdt_lf_sqlite`
+claims the names **`changes`** and **`snapshots`**, which are exactly the names
+an unprefixed BrainFrame schema would reach for. The collision would not even
+be a clean failure: the library's DDL is `CREATE TABLE IF NOT EXISTS` and runs
+on every open, so a table of ours already occupying one of those names would
+silently *not* be created by it, and the op-log would then read and write our
+columns.
+
+Two further reasons it is a blanket rule rather than a case-by-case check:
+
+- **The upstream namespace is not ours to predict.** `crdt_lf_sqlite` may add
+  tables in any release, named without reference to us. Auditing our schema
+  against theirs on every upgrade is work; a prefix is not.
+- **It makes `sqlite_master` self-describing.** Recovery from a damaged store
+  starts in a plain SQLite browser with no application code, and the prefix is
+  what separates ours from the library's at a glance.
+
+The rule is stated in `lib/engram/crdt/schema.dart` and enforced by a test that
+asserts every table in an open store is either `bf_`-prefixed or one the
+library named — so an unprefixed addition fails there rather than in a user's
+engram.
+
 **One note on the shared-database test.**
 [sqlite_shared_database_test.dart](../../test/crdt/sqlite_shared_database_test.dart)
 still asserts exactly the right thing — BrainFrame's tables and the CRDT tables

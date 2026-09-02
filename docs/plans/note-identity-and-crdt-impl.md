@@ -432,6 +432,14 @@ nothing is missing.
   and only read-only built-in engrams — needs neither catalog nor op-log.
 - **Read-only engrams have no catalog, op-log, or identity map**, and nothing
   is ever written into an asset-backed `.brainframe/`.
+- **Every SQLite table BrainFrame creates is prefixed `bf_`.** SQLite has no
+  namespaces, and these databases are shared with `crdt_lf_sqlite`, which
+  claims the generic names `changes` and `snapshots`. A collision would be
+  silent, not loud — the library's `CREATE TABLE IF NOT EXISTS` would simply
+  skip a table of ours already sitting on one of those names, and then read and
+  write our columns. The design states the rule; `lib/engram/crdt/schema.dart`
+  holds it; a test asserts every table in an open store is either `bf_`-prefixed
+  or one the library named.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the
   user-facing ones and edit real cases. The rest add nothing a human can

@@ -115,14 +115,17 @@ Nothing opens a database in this step.
   profile. Linux resolves under `$XDG_DATA_HOME` and never
   `$XDG_CACHE_HOME`, where a disk cleaner would delete history mid-session.
 
-### Step 2 — `metadata.db`: open, schema, device peerID
+### Step 2 — `metadata.db`: open, schema, per-engram peerID
 
 BrainFrame opens the connection itself and injects the CRDT schema via
 `CRDTSqlite.fromDatabase`, so the catalog and the op-log share one connection
 and one transaction boundary. Our own schema-version row is checked strictly,
 the way `EngramMetadata` rejects a future version rather than half-reading
-it. The device peerID is minted on first open and stored as a standalone
-value.
+it. The peerID is minted on first open and stored as a standalone value. It
+is scoped **per device, per engram** — this engram's identity for this
+install, living in this engram's `metadata.db` — which is design Decision 8:
+independent engrams, and no correlatable device identifier spanning unrelated
+ones.
 
 Also here: the relocate case. An engram whose ULID no longer matches the
 directory holding its database renames the directory; a destination that
@@ -432,6 +435,14 @@ nothing is missing.
   and only read-only built-in engrams — needs neither catalog nor op-log.
 - **Read-only engrams have no catalog, op-log, or identity map**, and nothing
   is ever written into an asset-backed `.brainframe/`.
+- **Every SQLite table BrainFrame creates is prefixed `bf_`.** SQLite has no
+  namespaces, and these databases are shared with `crdt_lf_sqlite`, which
+  claims the generic names `changes` and `snapshots`. A collision would be
+  silent, not loud — the library's `CREATE TABLE IF NOT EXISTS` would simply
+  skip a table of ours already sitting on one of those names, and then read and
+  write our columns. The design states the rule; `lib/engram/crdt/schema.dart`
+  holds it; a test asserts every table in an open store is either `bf_`-prefixed
+  or one the library named.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the
   user-facing ones and edit real cases. The rest add nothing a human can

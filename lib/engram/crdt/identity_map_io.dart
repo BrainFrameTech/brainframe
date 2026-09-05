@@ -82,21 +82,54 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
   /// to an op-log and is free here.
   ///
   /// The file is built in memory, copied out with `VACUUM INTO`, and renamed
-  /// over the target. That sequence is what makes a *write* safe to observe: a
-  /// `VACUUM INTO` result is self-contained and internally consistent with no
-  /// `-wal` or `-shm` sidecars, and the rename is atomic, so a sync service
-  /// watching the folder never sees a half-written map. It does nothing about
-  /// two devices replacing one path — that is what the per-peer filename is
-  /// for.
+  /// over the target. Three separate things make that sequence the right one,
+  /// and each is easy to mistake for the others:
+  ///
+  /// - **The rename is what makes the write safe to observe.** It is atomic,
+  ///   so a sync service watching the folder sees the old map or the new one
+  ///   and never a half-written file. Neither the vacuum nor the in-memory
+  ///   staging contributes to that.
+  /// - **The temporary file is a sibling of its destination, never in the
+  ///   system temp directory.** `Directory.systemTemp` is the obvious reach —
+  ///   it is what `Directory.createTemp` defaults to and what most languages'
+  ///   temp-file helpers give you — but `File.rename` cannot move a file
+  ///   between filesystems, and the documented fallback is copy-then-delete,
+  ///   which is exactly the non-atomic write this is avoiding. An engram lives
+  ///   wherever the user put it: a synced folder, an external drive, a network
+  ///   share. On Linux the system temp directory is routinely a different
+  ///   filesystem from all three. So the temp goes in the destination's own
+  ///   directory, and `Directory.createTemp` is used *there* rather than in
+  ///   the system location, for a name the OS guarantees unique.
+  /// - **The in-memory source buys one sequential write.** `VACUUM INTO`
+  ///   streams a compact database out in a single pass, where inserting
+  ///   straight into the destination file scatters page writes and leaves a
+  ///   transient rollback journal beside it. That matters here specifically
+  ///   because this directory is, by design, the one sitting in Dropbox,
+  ///   iCloud, or on a network share.
+  ///
+  /// The cost is that every row is written twice — once into memory, once by
+  /// the vacuum. It is invisible while the map is kilobytes, and it is the
+  /// thing to revisit if this file ever grows enough that a whole rewrite
+  /// stops being free: at that point, inserting directly into the temporary
+  /// file and renaming it wins, and `VACUUM INTO` earns its keep for a
+  /// different reason — reclaiming the free pages that in-place updates and
+  /// deletes would start leaving behind. Rebuilding whole from a fresh
+  /// database, as this does, never accumulates any.
+  ///
+  /// None of it does anything about two devices replacing one path. That is
+  /// what the per-peer filename is for.
   Future<void> write(List<IdentityRow> rows) async {
     await Directory(directoryPath).create(recursive: true);
 
+    // A unique directory beside the destination, so the name comes from the
+    // OS rather than from a clock, and the rename below stays within one
+    // filesystem. VACUUM INTO refuses a destination that already exists, so a
+    // fresh name every time is also what stops one crashed write from blocking
+    // every later one.
+    final workspace = await Directory(directoryPath).createTemp('.write-');
+    final temporaryPath = '${workspace.path}/map.db';
+
     final source = sq.sqlite3.openInMemory();
-    // A distinct name per write: VACUUM INTO refuses a destination that
-    // already exists, so a leftover from a crashed write must not be able to
-    // block every future one.
-    final temporaryPath =
-        '$filePath.${DateTime.now().microsecondsSinceEpoch}.tmp';
     try {
       source.execute(createSchemaSql);
       final statement = source.prepare(
@@ -105,6 +138,9 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
         'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       );
       try {
+        // One transaction rather than a commit per row. The source is
+        // discarded on any failure, so this is throughput, not durability.
+        source.execute('BEGIN');
         for (final row in rows) {
           statement.execute([
             row.ulid,
@@ -117,6 +153,7 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
             row.recordedAt.hlc.toString(),
           ]);
         }
+        source.execute('COMMIT');
       } finally {
         statement.close();
       }
@@ -125,7 +162,14 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
       source.close();
     }
 
-    await File(temporaryPath).rename(filePath);
+    try {
+      await File(temporaryPath).rename(filePath);
+    } finally {
+      // The map file has moved out; only the empty workspace is left. Removing
+      // it matters more than usual because this directory is watched by a sync
+      // service, which would otherwise ship one abandoned folder per write.
+      await workspace.delete(recursive: true);
+    }
   }
 
   /// Every row from every device's file, including this one's.

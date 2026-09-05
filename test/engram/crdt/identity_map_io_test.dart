@@ -121,22 +121,39 @@ void main() {
       );
     });
 
-    test('no temporary file survives a write', () async {
+    test('the map is the only thing left behind', () async {
       await map.write([row()]);
 
-      expect(
-        markerFiles().where((file) => file.path.contains('.tmp')),
-        isEmpty,
-      );
+      // The staging directory is watched by a sync service like everything
+      // else here, so leaving one behind per write would ship a folder of
+      // abandoned workspaces.
+      expect(Directory(map.directoryPath).listSync().map((e) => e.path), [
+        map.filePath,
+      ]);
     });
 
-    test('a leftover temporary file cannot block future writes', () async {
+    test('a leftover workspace cannot block future writes', () async {
       // VACUUM INTO refuses a destination that exists, so a crashed write
-      // must not be able to poison every later one with a fixed temp name.
+      // must not be able to poison every later one by leaving debris under a
+      // name the next write would reuse.
       await Directory(map.directoryPath).create(recursive: true);
-      File('${map.filePath}.stale.tmp').writeAsStringSync('debris');
+      final stale = await Directory(map.directoryPath).createTemp('.write-');
+      File('${stale.path}/map.db').writeAsStringSync('debris');
 
       await expectLater(map.write([row()]), completes);
+      expect((await map.readAll()).length, 1);
+    });
+
+    test('the staging directory is not mistaken for a peer', () async {
+      // It sits in the same directory the reader unions over, holding a file
+      // called map.db. A reader listing recursively, or not filtering to
+      // files, would union a half-written map as though it were a device.
+      await map.write([row(path: 'ours.md')]);
+      final stale = await Directory(map.directoryPath).createTemp('.write-');
+      addTearDown(() => stale.deleteSync(recursive: true));
+      File('${stale.path}/map.db').writeAsStringSync('debris');
+
+      expect((await map.readAll()).map((r) => r.path), ['ours.md']);
     });
 
     test('rewriting replaces the previous contents wholly', () async {

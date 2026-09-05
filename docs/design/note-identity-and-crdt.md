@@ -225,7 +225,7 @@ identity**. The markdown is on disk, and the identity map is in the engram, so
 a rebuilt database re-adopts the same ULIDs it had before. That is the whole
 diagnostic tree for this design, and it is why the human-relevant tables —
 `path`, `ulid`, `merge_policy` — must be plain columns rather than blobs, so
-`sqlite3 metadata.db 'select path, ulid from catalog'` answers a question in
+`sqlite3 metadata.db 'select path, ulid from bf_catalog'` answers a question in
 any SQLite browser. Operation payloads stay opaque; nothing a person needs to
 read does.
 

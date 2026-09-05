@@ -5,39 +5,14 @@ import 'package:crdt_lf_sqlite/crdt_lf_sqlite.dart';
 import 'package:sqlite3/sqlite3.dart' as sq;
 
 import 'app_data_resolver.dart';
+import 'catalog_io.dart';
+import 'store_exceptions.dart';
 
-/// Thrown when `metadata.db` cannot be opened into a usable state.
-///
-/// Strict by design, the way [EngramMetadata] is: a database written by a
-/// newer build, or holding a value we cannot make sense of, raises rather than
-/// being half-read. Recovery is cheap and documented — deleting `metadata.db`
-/// costs history, never content and never identity — so failing loudly beats
-/// operating on a schema we do not understand.
-class MetadataDatabaseException implements Exception {
-  const MetadataDatabaseException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'MetadataDatabaseException: $message';
-}
-
-/// Thrown when relocating a store would overwrite one that already exists.
-///
-/// This device holds two stores for what is now one engram, which means it
-/// adopted the same folder twice locally. Surfaced rather than resolved: a
-/// silent merge would interleave two op-logs, and a silent clobber would
-/// discard one wholesale.
-class EngramStoreCollisionException implements Exception {
-  const EngramStoreCollisionException(this.path);
-
-  /// The occupied destination directory.
-  final String path;
-
-  @override
-  String toString() =>
-      'EngramStoreCollisionException: a store already exists at $path';
-}
+// The failure types moved to store_exceptions.dart so catalog_io.dart can
+// raise them without importing this file, which imports it. Re-exported here
+// so every existing `import 'metadata_db_io.dart'` still sees them.
+export 'catalog_io.dart';
+export 'store_exceptions.dart';
 
 /// The device-local database for one engram: the CRDT op-log, and
 /// BrainFrame's own tables, sharing one connection and one transaction
@@ -50,25 +25,32 @@ class EngramStoreCollisionException implements Exception {
 /// [sqlite_shared_database_test.dart](../../../test/crdt/sqlite_shared_database_test.dart).
 ///
 /// **Everything in here is device-local and none of it is shared.** The
-/// op-log, the peer identity, and (from step 3) the catalog's content hashes
-/// all describe *this install*, not the note. Nothing here may be copied into
+/// op-log, the peer identity, and the catalog's content hashes all describe
+/// *this install*, not the note. Nothing here may be copied into
 /// the engram folder; a live database in a synced folder is corrupted rather
 /// than merely stale, and a shared content hash converts drift detection into
 /// silent data loss.
 class MetadataDatabase {
-  MetadataDatabase._(this.database, this.crdt, this.peerId, this.schemaVersion);
+  MetadataDatabase._(
+    this.database,
+    this.crdt,
+    this.catalog,
+    this.peerId,
+    this.schemaVersion,
+  );
 
   /// The schema version this build writes and is the newest it can read.
   static const int currentSchemaVersion = 1;
 
-  /// BrainFrame's own tables, all `bf_`-prefixed (see [brainframeTablePrefix]).
+  /// The store's own key/value table, `bf_`-prefixed like every table
+  /// BrainFrame creates (see [brainframeTablePrefix]).
   ///
-  /// One key/value table for now. It stays readable in any SQLite browser —
-  /// `select * from bf_meta` answers "what version, and which peer is this?" —
-  /// which matters because this is the whole diagnostic surface for a store
-  /// whose contents are otherwise opaque operation payloads.
-  static const String createSchemaSql =
-      '''
+  /// It stays readable in any SQLite browser — `select * from bf_meta` answers
+  /// "what version, and which peer is this?" — which matters because this and
+  /// `bf_catalog` are the whole diagnostic surface for a store whose contents
+  /// are otherwise opaque operation payloads. The catalog's own DDL lives with
+  /// the catalog, in [NoteCatalog.createSchemaSql].
+  static const String createSchemaSql = '''
 CREATE TABLE IF NOT EXISTS bf_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -85,6 +67,10 @@ CREATE TABLE IF NOT EXISTS bf_meta (
 
   /// The op-log's storage, over the same connection.
   final CRDTSqlite crdt;
+
+  /// One row per note, over the same connection — so a catalog write and the
+  /// op-log write it accompanies commit together or not at all.
+  final NoteCatalog catalog;
 
   /// This install's identity for this engram, minted on first open.
   ///
@@ -132,6 +118,7 @@ CREATE TABLE IF NOT EXISTS bf_meta (
 
   static MetadataDatabase _initialize(sq.Database database) {
     database.execute(createSchemaSql);
+    NoteCatalog.createSchema(database);
     // Injected into the connection BrainFrame already owns, so the catalog and
     // the op-log commit together. Re-run on every open, which its
     // IF NOT EXISTS DDL makes idempotent.
@@ -139,7 +126,13 @@ CREATE TABLE IF NOT EXISTS bf_meta (
 
     final version = _readVersion(database);
     final peerId = _readOrMintPeerId(database);
-    return MetadataDatabase._(database, crdt, peerId, version);
+    return MetadataDatabase._(
+      database,
+      crdt,
+      NoteCatalog(database),
+      peerId,
+      version,
+    );
   }
 
   static int _readVersion(sq.Database database) {
@@ -180,10 +173,9 @@ CREATE TABLE IF NOT EXISTS bf_meta (
   }
 
   static String? _readMeta(sq.Database database, String key) {
-    final rows = database.select(
-      'SELECT value FROM bf_meta WHERE key = ?',
-      [key],
-    );
+    final rows = database.select('SELECT value FROM bf_meta WHERE key = ?', [
+      key,
+    ]);
     return rows.isEmpty ? null : rows.first['value'] as String;
   }
 

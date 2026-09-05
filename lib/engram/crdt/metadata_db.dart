@@ -9,5 +9,9 @@
 library;
 
 export 'app_data_resolver.dart';
+// The catalog's row types, unconditionally: they are pure Dart, so code that
+// reasons about a note's merge policy or state compiles on web even though the
+// table backing them cannot exist there.
+export 'catalog.dart';
 export 'metadata_db_stub.dart' if (dart.library.io) 'metadata_db_io.dart';
 export 'schema.dart';

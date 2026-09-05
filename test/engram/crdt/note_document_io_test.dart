@@ -60,6 +60,30 @@ void main() {
       expect(note.value, '# Today');
     });
 
+    test('empty content seeds nothing at all', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/empty.md',
+        content: '',
+      );
+      addTearDown(note.dispose);
+
+      // The seed is written unconditionally; CRDTFugueTextHandler.insert
+      // itself returns early on empty text. Pinned here because that no-op is
+      // the library's behaviour, not ours — if it ever started registering an
+      // empty operation, an empty note would gain a meaningless change and
+      // "our own empty note" would stop being distinguishable by op-log alone.
+      expect(note.value, isEmpty);
+      expect(note.document.exportChanges(), isEmpty);
+      expect(
+        store.crdt.changeStorageForDocument(note.ulid).getChanges(),
+        isEmpty,
+      );
+    });
+
     test('writes a catalog row with the derived policy', () async {
       final store = await openStore();
       addTearDown(store.close);

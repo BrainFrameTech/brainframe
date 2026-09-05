@@ -118,6 +118,13 @@ class NoteDocument {
   /// [path] is engram-relative; its extension derives the merge policy, fixed
   /// here at creation. Throws if a findable note already holds that path — the
   /// catalog's own constraint, surfaced rather than merged.
+  ///
+  /// [content] is the note's initial text, seeded as a single insert. Empty
+  /// for a note the user just created; from the scan (step 11) and adoption
+  /// (step 12) it is the file's full text, which is Decision 7's "a path in
+  /// neither the catalog nor any content match" case. Empty is an ordinary
+  /// note, not a rejected one: it yields an empty op-log, and [open] reads
+  /// that correctly because the seed claim says the note is ours.
   static NoteDocument mint({
     required MetadataDatabase store,
     required String path,
@@ -130,7 +137,11 @@ class NoteDocument {
       initialClock: HybridLogicalClock.now(),
     );
     final text = CRDTFugueTextHandler(document, noteHandlerId);
-    if (content.isNotEmpty) text.insert(0, content);
+    // Unconditional: the handler itself no-ops on empty text, so an empty new
+    // note simply starts with an empty op-log. Guarding this would read as a
+    // precondition — as though a note had to have content to be minted — and
+    // there is no such rule.
+    text.insert(0, content);
 
     // An empty saved frontier, not the document's current one: the seed
     // change already exists by this point, and treating it as saved would

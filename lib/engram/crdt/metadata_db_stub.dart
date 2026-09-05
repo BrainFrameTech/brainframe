@@ -18,28 +18,13 @@ library;
 
 import 'app_data_resolver.dart';
 
+/// The failure types are shared with the `dart:io` build rather than mirrored
+/// here, so a `catch` clause names one class on every platform. They are pure
+/// Dart and carry no storage of their own.
+export 'store_exceptions.dart';
+
 const String _unsupported =
     'Device-local engram storage is not supported on this platform.';
-
-/// Signature parity with the `dart:io` build; never constructible here.
-class MetadataDatabaseException implements Exception {
-  const MetadataDatabaseException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'MetadataDatabaseException: $message';
-}
-
-class EngramStoreCollisionException implements Exception {
-  const EngramStoreCollisionException(this.path);
-
-  final String path;
-
-  @override
-  String toString() =>
-      'EngramStoreCollisionException: a store already exists at $path';
-}
 
 abstract final class MetadataDatabase {
   static const int currentSchemaVersion = 1;

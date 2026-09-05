@@ -40,10 +40,7 @@ void main() {
       final store = await MetadataDatabase.open(id, resolveRoot: resolveRoot);
       addTearDown(store.close);
 
-      expect(
-        File('${root.path}/engrams/$id/metadata.db').existsSync(),
-        isTrue,
-      );
+      expect(File('${root.path}/engrams/$id/metadata.db').existsSync(), isTrue);
     });
 
     test('holds our tables and the op-log in one file', () async {
@@ -53,7 +50,12 @@ void main() {
       );
       addTearDown(store.close);
 
-      expect(tableNames(store.database), {'bf_meta', 'changes', 'snapshots'});
+      expect(tableNames(store.database), {
+        'bf_catalog',
+        'bf_meta',
+        'changes',
+        'snapshots',
+      });
     });
 
     test('stamps the current schema version', () async {
@@ -160,9 +162,9 @@ void main() {
       // Guards the test above from passing vacuously if our schema were ever
       // reduced to nothing.
       expect(
-        tableNames(store.database).where(
-          (name) => name.startsWith(brainframeTablePrefix),
-        ),
+        tableNames(
+          store.database,
+        ).where((name) => name.startsWith(brainframeTablePrefix)),
         isNotEmpty,
       );
     });
@@ -173,8 +175,13 @@ void main() {
       final store = MetadataDatabase.openInMemory();
       addTearDown(store.close);
 
+      // Subtracting by prefix rather than by an enumerated list of our tables,
+      // so adding one to BrainFrame's schema never needs an edit here — while
+      // a table appearing from the library still fails, which is the point.
       expect(
-        tableNames(store.database).difference({'bf_meta'}),
+        tableNames(
+          store.database,
+        ).where((name) => !name.startsWith(brainframeTablePrefix)).toSet(),
         crdtTableNames,
       );
     });
@@ -288,7 +295,10 @@ void main() {
 
       // Populate the store with everything that must survive: the peer
       // identity, the schema stamp, and a real op-log entry.
-      final before = await MetadataDatabase.open(from, resolveRoot: resolveRoot);
+      final before = await MetadataDatabase.open(
+        from,
+        resolveRoot: resolveRoot,
+      );
       final peer = before.peerId;
       final author = Replica.named(peerA, label: 'author');
       author.note.insert(0, 'history that must survive a rename');

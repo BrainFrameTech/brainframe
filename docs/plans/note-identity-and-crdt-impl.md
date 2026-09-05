@@ -368,6 +368,35 @@ failure.
   merges their histories, which is the worse direction. The design parks this
   question; this step retires it and updates the design's Open questions to
   say so.
+- **The sketch has no table of its own, and the shingles are never stored.**
+  It is one opaque `BLOB` in the note's own catalog row — the `sketch` column
+  that step 3 already created — which is Decision 7's "stored per note in the
+  catalog beside the hash" implemented literally.
+
+  The k-grams are transient. MinHash shingles the text, hashes each shingle,
+  and keeps the minimum per hash function; only that fixed-width signature
+  survives, and it is what the column holds. Storing the shingle set instead
+  would be storing a second copy of the note's content, since a k-gram set is
+  roughly the size of the text it came from.
+
+  There is deliberately **no banding or LSH index**, which is the usual reason
+  a MinHash implementation grows a table. Banding buys nearest-neighbour
+  search across a whole corpus, and that is not the query: Decision 7 compares
+  an unmatched path against the sketches of *recently-missing* notes — the
+  handful that went missing in this scan — so loading those rows and comparing
+  pairwise is the entire algorithm. A band table would be machinery for a
+  question nobody asks.
+
+  This is the one place the storage shape is coupled to the query. If some
+  later feature wants similarity across the whole engram rather than across
+  the missing set, a `BLOB` column becomes a full scan, and a band table keyed
+  by band hash is the escape hatch — additive, and not to be built before
+  something needs it.
+
+  The column is an untyped `BLOB` with no fixed length precisely because the
+  sketch width is the bullet above's to decide. Step 3 round-trips the bytes
+  without interpreting them; every byte of meaning is assigned here, in
+  `sketch.dart`.
 - **Promote the hidden-path predicate, and enumerate through it.**
   `isHiddenEngramPath` lives in `lib/engram/ui/file_tree_node.dart` and is
   applied only by the browser. It moves somewhere the scan can share — it is

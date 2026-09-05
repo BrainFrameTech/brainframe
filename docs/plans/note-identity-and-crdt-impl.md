@@ -368,6 +368,45 @@ failure.
   merges their histories, which is the worse direction. The design parks this
   question; this step retires it and updates the design's Open questions to
   say so.
+- **The sketch has no table of its own, and the shingles are never stored.**
+  It is one opaque `BLOB` in the note's own catalog row — the `sketch` column
+  that step 3 already created — which is Decision 7's "stored per note in the
+  catalog beside the hash" implemented literally.
+
+  The k-grams are transient. MinHash shingles the text, hashes each shingle,
+  and keeps the minimum per hash function; only that fixed-width signature
+  survives, and it is what the column holds. Storing the shingle set instead
+  would be storing a second copy of the note's content, since a k-gram set is
+  roughly the size of the text it came from.
+
+  There is deliberately **no banding or LSH index**, which is the usual reason
+  a MinHash implementation grows a table. Banding buys nearest-neighbour
+  search across a whole corpus, and that is not the query: Decision 7 compares
+  an unmatched path against the sketches of *recently-missing* notes — the
+  handful that went missing in this scan — so loading those rows and comparing
+  pairwise is the entire algorithm. A band table would be machinery for a
+  question nobody asks.
+
+  This is the one place the storage shape is coupled to the query. If some
+  later feature wants similarity across the whole engram rather than across
+  the missing set, a `BLOB` column becomes a full scan, and a band table keyed
+  by band hash is the escape hatch — additive, and not to be built before
+  something needs it.
+
+  The column is an untyped `BLOB` with no fixed length precisely because the
+  sketch width is the bullet above's to decide. Step 3 round-trips the bytes
+  without interpreting them; every byte of meaning is assigned here, in
+  `sketch.dart`.
+- **Promote the hidden-path predicate, and enumerate through it.**
+  `isHiddenEngramPath` lives in `lib/engram/ui/file_tree_node.dart` and is
+  applied only by the browser. It moves somewhere the scan can share — it is
+  not UI logic, it is the definition of what counts as engram content — and
+  the scan enumerates only the paths it admits. Without this the scan walks
+  every dot-directory in the folder and treats each file inside as a note.
+- **Tests that matter (exclusion):** a scan over a directory holding
+  dot-directories produces catalog rows for the visible notes and none for the
+  hidden paths; a file that *becomes* hidden by a rename into a dot-directory
+  is a deletion, not a move.
 
 ### Step 12 — Adopting a folder with no `.brainframe/`
 
@@ -380,10 +419,19 @@ with no catalog row is simply "a new note" next time — claimed deliberately
 here, because a step that mints ids before the scan is durable would break
 it. Non-blocking, with progress, and never waiting for a peer.
 
+- **The hidden-path filter is load-bearing here, not in step 11.** The two
+  folders a real user adopts are an Obsidian vault and a checkout of notes
+  under version control — which is to say a folder containing `.obsidian/` and
+  a folder containing a repository's own dot-directory. Adoption is the scan
+  applied to every file at once, so an unfiltered one mints a ULID and a
+  seeded document for every object in that repository: the largest, least
+  note-like input the design has, on the one path where the cost is multiplied
+  by the whole vault.
 - **Tests that matter:** adoption resumes after interruption — every note
   ends with exactly one ULID, none minted twice, no content duplicated. Two
   machines adopting one folder converge on the same ULID per path with each
   note's content appearing exactly once, not doubled by the loser's seed.
+  Adopting a folder that holds dot-directories mints nothing for them.
 - **Manual test plan:** a new adoption section; user-visible progress and a
   usable engram while it runs.
 
@@ -443,6 +491,20 @@ nothing is missing.
   write our columns. The design states the rule; `lib/engram/crdt/schema.dart`
   holds it; a test asserts every table in an open store is either `bf_`-prefixed
   or one the library named.
+- **The CRDT tracks only what a person can see.** The file browser already
+  hides any path with a dot-prefixed segment — a dotfile, or anything inside a
+  dot-directory, including the app's own `.brainframe/` — through
+  `isHiddenEngramPath` in `lib/engram/ui/file_tree_node.dart`. Nothing below
+  the UI shares that rule: `FileSystemEngramStore.list()` filters `.brainframe/`
+  and nothing else. A scan that enumerates the store directly would therefore
+  mint ULIDs, catalog rows, and history for files a user can never open, and
+  the materializer would write them back over the tools that own them. Step 11
+  moves the predicate out of the UI layer and the scan reuses it, so what a
+  person sees and what the CRDT tracks are one set by construction rather than
+  two rules that happen to agree today. It stays **out** of
+  `mergePolicyForPath`, which answers how a note merges and never whether
+  something is a note — a policy-level filter would quietly reclassify
+  excluded files as blobs instead of excluding them.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the
   user-facing ones and edit real cases. The rest add nothing a human can
@@ -459,6 +521,13 @@ nothing is missing.
 - **Snapshot and compaction policy** (**#118**). Purely local use has no
   stranded peers, so it stays deferred — but it must be settled before
   **#67**, which is the moment peers below the frontier become possible.
+- **Whether exclusion is ever the user's to configure.** The rule above is
+  the dot-prefix convention and nothing more: no ignore file, no setting, and
+  no way to track a dotfile as a note deliberately. That is the right default
+  and it matches what the browser has always shown, but it is a default rather
+  than a decision — a vault with a meaningful dot-directory has no recourse.
+  Settling it needs a real user asking, so no step here may quietly invent an
+  ignore syntax to get its own scan to behave.
 - **Everything about transport** (**#67**). This plan's job is to hand it a
   merge rather than a conflict, including the two requirements the design
   already hands over: peerID collision detection in the handshake, and an

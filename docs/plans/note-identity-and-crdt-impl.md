@@ -199,7 +199,25 @@ than inventing a second timer discipline.
 The reader scans the directory and unions every file's rows, including this
 device's own. Peers appear as files, so nothing is discovered.
 
+**That directory read is not the scan, and the hidden-path rule does not
+apply to it.** What it enumerates is `.brainframe/shared/`, which is app-owned
+metadata rather than engram content — and `.brainframe/` is itself a
+dot-directory, so `isHiddenEngramPath` excludes it by design. Reaching for
+that rule here out of consistency would filter the identity map out of its
+own reader. The rule answers "is this file a note?", which is a question only
+the scan (step 11) asks.
+
 No merge rules yet — a single-device engram exercises both halves honestly.
+
+**This step turns a local mistake into a shared one.** Until now a wrong
+catalog row is this device's problem and deleting `metadata.db` clears it.
+Once the writer exists, every catalog row is written into a file that travels
+with the engram, and every other device reads it and adopts the ULID. A note
+that should never have been minted — a file inside a dot-directory, say —
+therefore stops being locally recoverable and has to be cleaned off every
+device that has read the map. That is not an argument for filtering here,
+where there is nothing to filter; it is why step 11's exclusion rule is
+load-bearing rather than tidy.
 
 - **Tests that matter:** the content hash never leaves the device. Assert
   `materialized_hash`, size, and mtime appear in no file under
@@ -404,7 +422,9 @@ failure.
   applied only by the browser. It moves somewhere the scan can share — it is
   not UI logic, it is the definition of what counts as engram content — and
   the scan enumerates only the paths it admits. Without this the scan walks
-  every dot-directory in the folder and treats each file inside as a note.
+  every dot-directory in the folder and treats each file inside as a note —
+  and step 5's identity map then carries those notes to every other device,
+  so the mistake outlives the `metadata.db` that made it.
 - **Tests that matter (exclusion):** a scan over a directory holding
   dot-directories produces catalog rows for the visible notes and none for the
   hidden paths; a file that *becomes* hidden by a rename into a dot-directory

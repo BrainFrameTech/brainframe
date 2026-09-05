@@ -380,29 +380,59 @@ void main() {
       expect(mustRetractSeed(merged, ulid, ourClaim: null), isFalse);
     });
 
-    test('the winning claim survives a losing row winning rule 1', () {
-      // The row that wins rule 1 need not carry the winning seed. A device
-      // that recorded a rename most recently has the newest row, but the seed
-      // belongs to whoever actually created the history — carrying that row's
-      // claim blindly would drop a live claim and invite a second seed.
+    test('a claim taken during another device\'s read is not dropped', () {
+      // The race the union defends against. Writers write whole rows having
+      // read the directory first, so in the ordinary case the rule-1 winner
+      // already carries the right claim — but the read and the write are not
+      // one atomic step, and no lock exists across machines that may never be
+      // online together:
+      //
+      //   1. B reads the map and sees this note unclaimed.
+      //   2. C takes the seed and writes its row.
+      //   3. B writes a newer row — a rename — still carrying "unclaimed".
+      //
+      // B's row wins rule 1. Taking its claim verbatim would republish a
+      // seeded note as unclaimed and invite a fourth device to seed a ULID
+      // that already has C's history.
       final ulid = ulidAt(0);
       final merged = mergeIdentity([
         row(
           ulid: ulid,
           path: 'seeded.md',
-          recordedAt: stamp(peerA, 100),
+          recordedAt: stamp(peerC, 100),
           seedClaim: stamp(peerC, 50),
         ),
-        row(
-          ulid: ulid,
-          path: 'renamed.md',
-          recordedAt: stamp(peerB, 900),
-          seedClaim: stamp(peerA, 10),
-        ),
+        row(ulid: ulid, path: 'renamed.md', recordedAt: stamp(peerB, 900)),
       ]);
 
       expect(merged.forUlid(ulid)!.path, 'renamed.md');
       expect(merged.forUlid(ulid)!.seededBy, peerC);
+      expect(
+        merged.contestedSeeds,
+        isEmpty,
+        reason: 'one claim and a stale read is not a contested seed',
+      );
+    });
+
+    test('a device reading the recovered claim does not seed', () {
+      // The consequence that makes the case above worth defending: with the
+      // claim recovered, the disposition is adopt-without-seeding rather than
+      // the claimable one that would produce a second seed.
+      final ulid = ulidAt(0);
+      final merged = mergeIdentity([
+        row(
+          ulid: ulid,
+          path: 'note.md',
+          recordedAt: stamp(peerC, 100),
+          seedClaim: stamp(peerC, 50),
+        ),
+        row(ulid: ulid, path: 'note.md', recordedAt: stamp(peerB, 900)),
+      ]);
+
+      expect(
+        dispositionForPath(merged, 'note.md', self: peerA),
+        NoteDisposition.adoptPending,
+      );
     });
   });
 

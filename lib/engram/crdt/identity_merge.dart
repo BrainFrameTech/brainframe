@@ -88,10 +88,26 @@ MergedIdentity mergeIdentity(Iterable<IdentityRow> rows) {
   final byUlid = <String, IdentityRow>{};
   final seedClaims = <String, Set<OperationId>>{};
 
-  // Rule 1, plus the seed contest. The seed is resolved separately from the
-  // row: a device can record a newer row — noticing a rename, say — without
-  // that making it the seeder, so carrying the winning row's claim blindly
-  // could drop a claim that is still the real one.
+  // Rule 1, plus the seed claim — which is unioned across every row for a
+  // ULID rather than taken from the row that wins.
+  //
+  // In the ordinary case that union is redundant, and it is worth being clear
+  // about that so nobody removes it as dead weight: a writer writes whole
+  // rows, having read the directory first, so a device recording only a
+  // rename already carries the seeder's claim forward and the rule-1 winner
+  // holds the right one.
+  //
+  // What it defends is that the read and the write are not one atomic step,
+  // and there is no lock available across machines that may never be online
+  // at the same time. A device can read a note as unclaimed, another can take
+  // the seed, and the first can then write a newer row still carrying the
+  // "unclaimed" it read. Taking the winner's claim verbatim would republish a
+  // seeded note as unclaimed and invite a third device to seed a ULID that
+  // already has a history — the duplication hazard, reached without anyone
+  // breaking the whole-row rule.
+  //
+  // The asymmetry decides it: keeping a claim that turns out to be stale
+  // costs nothing, dropping a live one costs duplicated content.
   for (final row in rows) {
     final winner = byUlid[row.ulid];
     if (winner == null || row.recordedAt.compareTo(winner.recordedAt) > 0) {

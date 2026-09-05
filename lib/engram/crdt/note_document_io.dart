@@ -113,7 +113,7 @@ class NoteDocument {
   /// [independent_seed_duplication_test.dart](../../../test/crdt/independent_seed_duplication_test.dart).
   ///
   /// The seed claim is recorded on the catalog row as this device took it, so
-  /// a later adopting device can tell that a history exists somewhere.
+  /// a device that later adopts this ULID can tell a history exists somewhere.
   ///
   /// [path] is engram-relative; its extension derives the merge policy, fixed
   /// here at creation. Throws if a findable note already holds that path — the

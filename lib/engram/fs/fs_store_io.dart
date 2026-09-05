@@ -12,7 +12,7 @@ import '../metadata.dart';
 import 'engram_location.dart';
 
 /// The app-owned marker directory that identifies a folder as an engram.
-const String _markerDirectoryName = '.brainframe';
+const String markerDirectoryName = '.brainframe';
 
 /// The metadata file inside the marker directory.
 const String _metadataFileName = 'engram.json';
@@ -26,7 +26,7 @@ const String _settingsFileName = 'settings.json';
 /// This is the only place in the app that touches a `dart:io` [Directory];
 /// everything above it speaks in engram-relative paths. Content paths use
 /// forward slashes on every platform and never begin with a slash. The marker
-/// directory ([_markerDirectoryName]) is app-owned metadata, not content, so it
+/// directory ([markerDirectoryName]) is app-owned metadata, not content, so it
 /// is excluded from [list] and refused by [writeBytes].
 class FileSystemEngramStore extends EngramStore {
   FileSystemEngramStore(this.location);
@@ -44,8 +44,8 @@ class FileSystemEngramStore extends EngramStore {
     await for (final entity in root.list(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
       final relative = _relativeOf(entity.path);
-      if (relative == _markerDirectoryName ||
-          relative.startsWith('$_markerDirectoryName/')) {
+      if (relative == markerDirectoryName ||
+          relative.startsWith('$markerDirectoryName/')) {
         continue; // the marker is app-owned metadata, not engram content
       }
       paths.add(relative);
@@ -61,8 +61,8 @@ class FileSystemEngramStore extends EngramStore {
     await for (final entity in root.list(recursive: true, followLinks: false)) {
       if (entity is! Directory) continue;
       final relative = _relativeOf(entity.path);
-      if (relative == _markerDirectoryName ||
-          relative.startsWith('$_markerDirectoryName/')) {
+      if (relative == markerDirectoryName ||
+          relative.startsWith('$markerDirectoryName/')) {
         continue; // the marker is app-owned metadata, not engram content
       }
       paths.add(relative);
@@ -115,7 +115,7 @@ class FileSystemEngramStore extends EngramStore {
   /// The per-engram settings file, inside the app-owned marker directory so it
   /// travels with the engram and stays out of the content listing.
   File get _settingsFile =>
-      File('$_rootPath/$_markerDirectoryName/$_settingsFileName');
+      File('$_rootPath/$markerDirectoryName/$_settingsFileName');
 
   @override
   Future<Map<String, Object?>?> readSettings() async {
@@ -129,7 +129,7 @@ class FileSystemEngramStore extends EngramStore {
     } catch (error, stackTrace) {
       // A corrupt settings file degrades to defaults, never crashes the app.
       developer.log(
-        'Ignoring malformed $_markerDirectoryName/$_settingsFileName at $_rootPath.',
+        'Ignoring malformed $markerDirectoryName/$_settingsFileName at $_rootPath.',
         name: 'brainframe.engram.fs',
         level: 900,
         error: error,
@@ -149,7 +149,7 @@ class FileSystemEngramStore extends EngramStore {
 
   /// The marker file carrying this engram's identity (see [readMetadata]).
   File get _metadataFile =>
-      File('$_rootPath/$_markerDirectoryName/$_metadataFileName');
+      File('$_rootPath/$markerDirectoryName/$_metadataFileName');
 
   @override
   Future<EngramMetadata?> readMetadata() async {
@@ -204,15 +204,15 @@ class FileSystemEngramStore extends EngramStore {
     }
   }
 
-  /// Refuses any operation targeting the app-owned [_markerDirectoryName] tree,
+  /// Refuses any operation targeting the app-owned [markerDirectoryName] tree,
   /// which is metadata, not engram content.
   void _refuseMarker(String path) {
-    if (path == _markerDirectoryName ||
-        path.startsWith('$_markerDirectoryName/')) {
+    if (path == markerDirectoryName ||
+        path.startsWith('$markerDirectoryName/')) {
       throw ArgumentError.value(
         path,
         'path',
-        'the $_markerDirectoryName marker is app-owned and cannot be modified',
+        'the $markerDirectoryName marker is app-owned and cannot be modified',
       );
     }
   }
@@ -246,7 +246,7 @@ class FileSystemEngramStore extends EngramStore {
 }
 
 /// Creates a new engram at [location]: makes the directory, writes the
-/// `$_markerDirectoryName/$_metadataFileName` marker with a fresh ULID id, and
+/// `$markerDirectoryName/$_metadataFileName` marker with a fresh ULID id, and
 /// nothing else in the folder (derived caches live in Application Support keyed
 /// by id, never inside the engram — Decision 1).
 ///
@@ -259,7 +259,7 @@ Future<Engram> createFileSystemEngram({
   if (displayName.isEmpty) {
     throw ArgumentError.value(displayName, 'displayName', 'must not be empty');
   }
-  final marker = Directory('${location.path}/$_markerDirectoryName');
+  final marker = Directory('${location.path}/$markerDirectoryName');
   final metaFile = File('${marker.path}/$_metadataFileName');
   if (await metaFile.exists()) {
     throw StateError('An engram already exists at ${location.path}');
@@ -292,7 +292,7 @@ Future<Engram> openOrCreateFileSystemEngram(
   required String displayName,
 }) async {
   final metaFile = File(
-    '${location.path}/$_markerDirectoryName/$_metadataFileName',
+    '${location.path}/$markerDirectoryName/$_metadataFileName',
   );
   if (await metaFile.exists()) {
     return openFileSystemEngram(location);
@@ -306,7 +306,7 @@ Future<Engram> openOrCreateFileSystemEngram(
 /// [EngramMetadataException] if the marker is malformed.
 Future<Engram> openFileSystemEngram(EngramLocation location) async {
   final metaFile = File(
-    '${location.path}/$_markerDirectoryName/$_metadataFileName',
+    '${location.path}/$markerDirectoryName/$_metadataFileName',
   );
   if (!await metaFile.exists()) {
     throw StateError('No engram marker at ${location.path}');
@@ -381,7 +381,7 @@ Future<List<Engram>> discoverContainerEngrams(String containerPath) async {
   await for (final entity in container.list(followLinks: false)) {
     if (entity is! Directory) continue;
     final marker = File(
-      '${entity.path}/$_markerDirectoryName/$_metadataFileName',
+      '${entity.path}/$markerDirectoryName/$_metadataFileName',
     );
     if (!await marker.exists()) continue;
     try {

@@ -72,8 +72,15 @@ class IdentityRow {
   /// Who seeded this note's first history and when, or `null` for an
   /// **unclaimed** seed — a map that outlived every op-log backing it.
   ///
-  /// Only the holder may seed. An adopting device records the ULID and does
-  /// not seed; it may take an unclaimed seed on the user's first edit.
+  /// Only the holder may seed. A device adopting **this ULID** — finding this
+  /// row in another device's file — records the identity and does not seed;
+  /// it may take an unclaimed seed on the user's first edit.
+  ///
+  /// Adopting a *folder* is the opposite case and is not restricted by this.
+  /// A directory with no `.brainframe/` has no map to adopt from, so every
+  /// file in it is a note nobody has minted: step 12 mints, seeds from the
+  /// file's text, and takes the claim for each one. The two senses of "adopt"
+  /// must not be run together — one never seeds, the other always does.
   final OperationId? seedClaim;
 
   /// The peer that recorded this row.

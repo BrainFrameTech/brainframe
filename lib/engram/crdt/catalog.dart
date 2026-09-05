@@ -185,8 +185,13 @@ class CatalogRow {
   /// (HLC first, peerID second) — so contested claims resolve through the
   /// library's ordering rather than a second one written here.
   ///
-  /// Only the holder may seed. An adopting device does not; it may *take* an
-  /// unclaimed seed on the user's first edit, recording the claim as it seeds.
+  /// Only the holder may seed. A device adopting **this ULID** from another
+  /// device's identity map does not; it may *take* an unclaimed seed on the
+  /// user's first edit, recording the claim as it seeds.
+  ///
+  /// Adopting a *folder* is the other sense of the word and always seeds:
+  /// a directory with no `.brainframe/` has no map to adopt from, so every
+  /// file in it is a note nobody has minted.
   final OperationId? seedClaim;
 
   /// The peer that seeded this note, or `null` if the seed is unclaimed.

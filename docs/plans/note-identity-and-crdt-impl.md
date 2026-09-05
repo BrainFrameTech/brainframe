@@ -57,8 +57,10 @@ lib/engram/crdt/
   metadata_db.dart          // export seam: stub unless dart.library.io
   metadata_db_io.dart       // open, schema, CRDT DDL injection, peerID
   metadata_db_stub.dart     // web: throws UnsupportedError
-  catalog.dart              // rows, queries, merge policy, note state
-  note_document.dart        // CRDTDocument + FugueTextHandler for one ULID
+  store_exceptions.dart     // the store's failure types, shared by both
+  catalog.dart              // row types, merge policy, note state
+  catalog_io.dart           // the bf_catalog table and its queries
+  note_document_io.dart     // CRDTDocument + FugueTextHandler for one ULID
   identity_map.dart         // .brainframe/shared/<peerId>.db, read + merge
   line_chunked_diff.dart    // the wrapped myersDiff (Decision 6)
   materializer.dart         // the only writer of a note path (Decision 4)

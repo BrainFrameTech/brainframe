@@ -27,6 +27,7 @@ import 'package:brainframe/engram/crdt/catalog_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_stub.dart';
+import 'package:brainframe/engram/crdt/note_document_io.dart';
 import 'package:brainframe/engram/crdt/schema.dart';
 import 'package:brainframe/engram/crdt/store_exceptions.dart';
 import 'package:brainframe/engram/desktop_folder_adoption.dart';

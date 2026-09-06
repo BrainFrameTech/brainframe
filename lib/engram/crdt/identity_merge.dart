@@ -163,9 +163,11 @@ MergedIdentity mergeIdentity(Iterable<IdentityRow> rows) {
 /// What a device should do about one path, given the merged map.
 ///
 /// **"Adopt" means two different things and they must not be run together.**
-/// Adopting a *folder* is [mint] applied to every file in it, because a folder
-/// with no marker has no map to adopt from. Adopting a *ULID* is the other
-/// three, and none of them seeds on sight.
+/// Adopting a *folder* is [mint] applied to every file in it — a folder with
+/// no marker has no map to adopt from, so every file in it is a note nobody
+/// has minted. Adopting a *ULID* is [adoptPending] or [adoptClaimable], and
+/// neither seeds when the note is first seen. [alreadyOurs] is not an adoption
+/// at all: the note is already this device's own.
 enum NoteDisposition {
   /// No live row claims this path: the user's own file, first open. Mint a
   /// ULID, seed from the file's text, and take the claim.

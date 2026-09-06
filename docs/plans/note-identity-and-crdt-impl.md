@@ -62,7 +62,8 @@ lib/engram/crdt/
   catalog_io.dart           // the bf_catalog table and its queries
   note_document_io.dart     // CRDTDocument + FugueTextHandler for one ULID
   identity_map.dart         // the shared row type
-  identity_map_io.dart      // .brainframe/shared/<peerId>.db, read + merge
+  identity_map_io.dart      // .brainframe/shared/<peerId>.db, read + write
+  identity_merge.dart       // the two merge rules, and note dispositions
   line_chunked_diff.dart    // the wrapped myersDiff (Decision 6)
   materializer.dart         // the only writer of a note path (Decision 4)
   drift.dart                // hash, size, mtime (Decision 5)

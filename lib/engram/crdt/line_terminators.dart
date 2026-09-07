@@ -25,8 +25,7 @@ library;
 /// disagreeing notion of where a line ends. A stray carriage return inside a
 /// line is text the user typed, and it survives.
 ///
-/// Returns [text] itself when there is nothing to change, which is the
-/// overwhelmingly common case: this runs on every seed and every insert, and
-/// the check is a scan for two bytes against an allocation and a copy.
-String normalizeTerminators(String text) =>
-    text.contains('\r\n') ? text.replaceAll('\r\n', '\n') : text;
+/// No `contains` guard in front of this: `replaceAll` returns the receiver
+/// itself when the pattern does not occur, so a guard would buy no allocation
+/// and cost a second scan of the whole note on every seed and every insert.
+String normalizeTerminators(String text) => text.replaceAll('\r\n', '\n');

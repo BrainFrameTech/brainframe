@@ -59,10 +59,15 @@ void main() {
     });
   });
 
-  group('the fast path', () {
-    test('text needing no change is returned as the same instance', () {
-      // This runs on every seed and every insert, so the common case must not
-      // allocate. identical() is the assertion that pins it.
+  group('why there is no guard in front of replaceAll', () {
+    test('replaceAll returns the receiver when there is no match', () {
+      // The implementation drops a `contains` guard on the grounds that
+      // replaceAll already allocates nothing when the pattern is absent. That
+      // is a claim about the SDK, and an unpinned claim about a library's
+      // behaviour is exactly what put a wrong atomicity guarantee into
+      // Decision 6 — so it is pinned rather than trusted. If this fails, the
+      // comment in line_terminators.dart is what needs revisiting, not this
+      // test: the cost is one allocation per seed, never correctness.
       final text = 'one\ntwo\nthree\n';
 
       expect(identical(normalizeTerminators(text), text), isTrue);
@@ -73,7 +78,6 @@ void main() {
       final once = normalizeTerminators(raw);
 
       expect(normalizeTerminators(once), once);
-      expect(identical(normalizeTerminators(once), once), isTrue);
     });
   });
 

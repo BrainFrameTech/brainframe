@@ -236,10 +236,12 @@ class NoteDocument {
   /// computing a follow-up index from `value.length` rather than from
   /// [NoteDocument.value] afterwards.
   ///
-  /// Unconditional, where [mint] gates on the merge policy: inserting text at
-  /// a character offset is a `fugueText` operation by construction, and a
-  /// `blobLww` note has no text for a caller to insert into. There is no
-  /// policy here to consult and nothing a gate would protect.
+  /// Unconditional, where [mint] gates on the merge policy. Not because a
+  /// `blobLww` note lacks a sequence — [mint] gives every note one regardless
+  /// of policy — but because Decision 3 keeps a blob's bytes out of the op-log
+  /// altogether, so that sequence stays empty and nothing inserts into it.
+  /// The safety is the caller's, not a guard here; a gate would need this
+  /// object to carry its policy, which it has no other reason to know.
   void insert(int index, String value) {
     text.insert(index, normalizeTerminators(value));
     _persist();

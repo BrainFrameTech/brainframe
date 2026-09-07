@@ -3,6 +3,36 @@ import 'dart:typed_data';
 
 import 'metadata.dart';
 
+/// A file's size and modification time, without its content.
+///
+/// The point of these two is to decide whether the content is worth reading:
+/// they are the cheap half of drift detection (Decision 5), returned by
+/// [EngramStore.statFile] and compared in `crdt/drift.dart`. They live here
+/// rather than beside that comparison because they describe a file, not a
+/// note — the store layer owns them, and the CRDT layer consumes them.
+class FileFingerprint {
+  const FileFingerprint({required this.size, required this.mtimeUtc});
+
+  /// Size in bytes.
+  final int size;
+
+  /// Modification time, in UTC.
+  final DateTime mtimeUtc;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FileFingerprint &&
+          other.size == size &&
+          other.mtimeUtc == mtimeUtc;
+
+  @override
+  int get hashCode => Object.hash(size, mtimeUtc);
+
+  @override
+  String toString() => 'FileFingerprint($size bytes, $mtimeUtc)';
+}
+
 /// The content-access contract for every engram.
 ///
 /// Backends implement the read primitives — [list], [readBytes] — and
@@ -58,6 +88,19 @@ abstract class EngramStore {
   /// Read-only stores throw [UnsupportedError]; callers gate on
   /// `Engram.readOnly` rather than catching it.
   Future<void> writeBytes(String path, Uint8List bytes);
+
+  /// Size and modification time of the file at engram-relative [path], or
+  /// `null` if no file is there.
+  ///
+  /// The cheap half of drift detection: it answers "is this worth reading?"
+  /// without reading it. `null` means absent, never "unknown" — a backend that
+  /// cannot answer throws instead, so a caller can never mistake "I could not
+  /// look" for "there is nothing there".
+  ///
+  /// Defaults to a store that throws [UnsupportedError]. Only filesystem
+  /// engrams carry a catalog at all, so nothing else has a reason to ask.
+  Future<FileFingerprint?> statFile(String path) =>
+      throw UnsupportedError('This store cannot stat "$path".');
 
   /// Deletes the file at engram-relative [path].
   ///

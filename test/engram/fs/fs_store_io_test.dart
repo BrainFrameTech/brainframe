@@ -109,6 +109,56 @@ void main() {
     });
   });
 
+  group('statFile', () {
+    late FileSystemEngramStore store;
+    setUp(() => store = FileSystemEngramStore(locFor('e')));
+
+    test('reports the size and modification time of a file', () async {
+      await store.writeString('notes/today.md', 'hello\n');
+
+      final stat = await store.statFile('notes/today.md');
+
+      expect(stat, isNotNull);
+      expect(stat!.size, 6);
+      expect(stat.mtimeUtc.isUtc, isTrue);
+    });
+
+    test('the mtime is UTC, not local', () async {
+      // The catalog stores UTC, and a comparison across a daylight-saving
+      // boundary would otherwise decide a file changed when only the clock did.
+      await store.writeString('notes/today.md', 'x');
+
+      final stat = await store.statFile('notes/today.md');
+
+      expect(stat!.mtimeUtc.isUtc, isTrue);
+      expect(
+        stat.mtimeUtc.difference(DateTime.now().toUtc()).abs(),
+        lessThan(const Duration(minutes: 5)),
+      );
+    });
+
+    test('a missing file is null, not an exception', () async {
+      // Absence has to be an answer rather than a throw, so a caller can never
+      // mistake "I could not look" for "there is nothing there".
+      expect(await store.statFile('notes/never-written.md'), isNull);
+    });
+
+    test('a directory is not a file', () async {
+      await store.createDirectory('notes');
+
+      expect(await store.statFile('notes'), isNull);
+    });
+
+    test('the size tracks a rewrite', () async {
+      await store.writeString('notes/today.md', 'short');
+      final first = await store.statFile('notes/today.md');
+      await store.writeString('notes/today.md', 'considerably longer');
+      final second = await store.statFile('notes/today.md');
+
+      expect(second!.size, greaterThan(first!.size));
+    });
+  });
+
   group('path safety', () {
     late FileSystemEngramStore store;
     setUp(() => store = FileSystemEngramStore(locFor('e')));

@@ -65,6 +65,13 @@ void main() {
       expect(() => store.deleteDirectory('notes'), throwsUnsupportedError);
     });
 
+    test('cannot stat: statFile throws UnsupportedError', () {
+      // Only filesystem engrams carry a catalog, so nothing has a reason to ask
+      // an asset store for a fingerprint. It throws rather than returning null
+      // so that "I cannot look" never reads as "there is nothing there".
+      expect(() => store.statFile('welcome.md'), throwsUnsupportedError);
+    });
+
     test('has no standalone directories: listDirectories is empty', () async {
       expect(await store.listDirectories(), isEmpty);
     });

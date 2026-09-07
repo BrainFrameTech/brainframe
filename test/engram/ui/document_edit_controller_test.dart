@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/engram/engram_store.dart';
+import 'package:brainframe/engram/note_writer.dart';
 import 'package:brainframe/engram/ui/document_edit_controller.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
@@ -31,7 +32,7 @@ class _RecordingStore extends EngramStore {
 
 DocumentEditController _controller(_RecordingStore store) =>
     DocumentEditController(
-      store: store,
+      writer: DirectNoteWriter(store),
       observeLifecycle: false,
       idleDebounce: const Duration(seconds: 5),
       maxWait: const Duration(seconds: 30),
@@ -265,7 +266,7 @@ void main() {
     test('registers on construct and unregisters on dispose', () {
       final store = _RecordingStore();
       // Default observeLifecycle: true exercises addObserver / removeObserver.
-      final c = DocumentEditController(store: store);
+      final c = DocumentEditController(writer: DirectNoteWriter(store));
       c.dispose();
     });
   });
@@ -276,7 +277,7 @@ void main() {
       final store = _RecordingStore();
       final saves = PendingSaves();
       final c = DocumentEditController(
-        store: store,
+        writer: DirectNoteWriter(store),
         observeLifecycle: false,
         pendingSaves: saves,
       );
@@ -294,7 +295,7 @@ void main() {
     test('a disposed controller leaves nothing registered', () async {
       final saves = PendingSaves();
       final c = DocumentEditController(
-        store: _RecordingStore(),
+        writer: DirectNoteWriter(_RecordingStore()),
         observeLifecycle: false,
         pendingSaves: saves,
       );

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
 import '../engram_store.dart';
+import '../note_writer.dart';
 import 'file_path_breadcrumb.dart';
 import 'markdown_editor_pane.dart';
 import 'markdown_reader.dart';
@@ -55,6 +56,7 @@ bool isMarkdownPath(String path) =>
 Widget buildFileViewer({
   required EngramStore store,
   required String path,
+  NoteWriter? writer,
   Set<String> availablePaths = const {},
   void Function(String path)? onNavigateToFile,
   bool readOnly = true,
@@ -71,6 +73,7 @@ Widget buildFileViewer({
     return MarkdownEditorPane(
       store: store,
       path: path,
+      writer: writer,
       availablePaths: availablePaths,
       onNavigateToFile: onNavigateToFile,
     );

@@ -11,6 +11,7 @@ import '../../settings/settings_screen.dart';
 import '../../settings/settings_store.dart';
 import '../../widgets/app_scaffold.dart';
 import '../asset_engram_store.dart';
+import 'crdt_session_scope.dart';
 import '../built_in_engrams.dart';
 import '../engram.dart';
 import '../engram_file_ops.dart';
@@ -437,6 +438,10 @@ class _EngramBrowserState extends State<EngramBrowser> {
       // The locale-bound store, so a built-in engram reads the localized page.
       store: _contentStore!,
       path: selected,
+      // Null unless an op-log session is installed above us — a read-only
+      // engram, a platform without SQLite, and a widget test that installs no
+      // host all land here and write straight to the store.
+      writer: CrdtSessionScope.maybeOf(context),
       availablePaths: paths.toSet(),
       onNavigateToFile: _selectFile,
       // Built-in engrams are read-only; a writable engram gets the editor.

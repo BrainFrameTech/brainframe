@@ -568,6 +568,108 @@ void main() {
     });
   });
 
+  group('applyExternalText', () {
+    test('reaches the new text as a minimal set of operations', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'one\ntwo\nthree\n',
+      );
+      addTearDown(note.dispose);
+
+      note.applyExternalText('one\nTWO\nthree\n');
+
+      expect(note.value, 'one\nTWO\nthree\n');
+    });
+
+    test('the operations are in the op-log, not just in memory', () async {
+      // The half the free function cannot do: it works on a bare handler and
+      // knows nothing about an op-log, so applying through it alone leaves the
+      // edits in memory and loses them at dispose. Reopening from storage is
+      // the only assertion that can tell the two apart.
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'before\n',
+      );
+      final ulid = note.ulid;
+      note.applyExternalText('after\n');
+      note.dispose();
+
+      final reopened = NoteDocument.open(store: store, ulid: ulid);
+      addTearDown(reopened.dispose);
+
+      expect(reopened.value, 'after\n');
+    });
+
+    test('terminators are normalized on the way in', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'one\ntwo\n',
+      );
+      addTearDown(note.dispose);
+
+      note.applyExternalText('one\r\ntwo\r\nthree\r\n');
+
+      expect(note.value, 'one\ntwo\nthree\n');
+    });
+
+    test('a pure line-ending change writes nothing to the log', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'one\ntwo\n',
+      );
+      addTearDown(note.dispose);
+      final before =
+          store.crdt.changeStorageForDocument(note.ulid).getChanges().length;
+
+      note.applyExternalText('one\r\ntwo\r\n');
+
+      expect(
+        store.crdt.changeStorageForDocument(note.ulid).getChanges().length,
+        before,
+      );
+    });
+
+    test("a concurrent peer's insertion survives", () async {
+      // The property the whole diff exists for, asserted at the level the
+      // editor actually calls.
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'one\ntwo\n',
+      );
+      addTearDown(note.dispose);
+
+      final peer = CRDTDocument(
+        peerId: peerB,
+        documentId: note.ulid,
+        initialClock: HybridLogicalClock.now(),
+      );
+      final peerText = CRDTFugueTextHandler(peer, noteHandlerId);
+      peer.importChanges(note.document.exportChanges());
+      peerText.insert(peerText.value.length, 'three\n');
+
+      note.applyExternalText('one\nTWO\n');
+      note.document.importChanges(peer.exportChanges());
+
+      expect(note.value, contains('three'));
+      expect(note.value, contains('TWO'));
+    });
+  });
+
   group('dispose', () {
     test('releases the document', () async {
       final store = await openStore();

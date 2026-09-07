@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../l10n/gen/app_localizations.dart';
 import 'engram.dart';
+import 'crdt/crdt_session.dart';
 import 'engram_scope.dart';
+import 'ui/crdt_session_scope.dart';
 
 /// Resolves the engram to open at startup, then installs an [EngramScope] over
 /// [child] with that engram active.
@@ -22,6 +24,7 @@ class EngramStartupGate extends StatefulWidget {
     required this.resolveInitialEngram,
     required this.child,
     this.onSwitched,
+    this.openSession = CrdtSession.openFor,
   });
 
   /// Resolves the engram to open first. Run once, when the gate is inserted.
@@ -33,6 +36,14 @@ class EngramStartupGate extends StatefulWidget {
 
   /// The app content shown once an engram is active.
   final Widget child;
+
+  /// Opens the active engram's op-log session, forwarded to [CrdtSessionHost].
+  ///
+  /// Injected for the same reason [resolveInitialEngram] is: the real one
+  /// reaches a database under the app-data directory, which a widget test has
+  /// no business creating. A test supplies one that returns null and gets the
+  /// pre-step-9 behaviour — the editor writing straight to the store.
+  final Future<CrdtSession?> Function(Engram engram) openSession;
 
   @override
   State<EngramStartupGate> createState() => _EngramStartupGateState();
@@ -51,7 +62,12 @@ class _EngramStartupGateState extends State<EngramStartupGate> {
           return EngramScope(
             initialEngram: snapshot.data!,
             onSwitched: widget.onSwitched,
-            child: widget.child,
+            // Inside the scope, because the session belongs to whichever
+            // engram is active and must be swapped with it.
+            child: CrdtSessionHost(
+              openSession: widget.openSession,
+              child: widget.child,
+            ),
           );
         }
         if (snapshot.hasError) {

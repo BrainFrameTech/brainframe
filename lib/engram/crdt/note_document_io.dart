@@ -13,6 +13,7 @@ import 'package:hlc_dart/hlc_dart.dart';
 
 import '../id.dart';
 import 'catalog.dart';
+import 'line_chunked_diff.dart' as diff;
 import 'line_terminators.dart';
 import 'metadata_db_io.dart';
 
@@ -250,6 +251,29 @@ class NoteDocument {
   /// Deletes [count] characters at [index], and commits the operation.
   void delete(int index, int count) {
     text.delete(index, count);
+    _persist();
+  }
+
+  /// Replaces the note's content with [newText] as a *minimal* set of
+  /// operations, and commits them.
+  ///
+  /// The same call whether the new text came from a file that changed under us
+  /// or from the editor's own buffer, which is the point: reconciliation and
+  /// saving are one path, not two that must be kept agreeing. What arrives is
+  /// a whole document either way — the editor holds a buffer, not a stream of
+  /// operations — so both need the same diff to become edits, and #85 is what
+  /// eventually lets the in-app half skip it.
+  ///
+  /// **Never a replace-all.** Deleting everything and inserting the new text
+  /// converges and discards every concurrent remote insertion; see
+  /// [diff.lineChunkedDiff] for why that is invisible until a second device
+  /// exists.
+  ///
+  /// Persisting here is the half the free function cannot do: it works on a
+  /// bare handler and knows nothing about an op-log, so applying through it
+  /// alone leaves the edits in memory and loses them at dispose.
+  void applyExternalText(String newText) {
+    diff.applyExternalText(document, text, newText);
     _persist();
   }
 

@@ -83,6 +83,21 @@ class FileSystemEngramStore extends EngramStore {
   }
 
   @override
+  Future<FileFingerprint?> statFile(String path) async {
+    final stat = await File(_resolve(path)).stat();
+    // `stat()` never throws for a missing path — it reports a type instead,
+    // which is what lets absence be an answer rather than an exception.
+    if (stat.type != FileSystemEntityType.file) return null;
+    return FileFingerprint(
+      size: stat.size,
+      // Normalized to UTC because the catalog stores it that way and a
+      // comparison across a daylight-saving boundary would otherwise decide a
+      // file had changed when only the clock did.
+      mtimeUtc: stat.modified.toUtc(),
+    );
+  }
+
+  @override
   Future<void> delete(String path) async {
     _refuseMarker(path);
     await File(_resolve(path)).delete();

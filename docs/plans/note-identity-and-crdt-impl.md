@@ -65,8 +65,8 @@ lib/engram/crdt/
   identity_map_io.dart      // .brainframe/shared/<peerId>.db, read + write
   identity_merge.dart       // the two merge rules, and note dispositions
   line_chunked_diff.dart    // the wrapped myersDiff (Decision 6)
-  materializer.dart         // the only writer of a note path (Decision 4)
-  drift.dart                // hash, size, mtime (Decision 5)
+  materializer_io.dart      // the only writer of a note path (Decision 4)
+  drift.dart                // hash and the two comparisons (Decision 5)
   sketch.dart               // shingled content sketch (Decision 7)
   scanner.dart              // creations, moves, deletions, drift
   reconciler.dart           // drift -> operations -> re-materialize

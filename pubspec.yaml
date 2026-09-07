@@ -51,6 +51,10 @@ dependencies:
   # lib/startup_options.dart). The Dart-team ArgParser; already in the tree
   # transitively, promoted to a direct dependency now that we use it directly.
   args: ^2.7.0
+  # SHA-256 for the materializer's content hash (Decision 5), which is how
+  # drift is detected. The Dart-team package; already in the tree transitively,
+  # promoted to a direct dependency now that we use it directly.
+  crypto: ^3.0.7
   window_manager: ^0.5.2
   shared_preferences: ^2.5.5
   # Direct dependency for InMemorySharedPreferencesAsync, which backs the

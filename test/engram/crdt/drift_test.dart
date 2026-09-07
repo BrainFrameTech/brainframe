@@ -100,7 +100,10 @@ void main() {
       );
     });
 
-    test('a changed mtime is not ruled out', () {
+    test('a same-size edit with a later mtime is not ruled out', () {
+      // "hello" becoming "world": the size half sees nothing, so mtime is the
+      // only thing that can decline to rule the file out, and the hash then
+      // confirms it. Size alone would miss every equal-length edit.
       final row = rowWith(hash: 'h', size: 10, mtimeUtc: noon);
 
       expect(

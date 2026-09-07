@@ -51,8 +51,17 @@ bool mayHaveDrifted(CatalogRow row, FileFingerprint? current) {
   if (current == null) return true;
   if (row.materializedHash == null) return true;
   if (row.size == null || row.mtimeUtc == null) return true;
-  return row.size != current.size ||
-      !_sameInstantAtCatalogResolution(row.mtimeUtc!, current.mtimeUtc);
+
+  // Both halves named, because the file is ruled out only when *neither*
+  // changed and a reader has to be able to see both being asked. An edit that
+  // replaces one word with another of the same length moves only the second
+  // one, and it is the whole reason size alone will not do.
+  final sizeChanged = row.size != current.size;
+  final mtimeChanged = !_sameInstantAtCatalogResolution(
+    row.mtimeUtc!,
+    current.mtimeUtc,
+  );
+  return sizeChanged || mtimeChanged;
 }
 
 /// Compares two instants at the resolution the catalog can actually store.

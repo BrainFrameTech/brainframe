@@ -13,6 +13,7 @@ import 'package:hlc_dart/hlc_dart.dart';
 
 import '../id.dart';
 import 'catalog.dart';
+import 'line_terminators.dart';
 import 'metadata_db_io.dart';
 
 /// The handler id for the whole-note Fugue sequence.
@@ -125,12 +126,18 @@ class NoteDocument {
   /// neither the catalog nor any content match" case. Empty is an ordinary
   /// note, not a rejected one: it yields an empty op-log, and [open] reads
   /// that correctly because the seed claim says the note is ours.
+  ///
+  /// Its terminators are normalized to LF (Decision 10), so seeding a
+  /// CRLF file produces an LF sequence — and, once the materializer exists,
+  /// an LF file. That rewrite is deliberate and is the cost adoption has to
+  /// warn about, since it lands on every file in the folder at once.
   static NoteDocument mint({
     required MetadataDatabase store,
     required String path,
     String content = '',
   }) {
     final ulid = newUlid();
+    final policy = mergePolicyForPath(path);
     final document = CRDTDocument(
       peerId: store.peerId,
       documentId: ulid,
@@ -141,7 +148,21 @@ class NoteDocument {
     // note simply starts with an empty op-log. Guarding this would read as a
     // precondition — as though a note had to have content to be minted — and
     // there is no such rule.
-    text.insert(0, content);
+    //
+    // Normalized here rather than at the callers because this is the only
+    // place a document is ever seeded, and the scan and adoption both arrive
+    // with a file's raw text. Decision 10's invariant is worth nothing if it
+    // depends on four callers each remembering it.
+    //
+    // `fugueText` only. Normalizing a `blobLww` note would corrupt bytes that
+    // merely happen to contain 0x0d 0x0a, and Decision 10 scopes itself to the
+    // policy for exactly that reason. Today a blob's content is empty — its
+    // op-log carries a register, not the bytes (Decision 3) — so this gate is
+    // guarding a door that step 14 will open rather than one already ajar.
+    text.insert(
+      0,
+      policy == MergePolicy.fugueText ? normalizeTerminators(content) : content,
+    );
 
     // An empty saved frontier, not the document's current one: the seed
     // change already exists by this point, and treating it as saved would
@@ -160,7 +181,7 @@ class NoteDocument {
       CatalogRow(
         ulid: ulid,
         path: path,
-        mergePolicy: mergePolicyForPath(path),
+        mergePolicy: policy,
         state: NoteState.live,
         seedClaim: OperationId(store.peerId, document.hlc),
       ),
@@ -208,8 +229,19 @@ class NoteDocument {
   }
 
   /// Inserts [value] at [index], and commits the operation to the op-log.
+  ///
+  /// [value] is normalized to LF terminators (Decision 10), so a paste from a
+  /// Windows clipboard does not seed CRLF into the sequence. **The inserted
+  /// run can therefore be shorter than [value]**, which matters to a caller
+  /// computing a follow-up index from `value.length` rather than from
+  /// [NoteDocument.value] afterwards.
+  ///
+  /// Unconditional, where [mint] gates on the merge policy: inserting text at
+  /// a character offset is a `fugueText` operation by construction, and a
+  /// `blobLww` note has no text for a caller to insert into. There is no
+  /// policy here to consult and nothing a gate would protect.
   void insert(int index, String value) {
-    text.insert(index, value);
+    text.insert(index, normalizeTerminators(value));
     _persist();
   }
 

@@ -158,6 +158,109 @@ void main() {
     });
   });
 
+  group('terminators are normalized at every door', () {
+    test('seeding CRLF content yields an LF sequence', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      // The adoption and scan case: a file authored on Windows, seeded whole.
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'one\r\ntwo\r\nthree\r\n',
+      );
+      addTearDown(note.dispose);
+
+      expect(note.value, 'one\ntwo\nthree\n');
+      expect(note.value.contains('\r'), isFalse);
+    });
+
+    test('a lone carriage return is seeded as content', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'a\rb\r\nc',
+      );
+      addTearDown(note.dispose);
+
+      // The CRLF goes; the bare \r is text the user typed and stays.
+      expect(note.value, 'a\rb\nc');
+    });
+
+    test('the op-log holds LF, not just the in-memory value', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'one\r\ntwo\r\n',
+      );
+      final ulid = note.ulid;
+      note.dispose();
+
+      // Normalizing only the materialized value would leave CRLF in the
+      // permanent log, where it would reach every peer that syncs it. This is
+      // the assertion that catches normalization applied too late.
+      final reopened = NoteDocument.open(store: store, ulid: ulid);
+      addTearDown(reopened.dispose);
+
+      expect(reopened.value, 'one\ntwo\n');
+    });
+
+    test('insert normalizes a pasted CRLF run', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'start\n',
+      );
+      addTearDown(note.dispose);
+
+      // The step 9 door: a paste off a Windows clipboard.
+      note.insert(note.value.length, 'a\r\nb\r\n');
+
+      expect(note.value, 'start\na\nb\n');
+    });
+
+    test('a blobLww note keeps its bytes exactly', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      // Decision 10 is scoped to fugueText. A blob whose bytes happen to
+      // contain 0x0d 0x0a must not be rewritten — normalization applied too
+      // broadly corrupts a file no one can recover, which is the asymmetry
+      // Decision 3's default is built around.
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'refs/diagram.png',
+        content: 'PNG\r\nbytes\r\n',
+      );
+      addTearDown(note.dispose);
+
+      expect(note.value, 'PNG\r\nbytes\r\n');
+    });
+
+    test('content with no CRLF is seeded unchanged', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: '# Today\n\nnotes\n',
+      );
+      addTearDown(note.dispose);
+
+      expect(note.value, '# Today\n\nnotes\n');
+    });
+  });
+
   group('history survives a restart', () {
     test('create, edit, close, reopen', () async {
       final first = await openStore();

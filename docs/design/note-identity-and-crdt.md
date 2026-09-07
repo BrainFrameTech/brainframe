@@ -977,18 +977,29 @@ left alone. This matches the line splitter, which only ever breaks on `\n`, so
 there is one notion of a line terminator in the system rather than two.
 
 **One chokepoint, because the invariant has many doors.** Every path that puts
-characters into a sequence must normalize: reconciliation, editor paste,
-Decision 4's history-pending direct write, adoption (**Decision 7**), and — the
-one most likely to be missed — the CRDT-aware editor of **#85**, which is
-specified to bypass Decision 6's steps 2–4 and would therefore bypass the
-obvious place to put this. Normalization belongs in a single wrapper that every
-one of those calls, not in each of them.
+characters into a sequence must normalize: **seeding a document**, which is the
+door the scan and adoption both arrive through and the one that exists in code
+already; insertion, which is where an editor's paste lands; Decision 4's
+history-pending direct write; and — the one most likely to be missed — the
+CRDT-aware editor of **#85**, which is specified to bypass Decision 6's steps
+2–4 and would therefore bypass the obvious place to put this. Normalization
+belongs in a single function that every one of those calls, not in each of
+them, and the `fugueText` scope is enforced at the seam rather than left to
+each caller to remember.
 
-**A leak is repairable, and the repair should be built.** If CRLF does reach a
-sequence, every device agrees the canonical form is LF, so one normalizing pass
-emits a real edit that converges everywhere and stays fixed. This is precisely
-the property the per-platform scheme cannot offer, and it is worth having a
-deliberate path for rather than trusting that no door is ever left open.
+**A leak is repairable, and by #67 the repair is required.** If CRLF does reach
+a sequence, every device agrees the canonical form is LF, so one normalizing
+pass emits a real edit that converges everywhere and stays fixed — precisely
+the property the per-platform scheme cannot offer.
+
+It is required rather than merely prudent because **one door cannot be
+guarded**: `importChanges` admits operations, not text. A peer running an older
+build, or any build that leaves one of the doors above open, sends operations
+that already carry CRLF, and no ingest helper on this device will ever see
+them. Normalization is therefore a local invariant that a remote peer can
+violate, and repair is the only mechanism that can restore it. Until **#67**
+lands there is no such peer and nothing can leak from outside this device;
+after it, the repair is load-bearing.
 
 **Decision 5 needs no change.** `materialized_hash` still hashes the exact bytes
 written, and those bytes are LF. When a foreign tool rewrites a file as CRLF the

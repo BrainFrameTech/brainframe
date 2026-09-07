@@ -27,6 +27,7 @@ import 'package:brainframe/engram/crdt/catalog_io.dart';
 import 'package:brainframe/engram/crdt/identity_map.dart';
 import 'package:brainframe/engram/crdt/identity_map_io.dart';
 import 'package:brainframe/engram/crdt/identity_merge.dart';
+import 'package:brainframe/engram/crdt/line_terminators.dart';
 import 'package:brainframe/engram/crdt/metadata_db.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_stub.dart';

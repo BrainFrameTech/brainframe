@@ -298,11 +298,10 @@ Three rules, all load-bearing:
 
 - **Minimal, never replace-all.** A delete-everything-then-insert converges,
   passes a two-replica test, and discards every concurrent remote insertion.
-- **Terminators are normalized to LF before the diff runs** (Decision 10). This
-  step owns the normalization helper, because it is the first path that ingests
-  external text — but it is a shared chokepoint, not a private detail, and
-  steps 9 and 12 call the same one. A pure line-ending change must produce
-  **zero** operations, not merely cheap ones.
+- **Terminators are normalized to LF before the diff runs** (Decision 10),
+  through the shared `normalizeTerminators` that step 4 already introduced for
+  the seed path — not a second copy living here. A pure line-ending change must
+  produce **zero** operations, not merely cheap ones.
 - **`change()` is never handed a whole note.** `myersDiff` trims the common
   prefix and suffix and then runs with no size guard, at O(D x (n+m)) — a
   product, so `D` growing with the line count is what allocates gigabytes. With
@@ -555,13 +554,17 @@ nothing is missing.
   something is a note — a policy-level filter would quietly reclassify
   excluded files as blobs instead of excluding them.
 - **Every path into a `fugueText` sequence normalizes terminators**, through
-  the one shared helper step 7 introduces and never a second copy. The doors
-  are reconciliation (7), the editor's own writes and paste (9), the
-  history-pending direct write (8), and adoption (12) — and later **#85**, whose
+  the one shared `normalizeTerminators` in
+  [line_terminators.dart](../../lib/engram/crdt/line_terminators.dart) and
+  never a second copy. The doors are seeding and insertion in step 4's
+  `NoteDocument` — already built, and the one the scan and adoption both arrive
+  through — reconciliation (7), the editor's own writes and paste (9), the
+  history-pending direct write (8), and adoption (12); and later **#85**, whose
   CRDT-aware editor is specified to bypass Decision 6's steps 2–4 and so
-  bypasses the obvious home for this. `blobLww` content is never normalized.
-  A leak is not fatal, because Decision 10's canonical form is agreed by every
-  device and a normalizing pass repairs it, but it is silent until two
+  bypasses the obvious home for this. `blobLww` content is never normalized,
+  which `NoteDocument.mint` enforces on the merge policy rather than trusting
+  callers. A leak is not fatal, because Decision 10's canonical form is agreed
+  by every device and a normalizing pass repairs it, but it is silent until two
   platforms meet.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the

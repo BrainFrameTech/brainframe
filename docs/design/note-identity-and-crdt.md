@@ -409,6 +409,14 @@ markdown is the user's permanent copy; the op-log and the databases are ours.
 This is the rule that settles the frontmatter-id question below, and it is
 worth checking any future addition against.
 
+**One carve-out, and it is deliberate: line terminators.** Decision 10
+normalizes every `fugueText` sequence to LF, so the materializer writes LF on
+every platform and a file that arrived with CRLF is written back without it.
+That is the one respect in which we do not write back exactly what the user's
+tool wrote. It is a narrowing of this rule rather than an exception to it — the
+user's *words* are still preserved byte for byte, and what is normalized is the
+one part of a text file that no reader sees. Decision 10 states the cost.
+
 The projection must be **byte-stable**: materializing the same CRDT state twice
 produces identical bytes. Anything else makes drift detection (Decision 5)
 report phantom changes forever. Concretely, this forbids re-serializing
@@ -515,11 +523,34 @@ linear instead of a product. This is the one place the design deliberately
 wraps the library rather than calling it directly, and the reason is the
 missing guard, not a disagreement about the algorithm.
 
-**One transaction for the whole script.** `change()` registers an operation per
-segment and does not open a transaction itself — its own documentation only
-recommends one. Without it, reconciliation is not atomic, and a crash partway
-through leaves a half-applied edit that Decision 5's write ordering assumes
-cannot exist.
+**The line-ending case above is now handled upstream, and the chunking still
+earns its place.** Decision 10 normalizes terminators to LF on ingest, so the
+CRLF round-trip that motivates the 6.4 GB figure never reaches this diff at
+all — it produces no operations, not merely cheap ones. The example stays here
+because it is the clearest illustration of the hazard, but it is no longer the
+live case. What remains live is every *other* dispersed edit: trailing
+whitespace stripped across a file, a markdown reflow, an indentation change.
+These have exactly the same shape, normalization does not touch them, and they
+are why the line pass is required rather than merely prudent.
+
+**One transaction for the whole script — for batching, not for rollback.**
+`change()` registers an operation per segment and does not open a transaction
+itself; its own documentation only recommends one. It is worth being exact
+about what that buys, because the obvious reading is wrong.
+`TransactionManager.run` calls `commit()` in a `finally`, so a throw part-way
+through the script still flushes the operations already registered. There is no
+rollback, and the transaction does not merge the script into a single `Change`
+— two replaced lines are still four operations.
+
+What it does provide is that the whole script's changes are created together at
+commit and surface as **one** update notification rather than one per segment,
+so nothing downstream observes a note mid-reconcile.
+
+**The never-half-applied property is real, and it comes from somewhere else:**
+the whole edit script is computed *before the first mutation*. A failure while
+diffing therefore leaves the note untouched, which is what Decision 5's write
+ordering assumes. That ordering is the guarantee; the transaction is the
+notification boundary. Both are required, for different reasons.
 
 **Surrogate pairs need a test, not an assumption.** `myersDiff` operates on
 UTF-16 code units, so an edit boundary can fall between the halves of an
@@ -902,6 +933,84 @@ So #67 must import a causally-complete batch and must treat a short return
 count as a retry signal rather than a success. An importer that ignores the
 return value loses data with no exception, no log, and no queue to inspect.
 
+### Decision 10 — line terminators are normalized to LF, everywhere
+
+**Every `fugueText` sequence contains `\n` and never `\r\n`.** Normalization
+happens on ingest, at every path that puts characters into a sequence. The
+materializer then writes exactly what the sequence holds, so notes on disk are
+LF on every platform, including Windows.
+
+Without this rule, terminators are ordinary content in the locked storage
+model, and the consequences are not cosmetic. A 100-line note authored on Linux
+with LF, opened on Windows by any tool that rewrites line endings, comes back
+CRLF. Reconciliation then produces **100 insertions** — real operations, in a
+log that is permanent, stamped with the reconciling device's peerID because
+Decision 6 has no way to know who made the external edit. The Linux file is
+rewritten to CRLF, silently. A tool on the Linux side that normalizes back adds
+100 more operations, and the pair can ping-pong indefinitely over a file no
+human is editing. Version history (**#84**) shows a hundred-line edit that
+nobody made.
+
+**Why LF everywhere, rather than each platform writing its own convention.** A
+per-platform materializer is the obvious alternative and it is worse. It makes
+two synced devices hold deliberately different bytes for the same note forever,
+which breaks three things at once: any byte-level file syncer — Syncthing,
+Dropbox — sees both devices perpetually changing the file and begins
+manufacturing conflict copies; comparing two engrams to answer "are these in
+sync?" stops working; and a terminator that leaks into a sequence can never be
+repaired, because no two devices agree on what the correct output would be.
+
+A single canonical form avoids all three. It also costs nothing to reverse:
+both designs hold LF as the internal form and differ only in whether the
+materializer denormalizes on the way out. **Adding a per-note output convention
+later therefore needs no op-log migration** — the histories are already
+correct — so this is the foundation of the per-platform scheme rather than a
+lesser alternative to it. Build the simple one; upgrade only if evidence
+arrives.
+
+**Scope: `fugueText` only, never `blobLww`.** Decision 3 already draws this
+line and `mergePolicyForPath` already implements it, so binary content is safe
+by construction rather than by a second rule that has to agree with the first.
+
+**The rule is `\r\n` → `\n`, and nothing else.** A lone `\r` is content and is
+left alone. This matches the line splitter, which only ever breaks on `\n`, so
+there is one notion of a line terminator in the system rather than two.
+
+**One chokepoint, because the invariant has many doors.** Every path that puts
+characters into a sequence must normalize: reconciliation, editor paste,
+Decision 4's history-pending direct write, adoption (**Decision 7**), and — the
+one most likely to be missed — the CRDT-aware editor of **#85**, which is
+specified to bypass Decision 6's steps 2–4 and would therefore bypass the
+obvious place to put this. Normalization belongs in a single wrapper that every
+one of those calls, not in each of them.
+
+**A leak is repairable, and the repair should be built.** If CRLF does reach a
+sequence, every device agrees the canonical form is LF, so one normalizing pass
+emits a real edit that converges everywhere and stays fixed. This is precisely
+the property the per-platform scheme cannot offer, and it is worth having a
+deliberate path for rather than trusting that no door is ever left open.
+
+**Decision 5 needs no change.** `materialized_hash` still hashes the exact bytes
+written, and those bytes are LF. When a foreign tool rewrites a file as CRLF the
+hash differs, drift is detected honestly, reconciliation normalizes and finds no
+semantic difference, **zero operations are generated**, and the file is
+rewritten LF with a fresh hash. That is the self-healing path Decision 5
+already describes, reached by a new route.
+
+**The cost, stated plainly: BrainFrame cannot hold a deliberate CRLF.** A
+fenced code block documenting an HTTP exchange, an SMTP session, or any wire
+protocol where the terminator is the point will be flattened, and there is no
+per-note escape hatch. This is the same bargain `core.autocrlf` makes, except
+git can opt out per path and we cannot. For a markdown notes application that
+is an acceptable ceiling, but it is a real one and should be discovered from
+this document rather than from a corrupted example.
+
+**Adoption is a visible mass rewrite.** Pointing BrainFrame at an existing
+folder of Windows-authored markdown means the first materialization rewrites
+the line endings of every file in it — a large, immediate change to files the
+user already owned, made before they have any reason to trust the app. This
+must be surfaced at adoption time, not discovered afterwards in a `git diff`.
+
 ## Platform consequences
 
 - **No native-bundling package is required.** `package:sqlite3` v3 — already
@@ -1046,14 +1155,26 @@ expensively otherwise:
   device B holds an unmerged concurrent insertion; assert B's insertion
   survives. This is the test that catches a replace-all diff, and a
   single-replica test cannot.
-- **A dispersed edit stays cheap.** Reconcile a note whose line endings all
-  changed CRLF to LF. This is the case that makes an unchunked `myersDiff`
-  allocate gigabytes, and it is indistinguishable from a trivial edit until the
-  diff is actually run — so it needs a test rather than a comment.
-- **Reconciliation is atomic.** Interrupt a multi-segment edit script partway
-  and assert the note is either fully reconciled or untouched, never half
-  applied. This is what the single `runInTransaction` in Decision 6 buys, and
-  nothing else in the suite would notice its removal.
+- **A dispersed edit stays cheap.** Reconcile a note whose trailing whitespace
+  was stripped on every line, or that was reflowed. This is the case that makes
+  an unchunked `myersDiff` allocate gigabytes, and it is indistinguishable from
+  a trivial edit until the diff is actually run — so it needs a test rather
+  than a comment. The line-ending version of this shape is covered separately
+  below, because under Decision 10 it must produce *nothing* rather than
+  something cheap.
+- **A line-ending change produces no operations at all.** Reconcile a note
+  whose terminators all changed LF to CRLF and assert the op-log is unchanged
+  and the file is rewritten LF. Assert the two-device form as well: the note
+  must not accumulate operations, and no edit may be attributed to the
+  reconciling peer. This is Decision 10's whole purpose, and a normalization
+  applied at only some ingest paths still passes a single-device test.
+- **The note is never half applied.** Interrupt a multi-segment edit script
+  partway and assert the note is either fully reconciled or untouched. Note
+  what this actually tests: the guarantee comes from computing the whole
+  script before the first mutation, **not** from `runInTransaction`, whose
+  `commit` runs in a `finally` and flushes what was already registered. Test
+  the transaction's real contract separately — that a multi-segment script
+  surfaces as one update notification rather than one per segment.
 - **Surrogate pairs survive a diff boundary.** Reconcile a note containing
   emoji where the edit lands adjacent to an astral-plane character; assert the
   materialized text is byte-identical and that no element was split.

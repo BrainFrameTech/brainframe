@@ -294,22 +294,34 @@ One pure-Dart unit, no filesystem, no UI. Diff line sequences first and call
 through the handler's own `insert`/`delete` path inside **one**
 `CRDTDocument.runInTransaction`.
 
-Two rules, both load-bearing:
+Three rules, all load-bearing:
 
 - **Minimal, never replace-all.** A delete-everything-then-insert converges,
   passes a two-replica test, and discards every concurrent remote insertion.
+- **Terminators are normalized to LF before the diff runs** (Decision 10). This
+  step owns the normalization helper, because it is the first path that ingests
+  external text — but it is a shared chokepoint, not a private detail, and
+  steps 9 and 12 call the same one. A pure line-ending change must produce
+  **zero** operations, not merely cheap ones.
 - **`change()` is never handed a whole note.** `myersDiff` trims the common
   prefix and suffix and then runs with no size guard, at O(D x (n+m)) — a
-  product. A CRLF round-trip makes every line differ, so prefix trimming buys
-  nothing and `D` becomes the line count: about 6.4 GB for a 100 KB note.
-  "Edited in another tool and synced back" is the case this design exists to
-  serve, so that is the common path, not an exotic one.
+  product, so `D` growing with the line count is what allocates gigabytes. With
+  normalization in front of it the CRLF round-trip no longer reaches the diff,
+  so the live cases are the *other* dispersed edits — trailing whitespace
+  stripped across a file, a markdown reflow, an indentation change. Same shape,
+  same hazard, not fixed upstream. "Edited in another tool and synced back" is
+  the case this design exists to serve, so these are the common path, not an
+  exotic one.
 
 - **Tests that matter:** device B's concurrent insertion survives an external
-  edit applied on device A — the test a single-replica suite cannot write.
-  A whole-file CRLF-to-LF change stays cheap. Surrogate pairs survive a diff
-  boundary with no element split. An interrupted script leaves the note
-  untouched, never half applied.
+  edit applied on device A — the test a single-replica suite cannot write. A
+  whole-file line-ending change produces no operations and leaves the file LF,
+  asserted across two devices so a partially-applied normalization cannot pass.
+  A trailing-whitespace strip across 500 lines stays cheap. Surrogate pairs
+  survive a diff boundary with no element split. An interrupted script leaves
+  the note untouched — from computing the script before the first mutation, not
+  from the transaction, whose contract is one update notification and is tested
+  as such.
 - **Read this PR closely.** It is the smallest one with real difficulty in
   it, and the only one whose defects are invisible until #67.
 
@@ -451,13 +463,26 @@ it. Non-blocking, with progress, and never waiting for a peer.
   seeded document for every object in that repository: the largest, least
   note-like input the design has, on the one path where the cost is multiplied
   by the whole vault.
+- **Adoption rewrites line endings, and the user must be told first.** Seeding
+  runs the Decision 10 normalization, so adopting a folder of Windows-authored
+  markdown rewrites the terminators of every file in it at first
+  materialization. That is a large, immediate, and — to someone with the folder
+  under version control — alarming change to files the user already owned, made
+  before they have any reason to trust the app. Surface it in the adoption
+  confirmation, with the file count, rather than letting it be discovered in a
+  `git diff`. This is the step where the cost recorded in Decision 10 becomes
+  visible, and it is the only one where it arrives all at once.
 - **Tests that matter:** adoption resumes after interruption — every note
   ends with exactly one ULID, none minted twice, no content duplicated. Two
   machines adopting one folder converge on the same ULID per path with each
   note's content appearing exactly once, not doubled by the loser's seed.
-  Adopting a folder that holds dot-directories mints nothing for them.
+  Adopting a folder that holds dot-directories mints nothing for them. Adopting
+  CRLF files yields LF sequences and LF on disk, with the content otherwise
+  byte-identical — and adopting `blobLww` content leaves its bytes untouched,
+  which is the assertion that catches normalization applied too broadly.
 - **Manual test plan:** a new adoption section; user-visible progress and a
-  usable engram while it runs.
+  usable engram while it runs; and the line-ending warning appearing before
+  anything is written, with its file count.
 
 ### Step 13 — Housekeeping surface
 
@@ -529,6 +554,15 @@ nothing is missing.
   `mergePolicyForPath`, which answers how a note merges and never whether
   something is a note — a policy-level filter would quietly reclassify
   excluded files as blobs instead of excluding them.
+- **Every path into a `fugueText` sequence normalizes terminators**, through
+  the one shared helper step 7 introduces and never a second copy. The doors
+  are reconciliation (7), the editor's own writes and paste (9), the
+  history-pending direct write (8), and adoption (12) — and later **#85**, whose
+  CRDT-aware editor is specified to bypass Decision 6's steps 2–4 and so
+  bypasses the obvious home for this. `blobLww` content is never normalized.
+  A leak is not fatal, because Decision 10's canonical form is agreed by every
+  device and a normalizing pass repairs it, but it is silent until two
+  platforms meet.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the
   user-facing ones and edit real cases. The rest add nothing a human can

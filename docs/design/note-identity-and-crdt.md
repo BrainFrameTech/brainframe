@@ -478,10 +478,23 @@ For each note whose file has drifted:
 4. Apply that script as `insert`/`delete` operations on the Fugue handler,
    inside **one** `CRDTDocument.runInTransaction`, stamped with this device's
    peerID and current HLC.
-5. Re-materialize. If the result differs from the file — which it will whenever
-   unmerged operations from another device were also pending — write it back
-   through Decision 4's path.
+5. Re-materialize. If the result differs from the file, write it back through
+   Decision 4's path. It will differ for **two** reasons, and the second is
+   easy to miss: unmerged operations from another device were also pending, or
+   the file's terminators were not canonical (Decision 10) and normalization
+   removed a difference that only ever existed on disk.
 6. Commit the new `materialized_hash`.
+
+**Steps 5 and 6 are unconditional, and "did step 4 produce operations?" is not
+a valid gate on them.** Decision 10 makes a pure line-ending change reconcile
+to *zero* operations while still requiring the file to be rewritten, so an
+implementation that skips the re-materialize and the hash commit when nothing
+changed will never write the file, never refresh the hash, and report drift on
+every subsequent scan — forever, at the cost of a full read, normalize and diff
+each time, with nothing in a log to say why. Before Decision 10 that shortcut
+happened to be safe, because a CRLF file always generated operations. It is not
+safe now. Decision 5's self-healing story depends on the same rule: it re-records
+the hash precisely in the case where reconciliation found no semantic difference.
 
 **Steps 3 and 4 are `crdt_lf`'s to perform, not ours.** The library already
 ships both halves: `myersDiff(oldText, newText)` returns coalesced
@@ -968,9 +981,19 @@ correct — so this is the foundation of the per-platform scheme rather than a
 lesser alternative to it. Build the simple one; upgrade only if evidence
 arrives.
 
-**Scope: `fugueText` only, never `blobLww`.** Decision 3 already draws this
-line and `mergePolicyForPath` already implements it, so binary content is safe
-by construction rather than by a second rule that has to agree with the first.
+**Scope: `fugueText` only, never `blobLww`.** Be exact about where that safety
+comes from, because the obvious answer is wrong. It is **not** that every door
+consults the merge policy: `mint` does, but a reconciliation door is handed a
+character sequence rather than a note and has no policy to consult, and every
+note gets a sequence at mint regardless of its policy.
+
+The guarantee is **Decision 3**. A `blobLww` note's op-log carries a content
+hash, a size and a stamp — never the bytes — so its sequence is empty and there
+is nothing for normalization to reach. The policy gate at the seeding door is
+defence in depth for **#49**'s deferred half and step 14, not the thing standing
+between a PNG and a rewrite. If a future policy ever does put bytes in a
+sequence, this paragraph is the one that stops being true, and the gate is what
+will still be holding.
 
 **The rule is `\r\n` → `\n`, and nothing else.** A lone `\r` is content and is
 left alone. This matches the line splitter, which only ever breaks on `\n`, so

@@ -225,9 +225,14 @@ void _refine(List<TextEdit> edits, String before, String after, int base) {
 /// at all**, so the log does not grow and no edit is misattributed to whichever
 /// device happened to reconcile.
 ///
-/// Unconditional, the way `NoteDocument.insert` is: reconciling a text file
-/// against a character sequence is a `fugueText` operation by construction,
-/// and a `blobLww` note never reaches a text diff.
+/// Unconditional, the way `NoteDocument.insert` is — but not because a policy
+/// was checked. This function is handed a [CRDTFugueTextHandler] rather than a
+/// note, deliberately, since that is what lets it be tested against bare
+/// replicas with no store behind them; there is no merge policy in scope here
+/// to consult. What keeps a `blobLww` note safe is Decision 3: its op-log
+/// carries a hash and a stamp, never the bytes, so its sequence is empty and
+/// nothing calls this for one. That is a property of the caller, not a guard
+/// here.
 void applyExternalText(
   CRDTDocument document,
   CRDTFugueTextHandler text,

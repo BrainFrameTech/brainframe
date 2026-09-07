@@ -339,11 +339,22 @@ Committing the hash first inverts that into silent loss.
 The projection must be byte-stable, which forbids re-serializing frontmatter
 through a YAML library on the way out.
 
+- **Never gate the write or the hash commit on "did reconciliation produce
+  operations?"** It is the obvious optimization and it is now wrong. Decision
+  10 makes a pure line-ending change reconcile to zero operations *and still*
+  require the file rewritten to LF, so a step that skips on "nothing changed"
+  leaves the hash stale and reports drift on that file on every scan for the
+  rest of its life — a full read, normalize and diff each time, silently. This
+  shortcut was safe before Decision 10, because a CRLF file always produced
+  operations; nothing in the earlier steps warns that it stopped being safe.
 - **Tests that matter:** byte-stable materialization across a save/reload
   cycle, including frontmatter with the comments, quoting, and key ordering
   the user chose. Crash-ordering recovery self-heals with nothing lost or
   duplicated. The size/mtime pre-filter is an optimization and never the sole
   test — same-size same-second edits are trivially achievable by a script.
+  **A CRLF file reconciles to zero operations and is still rewritten LF, with
+  a refreshed hash, and reports no drift on the next scan** — the assertion
+  that catches the gate above, and the one a single-scan test cannot see.
 
 ### Step 9 — Editor rewiring (first user-visible step)
 
@@ -561,11 +572,13 @@ nothing is missing.
   through — reconciliation (7), the editor's own writes and paste (9), the
   history-pending direct write (8), and adoption (12); and later **#85**, whose
   CRDT-aware editor is specified to bypass Decision 6's steps 2–4 and so
-  bypasses the obvious home for this. `blobLww` content is never normalized,
-  which `NoteDocument.mint` enforces on the merge policy rather than trusting
-  callers. A leak is not fatal, because Decision 10's canonical form is agreed
-  by every device and a normalizing pass repairs it, but it is silent until two
-  platforms meet.
+  bypasses the obvious home for this. `blobLww` content is never normalized —
+  `NoteDocument.mint` gates on the merge policy, and the doors handed a bare
+  sequence have no policy to gate on, so what actually keeps a PNG safe is
+  Decision 3 keeping its bytes out of the op-log entirely; the gate is defence
+  in depth for step 14. A leak is not fatal, because Decision 10's canonical
+  form is agreed by every device and a normalizing pass repairs it, but it is
+  silent until two platforms meet.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the
   user-facing ones and edit real cases. The rest add nothing a human can

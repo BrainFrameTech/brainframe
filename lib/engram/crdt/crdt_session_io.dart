@@ -1,8 +1,11 @@
 import '../engram.dart';
+import '../note_reconciler.dart';
 import '../note_writer.dart';
 import 'app_data_resolver.dart';
 import 'crdt_note_writer_io.dart';
+import 'drift_reconciler_io.dart';
 import 'metadata_db_io.dart';
+import 'note_document_lock.dart';
 
 /// One engram's open op-log, for as long as that engram is the active one.
 ///
@@ -16,12 +19,17 @@ import 'metadata_db_io.dart';
 /// transaction boundary the schema depends on, so switching engrams closes the
 /// outgoing session before the incoming one opens.
 class CrdtSession {
-  CrdtSession._(this._database, this.writer);
+  CrdtSession._(this._database, this.writer, this._reconciler);
 
   final MetadataDatabase _database;
 
   /// How the editor should save into this engram.
   final NoteWriter writer;
+
+  final DriftReconciler _reconciler;
+
+  /// How the app brings files that changed outside it back into history.
+  NoteReconciler get reconciler => _reconciler;
 
   /// Opens the op-log for [engram], or returns null if it should not have one.
   ///
@@ -42,12 +50,19 @@ class CrdtSession {
       engram.id,
       resolveRoot: resolveRoot,
     );
+    // One lock between the two: a save and a reconciliation of the same note
+    // must never overlap, and nothing above the session sequences them.
+    final lock = NoteDocumentLock();
     return CrdtSession._(
       database,
-      CrdtNoteWriter(database: database, engram: engram.store),
+      CrdtNoteWriter(database: database, engram: engram.store, lock: lock),
+      DriftReconciler(database: database, engram: engram.store, lock: lock),
     );
   }
 
-  /// Closes the database. Safe to call twice.
-  Future<void> close() async => _database.close();
+  /// Closes the database and the reconciler's event stream. Safe to call twice.
+  Future<void> close() async {
+    await _reconciler.close();
+    _database.close();
+  }
 }

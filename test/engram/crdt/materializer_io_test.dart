@@ -212,7 +212,10 @@ void main() {
       );
 
       // Identical length, so the size half of the pre-filter sees nothing and
-      // only the hash can tell these apart.
+      // only the hash can tell these apart. The mtime half still has to see
+      // something, or this lands in the blind spot the next test pins — and
+      // on a fast machine under a parallel test run it did.
+      await Future<void>.delayed(const Duration(milliseconds: 5));
       await engram.writeString('inbox/today.md', 'bbbb\n');
       final stat = await engram.statFile('inbox/today.md');
 
@@ -419,6 +422,62 @@ void main() {
         isFalse,
         reason: 'the file is canonical again and the hash matches it',
       );
+    });
+  });
+
+  group('write back only if it differs', () {
+    test('a file that already holds the projection is not rewritten', () async {
+      // Decision 6 step 5: the write is skipped when the caller can prove the
+      // bytes on disk are already the projection — but step 6 still commits.
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'first\n',
+      );
+      addTearDown(note.dispose);
+      await materializeNote(store: store, engram: engram, note: note);
+      final written = await engram.statFile('inbox/today.md');
+      // Wide enough that a rewrite would move the mtime on any filesystem.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final committed = await materializeNote(
+        store: store,
+        engram: engram,
+        note: note,
+        onDiskHash: contentHashOfString('first\n'),
+      );
+
+      expect(
+        (await engram.statFile('inbox/today.md'))!.mtimeUtc,
+        written!.mtimeUtc,
+        reason: 'nothing touched the file',
+      );
+      expect(committed.materializedHash, contentHashOfString('first\n'));
+      expect(await noteFileHasDrifted(engram, committed), isFalse);
+    });
+
+    test('a file that differs from the projection is rewritten', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'first\n',
+      );
+      addTearDown(note.dispose);
+      await engram.writeString('inbox/today.md', 'first\r\n');
+
+      final committed = await materializeNote(
+        store: store,
+        engram: engram,
+        note: note,
+        onDiskHash: contentHashOfString('first\r\n'),
+      );
+
+      expect(await engram.readString('inbox/today.md'), 'first\n');
+      expect(await noteFileHasDrifted(engram, committed), isFalse);
     });
   });
 }

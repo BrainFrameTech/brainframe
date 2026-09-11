@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../commands/pending_saves.dart';
 import '../crdt/crdt_session.dart';
 import '../engram.dart';
 import '../engram_scope.dart';
+import '../note_reconciler.dart';
 import '../note_writer.dart';
 
 /// Owns the active engram's op-log session and publishes how to save into it.
@@ -13,10 +15,17 @@ import '../note_writer.dart';
 /// engram's: switching engrams closes the outgoing database before opening the
 /// incoming one, and two connections to one `metadata.db` never coexist.
 ///
-/// **It publishes a [NoteWriter], not the session.** Everything below is UI and
-/// has no business knowing whether an op-log exists — the editor asks how to
-/// save and gets an answer, and on web or a read-only engram that answer is
-/// simply "there is nothing here, write to the store".
+/// **It publishes a [NoteWriter] and a [NoteReconciler], not the session.**
+/// Everything below is UI and has no business knowing whether an op-log
+/// exists — the editor asks how to save and gets an answer, and on web or a
+/// read-only engram that answer is simply "there is nothing here, write to
+/// the store".
+///
+/// **It also owns two of the scan's three triggers** (Decision 6): the scan
+/// on app start — which, from here, is the moment a session opens, so an
+/// engram switch gets one too — and the scan on app resume. The third, before
+/// a file is opened for editing, belongs to the editor pane, which is the one
+/// that knows a file is about to open.
 ///
 /// Absent by design in widget tests: nothing installs this host, so
 /// [maybeOf] returns null and the editor writes directly, exactly as it did
@@ -26,6 +35,7 @@ class CrdtSessionHost extends StatefulWidget {
     super.key,
     required this.child,
     this.openSession = CrdtSession.openFor,
+    this.pendingSaves,
   });
 
   final Widget child;
@@ -34,11 +44,16 @@ class CrdtSessionHost extends StatefulWidget {
   /// without a real database, and so the app can supply the real thing.
   final Future<CrdtSession?> Function(Engram engram) openSession;
 
+  /// The flush registry consulted before a resume scan, or the app-wide one
+  /// when null. Injected so a test can register a flush of its own.
+  final PendingSaves? pendingSaves;
+
   @override
   State<CrdtSessionHost> createState() => _CrdtSessionHostState();
 }
 
-class _CrdtSessionHostState extends State<CrdtSessionHost> {
+class _CrdtSessionHostState extends State<CrdtSessionHost>
+    with WidgetsBindingObserver {
   CrdtSession? _session;
   String? _engramId;
 
@@ -48,7 +63,19 @@ class _CrdtSessionHostState extends State<CrdtSessionHost> {
   /// mounted before the writer exists would save straight to disk, and that
   /// write would come back as drift on the next scan — a real edit, correctly
   /// recovered, but recorded as though it had arrived from outside the app.
+  /// The start-up scan runs inside this window for the same reason, the other
+  /// way round: the editor that mounts afterwards opens a file whose history
+  /// already includes whatever changed while the app was closed.
   bool _resolving = true;
+
+  PendingSaves get _pendingSaves =>
+      widget.pendingSaves ?? PendingSaves.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didChangeDependencies() {
@@ -68,6 +95,10 @@ class _CrdtSessionHostState extends State<CrdtSessionHost> {
     CrdtSession? next;
     try {
       next = await widget.openSession(engram);
+      // The scan on start. Nothing is registered to flush yet — the child is
+      // withheld — so Decision 6's first step is vacuously done. The report
+      // has no surface until step 13; what it says is logged by the scan.
+      await next?.reconciler.scan();
     } finally {
       if (mounted && _engramId == engram.id) {
         setState(() {
@@ -83,7 +114,29 @@ class _CrdtSessionHostState extends State<CrdtSessionHost> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_scanOnResume());
+  }
+
+  /// The scan on resume: the app was in the background, and anything could
+  /// have happened to the folder in the meantime.
+  ///
+  /// The editor is flushed first, which is Decision 6's step 1 — reconciling
+  /// underneath an unsaved buffer would race the save. In practice the buffer
+  /// is already clean, since pause flushed it, and this is the guarantee
+  /// rather than the common case. A session that resolves mid-flight is left
+  /// to its own start-up scan.
+  Future<void> _scanOnResume() async {
+    final session = _session;
+    if (session == null) return;
+    await _pendingSaves.flushAll();
+    if (!mounted || !identical(_session, session)) return;
+    await session.reconciler.scan();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // dispose cannot await; the handle is released with the process anyway.
     unawaited(_session?.close());
     super.dispose();
@@ -92,16 +145,29 @@ class _CrdtSessionHostState extends State<CrdtSessionHost> {
   @override
   Widget build(BuildContext context) {
     if (_resolving) return const SizedBox.shrink();
-    return CrdtSessionScope._(writer: _session?.writer, child: widget.child);
+    return CrdtSessionScope._(
+      writer: _session?.writer,
+      reconciler: _session?.reconciler,
+      child: widget.child,
+    );
   }
 }
 
-/// Publishes the active engram's [NoteWriter] to the editor below it.
+/// Publishes the active engram's [NoteWriter] and [NoteReconciler] to the
+/// editor below it.
 class CrdtSessionScope extends InheritedWidget {
-  const CrdtSessionScope._({required this.writer, required super.child});
+  const CrdtSessionScope._({
+    required this.writer,
+    required this.reconciler,
+    required super.child,
+  });
 
   /// How to save into the active engram, or null when it has no op-log.
   final NoteWriter? writer;
+
+  /// How to reconcile a file that changed outside the app, or null when the
+  /// engram has no op-log — in which case nothing can drift from anything.
+  final NoteReconciler? reconciler;
 
   /// The writer for the nearest host, or null if there is no host at all.
   ///
@@ -112,7 +178,13 @@ class CrdtSessionScope extends InheritedWidget {
       .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
       ?.writer;
 
+  /// The reconciler for the nearest host, or null if there is none — the same
+  /// three cases as [maybeOf], and null means "nothing to reconcile against".
+  static NoteReconciler? maybeReconcilerOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
+      ?.reconciler;
+
   @override
   bool updateShouldNotify(CrdtSessionScope oldWidget) =>
-      oldWidget.writer != writer;
+      oldWidget.writer != writer || oldWidget.reconciler != reconciler;
 }

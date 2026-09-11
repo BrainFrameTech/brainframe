@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:brainframe/commands/app_commands.dart';
 import 'package:brainframe/engram/engram_store.dart';
+import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/ui/find_in_page.dart';
 import 'package:brainframe/engram/ui/markdown_editor_pane.dart';
 import 'package:brainframe/engram/ui/markdown_reader.dart';
@@ -58,12 +59,61 @@ class _ThrowingStore extends EngramStore {
   Future<void> writeBytes(String path, Uint8List bytes) async {}
 }
 
-Widget _host(EngramStore store, String path) => localizedApp(
+/// A reconciler over an [_RwStore]: "reconciling" a path rewrites its file
+/// from [pending], the content the note's history is supposed to hold, and
+/// announces it — the shape of the real one, without the op-log.
+class _FakeReconciler implements NoteReconciler {
+  _FakeReconciler(this.store);
+
+  final _RwStore store;
+
+  /// Path → the text a reconciliation would leave on disk.
+  final Map<String, String> pending = {};
+
+  /// Every path handed to [reconcile], in order.
+  final List<String> reconciles = [];
+
+  /// When set, [reconcile] blocks on it — to observe the pane mid-open.
+  Completer<void>? gate;
+
+  final StreamController<String> _events = StreamController<String>.broadcast();
+
+  @override
+  Future<DriftScanReport> scan() async => DriftScanReport.clean;
+
+  @override
+  Future<bool> reconcile(String path) async {
+    reconciles.add(path);
+    if (gate != null) await gate!.future;
+    final text = pending.remove(path);
+    if (text == null) return false;
+    store.files[path] = text;
+    _events.add(path);
+    return true;
+  }
+
+  /// A reconciliation that happened elsewhere — the resume scan — and left
+  /// [text] on disk.
+  void reconciledElsewhere(String path, String text) {
+    store.files[path] = text;
+    _events.add(path);
+  }
+
+  @override
+  Stream<String> get reconciled => _events.stream;
+}
+
+Widget _host(EngramStore store, String path, {NoteReconciler? reconciler}) =>
+    localizedApp(
       home: Scaffold(
         body: SizedBox(
           width: 1000,
           height: 600,
-          child: MarkdownEditorPane(store: store, path: path),
+          child: MarkdownEditorPane(
+            store: store,
+            path: path,
+            reconciler: reconciler,
+          ),
         ),
       ),
     );
@@ -258,6 +308,115 @@ void main() {
       expect(store.files['a.md'], '# A edited');
     });
   }
+
+  group('reconciliation', () {
+    testWidgets('a note is reconciled before it is read', (tester) async {
+      // The third scan trigger: what the editor adopts is the note's history,
+      // not a file that got ahead of it.
+      final store = _RwStore({'a.md': '# stale'});
+      final reconciler = _FakeReconciler(store)
+        ..pending['a.md'] = '# merged'
+        ..gate = Completer<void>();
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pump();
+
+      expect(reconciler.reconciles, ['a.md']);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      reconciler.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('# merged'), findsOneWidget);
+      expect(find.text('# stale'), findsNothing);
+    });
+
+    testWidgets('switching files reconciles the incoming one', (tester) async {
+      final store = _RwStore({'a.md': '# A', 'b.md': '# B'});
+      final reconciler = _FakeReconciler(store);
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(_host(store, 'b.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      expect(reconciler.reconciles, ['a.md', 'b.md']);
+    });
+
+    testWidgets('a note reconciled while open is reloaded, clean', (
+      tester,
+    ) async {
+      // The resume scan merged an external edit under the open note. The
+      // buffer no longer knows what is on disk, so it yields.
+      final store = _RwStore({'a.md': '# A'});
+      final reconciler = _FakeReconciler(store);
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      reconciler.reconciledElsewhere('a.md', '# A, edited outside');
+      await tester.pumpAndSettle();
+
+      expect(find.text('# A, edited outside'), findsOneWidget);
+      expect(find.text('Saved'), findsOneWidget);
+      expect(store.writes, isEmpty, reason: 'a reload is not a save');
+    });
+
+    testWidgets('a reconciliation of some other note is ignored', (
+      tester,
+    ) async {
+      final store = _RwStore({'a.md': '# A', 'b.md': '# B'});
+      final reconciler = _FakeReconciler(store);
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '# A typed');
+      await tester.pump();
+
+      reconciler.reconciledElsewhere('b.md', '# B, edited outside');
+      await tester.pumpAndSettle();
+
+      expect(find.text('# A typed'), findsOneWidget);
+      expect(find.text('Unsaved changes'), findsOneWidget);
+    });
+
+    testWidgets('an open find is re-run against the reloaded text', (
+      tester,
+    ) async {
+      final store = _RwStore({'a.md': 'one two'});
+      final reconciler = _FakeReconciler(store);
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Find in page'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(FindInPageBar),
+          matching: find.byType(TextField),
+        ),
+        'one',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 1'), findsOneWidget);
+
+      reconciler.reconciledElsewhere('a.md', 'one two one');
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 of 2'), findsOneWidget);
+    });
+
+    testWidgets('a reload that cannot read the file shows the error', (
+      tester,
+    ) async {
+      final store = _RwStore({'a.md': '# A'});
+      final reconciler = _FakeReconciler(store);
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      store.files.remove('a.md');
+      reconciler.reconciledElsewhere('a.md', '# never lands');
+      store.files.remove('a.md');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownSourceEditor), findsNothing);
+    });
+  });
 
   group('find in page', () {
     /// The document's own field — with the find bar open there are two.

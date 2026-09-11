@@ -90,6 +90,33 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
     _setStatus(SaveStatus.saved);
   }
 
+  /// Adopts [text] as the open file's on-disk content, discarding the buffer.
+  ///
+  /// For the one case [openFile] cannot cover: the file *under the open path*
+  /// was rewritten — reconciliation merged an edit made outside the app — so
+  /// the buffer no longer knows what is on disk, and the next save would diff
+  /// against a history that has moved on and delete the merged edit as though
+  /// the user had removed it. Reloading is what keeps a whole-buffer save
+  /// honest; a CRDT-aware editor (#85) is what eventually makes it unnecessary.
+  ///
+  /// A write already in flight is awaited first, so its completion cannot
+  /// settle stale state over the reload. Any keystrokes made between the
+  /// pre-scan flush and this call are dropped: that window is the length of
+  /// one note's reconciliation, and the alternative — saving them — would
+  /// discard the external edit instead. A no-op before a file is opened.
+  Future<void> replaceFromDisk(String text) async {
+    if (_path == null) return;
+    final inFlight = _writing;
+    if (inFlight != null) await inFlight;
+    _cancelTimers();
+    _buffer = text;
+    _savedText = text;
+    _status = SaveStatus.saved;
+    // Always, not only on a status change: the buffer changed even when the
+    // status did not, and the pane rebuilds the source field from the buffer.
+    notifyListeners();
+  }
+
   /// Records an edit to the open file: updates the buffer, (re)arms the idle
   /// debounce, and ensures the max-wait cap is ticking. Editing back to the
   /// saved content cancels the pending write and returns to `saved`.

@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/engram/asset_engram_store.dart';
 import 'package:brainframe/engram/crdt/crdt_session.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_scope.dart';
+import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/note_writer.dart';
 import 'package:brainframe/engram/ui/crdt_session_scope.dart';
 import 'package:flutter/widgets.dart';
@@ -98,6 +100,197 @@ void main() {
     expect(order, ['open a', 'close a', 'open b']);
   });
 
+  testWidgets('publishes the session\'s reconciler beside its writer', (
+    tester,
+  ) async {
+    final session = _FakeSession(() {});
+    NoteReconciler? published;
+    await tester.pumpWidget(
+      EngramScope(
+        initialEngram: engramNamed('a'),
+        child: CrdtSessionHost(
+          openSession: (_) async => session,
+          child: Builder(
+            builder: (context) {
+              published = CrdtSessionScope.maybeReconcilerOf(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(identical(published, session.reconciler), isTrue);
+  });
+
+  testWidgets('the reconciler is null when there is no session', (
+    tester,
+  ) async {
+    NoteReconciler? published = _RecordingReconciler();
+    await tester.pumpWidget(
+      EngramScope(
+        initialEngram: engramNamed('a'),
+        child: CrdtSessionHost(
+          openSession: (_) async => null,
+          child: Builder(
+            builder: (context) {
+              published = CrdtSessionScope.maybeReconcilerOf(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(published, isNull);
+  });
+
+  group('the scan on start', () {
+    testWidgets('runs when the session opens, before the child mounts', (
+      tester,
+    ) async {
+      // The editor that mounts afterwards opens a file whose history already
+      // includes whatever changed while the app was closed.
+      final reconciler = _RecordingReconciler()..gate = Completer<void>();
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async =>
+                _FakeSession(() {}, reconciler: reconciler),
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(reconciler.scans, 1);
+      expect(find.text('crdt'), findsNothing, reason: 'withheld mid-scan');
+
+      reconciler.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('crdt'), findsOneWidget);
+    });
+
+    testWidgets('runs again for the incoming engram on a switch', (
+      tester,
+    ) async {
+      final log = <String>[];
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (engram) async {
+              log.add('open ${engram.id}');
+              return _FakeSession(
+                () => log.add('close ${engram.id}'),
+                reconciler: _RecordingReconciler(log: log),
+              );
+            },
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await EngramScope.of(
+        tester.element(find.text('crdt')),
+      ).switchTo(engramNamed('b'));
+      await tester.pumpAndSettle();
+
+      expect(log, ['open a', 'scan', 'close a', 'open b', 'scan']);
+    });
+  });
+
+  group('the scan on resume', () {
+    testWidgets('flushes every registered editor, then scans', (tester) async {
+      // Decision 6's first step: reconciling underneath an unsaved buffer
+      // would race the save, so the flush comes first and is awaited.
+      final log = <String>[];
+      final pendingSaves = PendingSaves();
+      final flushed = Completer<void>();
+      pendingSaves.register(#editor, () {
+        log.add('flush');
+        return flushed.future;
+      });
+      final reconciler = _RecordingReconciler(log: log);
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async =>
+                _FakeSession(() {}, reconciler: reconciler),
+            pendingSaves: pendingSaves,
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      log.clear();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(log, ['flush'], reason: 'the scan waits for the flush');
+
+      flushed.complete();
+      await tester.pumpAndSettle();
+      expect(log, ['flush', 'scan']);
+    });
+
+    testWidgets('other lifecycle states do not scan', (tester) async {
+      final reconciler = _RecordingReconciler();
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async =>
+                _FakeSession(() {}, reconciler: reconciler),
+            pendingSaves: PendingSaves(),
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final atStart = reconciler.scans;
+
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.detached,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pumpAndSettle();
+      }
+
+      expect(reconciler.scans, atStart);
+    });
+
+    testWidgets('does nothing without a session', (tester) async {
+      var flushes = 0;
+      final pendingSaves = PendingSaves()
+        ..register(#editor, () async => flushes++);
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async => null,
+            pendingSaves: pendingSaves,
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(flushes, 0, reason: 'nothing to reconcile against');
+    });
+  });
+
   testWidgets('the last session is closed when the host goes away', (
     tester,
   ) async {
@@ -122,7 +315,8 @@ void main() {
 
 /// A session that records its close without touching a database.
 class _FakeSession implements CrdtSession {
-  _FakeSession(this._onClose);
+  _FakeSession(this._onClose, {_RecordingReconciler? reconciler})
+    : reconciler = reconciler ?? _RecordingReconciler();
 
   final void Function() _onClose;
 
@@ -130,7 +324,34 @@ class _FakeSession implements CrdtSession {
   NoteWriter get writer => _NoopWriter();
 
   @override
+  final _RecordingReconciler reconciler;
+
+  @override
   Future<void> close() async => _onClose();
+}
+
+/// A reconciler that records each scan, optionally via a shared log, and can
+/// hold a scan open until told to finish.
+class _RecordingReconciler implements NoteReconciler {
+  _RecordingReconciler({List<String>? log}) : log = log ?? <String>[];
+
+  final List<String> log;
+  int scans = 0;
+  Completer<void>? gate;
+
+  @override
+  Future<DriftScanReport> scan() async {
+    scans++;
+    log.add('scan');
+    if (gate != null) await gate!.future;
+    return DriftScanReport.clean;
+  }
+
+  @override
+  Future<bool> reconcile(String path) async => false;
+
+  @override
+  Stream<String> get reconciled => const Stream<String>.empty();
 }
 
 class _NoopWriter implements NoteWriter {

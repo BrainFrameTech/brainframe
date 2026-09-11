@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
 import '../engram_store.dart';
+import '../note_reconciler.dart';
 import '../note_writer.dart';
 import 'file_path_breadcrumb.dart';
 import 'markdown_editor_pane.dart';
@@ -52,11 +53,14 @@ bool isMarkdownPath(String path) =>
 ///
 /// [availablePaths] and [onNavigateToFile] are consulted by the Markdown reader
 /// and editor preview (for intra-engram link navigation); other viewers ignore
-/// them.
+/// them. [writer] and [reconciler] reach only the editor: how it saves, and how
+/// it brings a file that changed outside the app back in line before opening
+/// it.
 Widget buildFileViewer({
   required EngramStore store,
   required String path,
   NoteWriter? writer,
+  NoteReconciler? reconciler,
   Set<String> availablePaths = const {},
   void Function(String path)? onNavigateToFile,
   bool readOnly = true,
@@ -74,6 +78,7 @@ Widget buildFileViewer({
       store: store,
       path: path,
       writer: writer,
+      reconciler: reconciler,
       availablePaths: availablePaths,
       onNavigateToFile: onNavigateToFile,
     );

@@ -442,6 +442,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
       // engram, a platform without SQLite, and a widget test that installs no
       // host all land here and write straight to the store.
       writer: CrdtSessionScope.maybeOf(context),
+      reconciler: CrdtSessionScope.maybeReconcilerOf(context),
       availablePaths: paths.toSet(),
       onNavigateToFile: _selectFile,
       // Built-in engrams are read-only; a writable engram gets the editor.

@@ -31,6 +31,9 @@ Widget _gate({
       home: EngramStartupGate(
         resolveInitialEngram: resolve,
         onSwitched: onSwitched,
+        // No database in a widget test: a null session is the pre-step-9
+        // behaviour, and what the gate installs is what is under test here.
+        openSession: (_) async => null,
         child: child,
       ),
     );

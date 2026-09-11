@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../commands/app_commands.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../engram_store.dart';
+import '../note_writer.dart';
 import 'document_edit_controller.dart';
 import 'file_path_breadcrumb.dart';
 import 'find_in_page.dart';
@@ -35,12 +36,20 @@ class MarkdownEditorPane extends StatefulWidget {
     super.key,
     required this.store,
     required this.path,
+    this.writer,
     this.availablePaths = const {},
     this.onNavigateToFile,
   });
 
   final EngramStore store;
   final String path;
+
+  /// How a save reaches storage, or null to write straight to [store].
+  ///
+  /// Supplied by the browser when the engram has an op-log behind it. Null is
+  /// the honest default rather than a degraded one: a read-only engram, and a
+  /// platform with no SQLite, both write directly and always will.
+  final NoteWriter? writer;
   final Set<String> availablePaths;
   final void Function(String path)? onNavigateToFile;
 
@@ -49,8 +58,9 @@ class MarkdownEditorPane extends StatefulWidget {
 }
 
 class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
-  late final DocumentEditController _controller =
-      DocumentEditController(store: widget.store);
+  late final DocumentEditController _controller = DocumentEditController(
+    writer: widget.writer ?? DirectNoteWriter(widget.store),
+  );
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 

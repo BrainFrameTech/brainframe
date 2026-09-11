@@ -362,6 +362,10 @@ snapshot.
 9. **Desktop exit (no lifecycle warning):** type a character and, *within the
    5 s debounce*, quit with **File ▸ Quit** / **Ctrl+Q** (Cmd+Q on macOS).
    Repeat using the window's own **close button**. Relaunch and reopen the file.
+10. **Edit ▸ quit ▸ reopen, with history:** in a **filesystem** engram, edit a
+    note and let it save. Quit the app fully, relaunch, reopen the same note.
+11. Repeat step 10 in a **built-in (read-only)** engram's note — expect the
+    editor to be unavailable there, which is the point: nothing to save.
 
 **Expected:**
 
@@ -381,6 +385,20 @@ snapshot.
   neither can lose the last few characters.
 - After each save, confirm the **on-disk** file changed (open it outside the
   app).
+- **Step 10 — the file is now a projection, and it must not look like it.** As
+  of CRDT step 9 a save no longer writes the buffer straight to disk: it becomes
+  operations on the note's document, and the file is rewritten from the result.
+  Every expectation above must hold exactly as it did before — same bytes, same
+  chip transitions, same flush points. The content after the relaunch is the
+  content you typed, byte for byte. **Any difference you can see is a defect**,
+  including a changed byte count, a stray blank line, or reordered frontmatter.
+- **Step 10 — line endings are normalized to LF.** A note that was CRLF on disk
+  will come back LF after its first save through the editor. This one *is*
+  expected (Decision 10): confirm it once, then do not report it. On Windows,
+  check with an editor that shows line endings rather than by eye.
+- **Step 10 — a second engram must not be affected.** Switch engrams, edit a
+  note there, switch back. Both notes keep their own content: each engram has
+  its own op-log, and switching closes one before opening the other.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1208,7 +1226,7 @@ cases for these until the code exists.
 | **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which has no editor header to hang it on. |
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
-| **Sync / multi-device** | No sync layer; engrams are local folders. |
+| **Sync / multi-device** | No sync layer; engrams are local folders. Note that the *local* half now exists — saves become CRDT operations (F10 step 10) — but with no transport there is still no second device to test against. |
 | **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
 
 When any of these lands, move its row up into the matrix with concrete steps and

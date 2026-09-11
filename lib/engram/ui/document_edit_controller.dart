@@ -3,13 +3,20 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../commands/pending_saves.dart';
-import '../engram_store.dart';
+import '../note_writer.dart';
 
 /// The save state surfaced to the header status indicator.
 enum SaveStatus { saved, dirty, saving, error }
 
 /// Owns the edit buffer and save pipeline for the one Markdown file currently
 /// open in the editor (design: "The save model").
+///
+/// It does not know how a save reaches storage. [writer] decides that: a
+/// [DirectNoteWriter] puts the buffer on disk the way notes were always
+/// written, while the CRDT writer turns it into operations on the note's
+/// document and rewrites the file from the result. Everything below — the
+/// debounce, the status, the path capture that stops a late write stamping the
+/// wrong file — is identical either way, which is the point of the seam.
 ///
 /// Debounced autosave is primary — after [idleDebounce] of no edits the buffer
 /// is written — with a [maxWait] cap so an uninterrupted typing burst (which
@@ -23,7 +30,7 @@ enum SaveStatus { saved, dirty, saving, error }
 /// content onto a file that has since been switched away.
 class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver {
   DocumentEditController({
-    required this.store,
+    required this.writer,
     this.idleDebounce = const Duration(seconds: 5),
     this.maxWait = const Duration(seconds: 30),
     this.observeLifecycle = true,
@@ -36,7 +43,7 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
     _pendingSaves.register(this, flush);
   }
 
-  final EngramStore store;
+  final NoteWriter writer;
   final Duration idleDebounce;
   final Duration maxWait;
 
@@ -100,10 +107,12 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
     }
   }
 
-  /// Writes the buffer to the store now if it is dirty, cancelling pending
+  /// Writes the buffer through [writer] now if it is dirty, cancelling pending
   /// timers. Safe to call when clean (a no-op) and to await from any flush
-  /// point. Writes are serialized per controller so the store never sees two
-  /// concurrent writes to the same file.
+  /// point. Writes are serialized per controller so the writer never sees two
+  /// concurrent writes to the same file — which the CRDT writer relies on more
+  /// heavily than the direct one, since it opens the note's document to apply
+  /// the buffer and two overlapping opens would race on one op-log.
   Future<void> flush() async {
     _cancelTimers();
     final inFlight = _writing;
@@ -120,7 +129,7 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
 
   Future<void> _write(String targetPath, String pending) async {
     try {
-      await store.writeString(targetPath, pending);
+      await writer.write(targetPath, pending);
       // Only settle state if we are still on the file we wrote — a switch
       // during the write leaves the new file's state alone.
       if (_path == targetPath) {

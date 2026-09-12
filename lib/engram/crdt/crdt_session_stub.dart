@@ -1,4 +1,5 @@
 import '../engram.dart';
+import '../note_reconciler.dart';
 import '../note_writer.dart';
 
 /// Web's answer: there is no session, and there never will be one.
@@ -15,6 +16,10 @@ class CrdtSession {
 
   /// Unreachable: no session is ever created here.
   NoteWriter get writer => throw UnsupportedError('No CRDT session on web.');
+
+  /// Unreachable, as [writer] is.
+  NoteReconciler get reconciler =>
+      throw UnsupportedError('No CRDT session on web.');
 
   /// Unreachable, and harmless to call.
   Future<void> close() async {}

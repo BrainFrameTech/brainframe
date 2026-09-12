@@ -99,6 +99,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS bf_catalog_findable_path
   CatalogRow? byUlid(String ulid) =>
       _one('SELECT * FROM bf_catalog WHERE ulid = ?', [ulid]);
 
+  /// Every note in [NoteState.live], ordered by path.
+  ///
+  /// The scan's input (Decision 6): the notes that have a file this device
+  /// expects to find and an op-log it can reconcile that file against. The
+  /// other states are each somebody else's question — a history-pending note
+  /// has no document to diff into, a tombstone has no file, and an unavailable
+  /// one has a file that cannot be read right now — so they are excluded here
+  /// rather than skipped one by one inside the scan.
+  ///
+  /// Ordered so two scans of one engram visit notes in the same order, which
+  /// makes a scan report comparable between runs and a failure reproducible.
+  List<CatalogRow> live() => database
+      .select('SELECT * FROM bf_catalog WHERE state = ? ORDER BY path', [
+        NoteState.live.name,
+      ])
+      .map(_rowFrom)
+      .toList();
+
   /// Writes [row], replacing any existing row with the same ULID.
   ///
   /// Whole-row, never a delta — the same discipline the shared identity map

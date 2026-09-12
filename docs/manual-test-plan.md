@@ -1100,6 +1100,67 @@ observe each other's.
 - **Reference:** [debug-build-identity.md](debug-build-identity.md) has the
   per-platform table of where each identity is set.
 
+### F29 — External edits are reconciled (the drift scan)
+
+As of CRDT step 10, a note's file that changes *outside* the app — another
+editor, a sync client, a script — is folded back into the note's history
+rather than overwritten by the next save. The scan runs at three moments: app
+start (and engram switch), app resume (the window regaining focus), and
+immediately before a note is opened in the editor. This case drives all three.
+Use a **filesystem** engram and any second editor that can write to its
+folder.
+
+**Steps:**
+
+1. Open a note **X** in Edit mode; make an edit and let it save (`saved`).
+2. **Resume:** switch to the other editor (BrainFrame's window loses focus).
+   Add a line to **X** there and save it. Switch back to BrainFrame.
+3. **Before open:** in BrainFrame select a different note **Y**. In the other
+   editor, add another line to **X**. In BrainFrame, select **X** again.
+4. **Start:** quit BrainFrame fully. In the other editor, add a third line to
+   **X**. Relaunch; open **X**.
+5. With all three lines showing, type a fourth in BrainFrame and let it save.
+   Open **X** in the other editor.
+6. **Line endings only:** in the other editor, convert **X** to CRLF without
+   changing any text; save. Switch back to BrainFrame (resume).
+7. **Unsaved buffer at resume:** type in **X** and, *within the 5 s debounce*,
+   switch to the other editor; switch straight back without touching **X**.
+
+**Expected:**
+
+- Steps 2, 3 and 4: **X** shows the externally added line(s) — each within a
+  moment of the trigger — with the chip at `saved` and no "unsaved" state. No
+  line is duplicated and none is lost.
+- Step 5: the other editor sees all four lines. The save applied *on top of*
+  the external lines rather than restoring the pre-edit text — this is the
+  point of the whole feature, and the one a save-only test cannot see.
+- Step 6: nothing visible changes in BrainFrame, and **X** on disk is LF
+  again. This is Decision 10 (as in F10) and is expected, not a defect.
+- Step 7: the typed text is on disk (the resume flushes the editor before it
+  scans), and the chip settles at `saved`.
+- Throughout: the pane never flickers to a spinner on resume; only a note that
+  actually changed on disk is reloaded. Reloading moves the caret to the end
+  of the text — accepted for now, note it only if it happens *without* an
+  external change.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android | ✓ for steps 3–6 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event |
+
+- **The window of loss, on record:** a keystroke made between the resume and
+  the reload of a note that *did* change externally is dropped in favour of
+  the external edit — a whole-buffer save cannot tell "deleted" from "never
+  saw". The window is one note's reconciliation, milliseconds. Report it only
+  if it exceeds that.
+- **Edits to a file while the app is focused and the note is open** are
+  *not* picked up until the next trigger — there is no filesystem watcher yet
+  (**#70**). A save made in that state overwrites the external edit; that is
+  the known gap, not a regression.
+- **Inspection point:** a note that fails to reconcile (an unreadable file,
+  invalid UTF-8) is skipped, logged under `brainframe.engram.drift`, and tried
+  again on the next scan; the rest of the engram still reconciles. There is no
+  UI for it yet (Housekeeping, step 13).
+
 ---
 
 ## Bug-class deep-dives
@@ -1226,7 +1287,8 @@ cases for these until the code exists.
 | **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which has no editor header to hang it on. |
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
-| **Sync / multi-device** | No sync layer; engrams are local folders. Note that the *local* half now exists — saves become CRDT operations (F10 step 10) — but with no transport there is still no second device to test against. |
+| **Sync / multi-device** | No sync layer; engrams are local folders. Note that the *local* half now exists — saves become CRDT operations (F10 step 10) and external edits are reconciled into history (F29) — but with no transport there is still no second device to test against. Two BrainFrames over one shared folder converge through the files alone, which the automated suite proves; it is not a manual case until a sync client is in the loop. |
+| **Filesystem watcher (#70)** | External edits are picked up at start, resume, and before open (F29), not live. An edit made while the note is open and the window focused waits for the next trigger. |
 | **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
 
 When any of these lands, move its row up into the matrix with concrete steps and

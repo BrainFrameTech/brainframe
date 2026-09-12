@@ -6,6 +6,7 @@ import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
 import 'package:brainframe/engram/crdt/materializer_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/note_document_io.dart';
+import 'package:brainframe/engram/crdt/note_document_lock.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
@@ -37,7 +38,7 @@ void main() {
       MetadataDatabase.open(engramId, resolveRoot: resolveRoot);
 
   Future<CrdtNoteWriter> writerFor(MetadataDatabase store) async =>
-      CrdtNoteWriter(database: store, engram: engram);
+      CrdtNoteWriter(database: store, engram: engram, lock: NoteDocumentLock());
 
   group('a path the catalog has never seen', () {
     test('is minted, seeded with the buffer, and written', () async {

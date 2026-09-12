@@ -45,6 +45,15 @@ import 'note_document_io.dart';
 /// for the rest of its life, silently. Before Decision 10 that shortcut
 /// happened to be safe; it is not now.
 ///
+/// [onDiskHash] is the hash of the bytes the caller has just read from the
+/// file, if it read them. When the materialized bytes hash to the same value
+/// the file already *is* the projection and step 2 is skipped — Decision 6's
+/// "write it back if it differs" — but step 3 is not: the row is committed
+/// from a fresh stat either way, because the whole reason the caller got here
+/// is that the recorded hash did not match. Skipping the commit too is the
+/// stale-hash trap from a different direction. Omit it when the file's
+/// current content is unknown, and the write is unconditional.
+///
 /// Returns the committed row, so a caller holding a stale one does not have to
 /// re-read the catalog to see what was recorded.
 ///
@@ -53,6 +62,7 @@ Future<CatalogRow> materializeNote({
   required MetadataDatabase store,
   required EngramStore engram,
   required NoteDocument note,
+  String? onDiskHash,
 }) async {
   final row = store.catalog.byUlid(note.ulid);
   if (row == null) throw UnknownNoteException(note.ulid);
@@ -65,8 +75,9 @@ Future<CatalogRow> materializeNote({
   final hash = contentHash(bytes);
 
   // 2. Write the file. The store's write is atomic, so a reader sees the whole
-  //    old file or the whole new one.
-  await engram.writeBytes(row.path, bytes);
+  //    old file or the whole new one. Skipped only when the caller has proven
+  //    the file already holds exactly these bytes; the commit below still runs.
+  if (hash != onDiskHash) await engram.writeBytes(row.path, bytes);
 
   // 3. Commit the row, describing exactly what step 2 put on disk. The mtime
   //    is read back rather than guessed, because the filesystem sets it.

@@ -288,6 +288,29 @@ void main() {
     });
   });
 
+  group('live', () {
+    test('an empty catalog has no live notes', () {
+      expect(catalog.live(), isEmpty);
+    });
+
+    test('returns only live rows, ordered by path', () {
+      // Every other state is somebody else's question: no document to diff
+      // into, no file, or a file that cannot be read right now.
+      final b = row(path: 'b.md');
+      final a = row(path: 'a.md');
+      final c = row(path: 'c.md');
+      catalog
+        ..upsert(c)
+        ..upsert(b)
+        ..upsert(a)
+        ..upsert(row(path: 'pending.md', state: NoteState.historyPending))
+        ..upsert(row(path: 'gone.md', state: NoteState.tombstoned))
+        ..upsert(row(path: 'offline.md', state: NoteState.unavailable));
+
+      expect(catalog.live(), [a, b, c]);
+    });
+  });
+
   group('a row it cannot read is refused, not half-read', () {
     /// Writes [value] straight into a column, standing in for a row another
     /// build — or a person with a SQLite browser — left behind.

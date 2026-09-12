@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../commands/app_commands.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../engram_store.dart';
+import '../note_reconciler.dart';
 import '../note_writer.dart';
 import 'document_edit_controller.dart';
 import 'file_path_breadcrumb.dart';
@@ -31,12 +32,20 @@ enum _Mode { edit, preview }
 /// same [FindInPageBar]. Find searches the document *source*, so opening it
 /// from Preview switches back to Edit — a rendered preview has no text offsets
 /// to highlight or scroll to.
+///
+/// It is also where the third of the scan's triggers lives (Decision 6): a
+/// note is reconciled immediately before it is opened, so what the editor
+/// reads already includes any edit made to the file outside the app. And it
+/// listens for the other two — a note reconciled *while open*, by the resume
+/// scan — and reloads, because a buffer that no longer matches the file would
+/// otherwise save over the merged edit.
 class MarkdownEditorPane extends StatefulWidget {
   const MarkdownEditorPane({
     super.key,
     required this.store,
     required this.path,
     this.writer,
+    this.reconciler,
     this.availablePaths = const {},
     this.onNavigateToFile,
   });
@@ -50,6 +59,10 @@ class MarkdownEditorPane extends StatefulWidget {
   /// the honest default rather than a degraded one: a read-only engram, and a
   /// platform with no SQLite, both write directly and always will.
   final NoteWriter? writer;
+
+  /// How to reconcile a file that changed outside the app, or null when
+  /// nothing can have: no op-log, so nothing to drift from.
+  final NoteReconciler? reconciler;
   final Set<String> availablePaths;
   final void Function(String path)? onNavigateToFile;
 
@@ -91,11 +104,14 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   String? _loadedPath;
   Object? _loadError;
 
+  StreamSubscription<String>? _reconciled;
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onControllerChanged);
     _focusNode.addListener(_onFocusChanged);
+    _reconciled = widget.reconciler?.reconciled.listen(_onReconciled);
     _open(widget.path);
   }
 
@@ -115,6 +131,10 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   @override
   void didUpdateWidget(MarkdownEditorPane oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.reconciler != oldWidget.reconciler) {
+      _reconciled?.cancel();
+      _reconciled = widget.reconciler?.reconciled.listen(_onReconciled);
+    }
     if (widget.path != oldWidget.path) {
       _open(widget.path); // openFile flushes the outgoing file first
       // Matches belong to the file they were found in; _open recomputes them
@@ -127,6 +147,11 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
 
   Future<void> _open(String path) async {
     try {
+      // Reconcile before reading, so the text the editor adopts is the note's
+      // history and not a file that got ahead of it. The controller's current
+      // file is a different path (or this one, already open, which openFile
+      // ignores), so there is no buffer over this note to flush first.
+      await widget.reconciler?.reconcile(path);
       final text = await widget.store.readString(path);
       await _controller.openFile(path, text);
       if (!mounted || widget.path != path) return;
@@ -145,6 +170,29 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
 
   void _onControllerChanged() {
     if (mounted) setState(() {}); // refresh the save-status chip
+  }
+
+  /// A note was reconciled somewhere. If it is the one on screen, its file no
+  /// longer matches the buffer, and the buffer has to yield.
+  void _onReconciled(String path) {
+    // Only a note that has finished loading: one mid-open reads the
+    // reconciled file anyway, and one that has moved on is not ours.
+    if (path != widget.path || _loadedPath != path) return;
+    unawaited(_reload(path));
+  }
+
+  Future<void> _reload(String path) async {
+    try {
+      final text = await widget.store.readString(path);
+      if (!mounted || widget.path != path) return;
+      await _controller.replaceFromDisk(text);
+      if (!mounted || widget.path != path) return;
+      // Matches were found in text that no longer exists.
+      if (_findOpen) setState(() => _search(_findQuery.text));
+    } catch (error) {
+      if (!mounted || widget.path != path) return;
+      setState(() => _loadError = error);
+    }
   }
 
   void _onFocusChanged() {
@@ -246,6 +294,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => commands?.withdrawFind(published),
     );
+    _reconciled?.cancel();
     _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
     _findQuery.dispose();

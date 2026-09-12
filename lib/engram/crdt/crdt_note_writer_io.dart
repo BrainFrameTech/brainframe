@@ -10,6 +10,7 @@ import '../note_writer.dart';
 import 'materializer_io.dart';
 import 'metadata_db_io.dart';
 import 'note_document_io.dart';
+import 'note_document_lock.dart';
 
 /// Turns a saved buffer into operations on a note's document, then rewrites the
 /// file from the result.
@@ -21,7 +22,11 @@ import 'note_document_io.dart';
 /// still here, one layer down: the write is still atomic, and it is still
 /// ordered so a crash leaves a redundant diff rather than lost content.
 class CrdtNoteWriter implements NoteWriter {
-  const CrdtNoteWriter({required this.database, required this.engram});
+  const CrdtNoteWriter({
+    required this.database,
+    required this.engram,
+    required this.lock,
+  });
 
   /// The engram's catalog and op-log.
   final MetadataDatabase database;
@@ -29,8 +34,16 @@ class CrdtNoteWriter implements NoteWriter {
   /// Where the projection is written.
   final EngramStore engram;
 
+  /// Shared with the scan, so a save and a reconciliation never hold the same
+  /// note's document at once. The controller already serializes saves per
+  /// file; this is what serializes them against everything else.
+  final NoteDocumentLock lock;
+
   @override
-  Future<void> write(String path, String text) async {
+  Future<void> write(String path, String text) =>
+      lock.run(() => _write(path, text));
+
+  Future<void> _write(String path, String text) async {
     final row = database.catalog.byPath(path);
 
     // A path the catalog has never seen is a note nobody has minted — the file

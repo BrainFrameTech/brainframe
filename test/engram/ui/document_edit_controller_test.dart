@@ -260,6 +260,90 @@ void main() {
     });
   });
 
+  group('replaceFromDisk', () {
+    test('adopts the text as clean and notifies even when already clean', () {
+      // The file under the open path was rewritten by reconciliation. The
+      // status does not change — saved before, saved after — but the buffer
+      // did, and the pane rebuilds the source field from it on notification.
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'A');
+        var notifications = 0;
+        c.addListener(() => notifications++);
+
+        c.replaceFromDisk('A merged');
+        async.flushMicrotasks();
+
+        expect(c.text, 'A merged');
+        expect(c.isDirty, isFalse);
+        expect(c.status, SaveStatus.saved);
+        expect(notifications, 1);
+        expect(store.writes, isEmpty, reason: 'a reload is not a save');
+        c.dispose();
+      });
+    });
+
+    test('discards a dirty buffer and its pending write', () {
+      // The keystrokes between the pre-scan flush and the reload are the
+      // price of a whole-buffer save: keeping them would delete the merged
+      // edit on the next flush instead.
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'A');
+        c.edit('A typed');
+
+        c.replaceFromDisk('A merged');
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 31));
+        async.flushMicrotasks();
+
+        expect(c.text, 'A merged');
+        expect(c.status, SaveStatus.saved);
+        expect(store.writes, isEmpty, reason: 'the pending write is gone');
+        c.dispose();
+      });
+    });
+
+    test('waits for a write in flight before replacing', () {
+      // Otherwise the write's completion would settle its own text as the
+      // saved text, and the reloaded buffer would look dirty against it.
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'A');
+        c.edit('A typed');
+        c.flush(); // in flight: the store's write is a pending microtask
+
+        c.replaceFromDisk('A merged');
+        async.flushMicrotasks();
+
+        expect(store.writes, ['a.md::A typed']);
+        expect(c.text, 'A merged');
+        expect(c.isDirty, isFalse);
+        expect(c.status, SaveStatus.saved);
+        c.dispose();
+      });
+    });
+
+    test('is a no-op before a file is open', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        var notifications = 0;
+        c.addListener(() => notifications++);
+
+        c.replaceFromDisk('nothing to replace');
+        async.flushMicrotasks();
+
+        expect(c.text, '');
+        expect(notifications, 0);
+        c.dispose();
+      });
+    });
+  });
+
   group('lifecycle observer registration', () {
     TestWidgetsFlutterBinding.ensureInitialized();
 

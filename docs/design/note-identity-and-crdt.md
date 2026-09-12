@@ -1126,14 +1126,78 @@ Nothing here is a reason to reopen the storage model, which is settled and
 correct for the notes people actually write. It is a reason to know the ceiling
 before a user finds it, and to decide deliberately what happens above it —
 refuse to open, open read-only without CRDT backing, or split the note — rather
-than discovering the answer as an out-of-memory kill. That decision is recorded
-as an open question below rather than made here, because the right answer
-depends on measurements from the other targets that do not exist yet.
+than discovering the answer as an out-of-memory kill. The ceiling itself is now
+set, below; what happens above it is still **#124**'s.
 
 To reproduce: build a `CRDTFugueTextHandler` at each size, timing the insert,
 the `value` getter, and a transaction of scattered inserts, sampling
 `ProcessInfo.currentRss` around each. Numbers above are one desktop run and are
 indicative, not a budget.
+
+### Measured on the Raspberry Pi 4
+
+Once step 11 had a scan that seeds every file it meets, the cost could be
+measured as the app would pay it rather than as a handler in isolation. The
+same benchmark on a Linux desktop and a **Raspberry Pi 4 Model B (8 GB)**,
+both in debug-mode `flutter test`, so a release build is somewhat faster on
+each and the *ratio* is the durable number.
+
+**Seeding one note.** `NoteDocument.mint` from the file's text — the whole of
+what the scan does per new note, and the whole of what a large note costs to
+open for the first time. Memory is the resident-set delta while the document
+is held.
+
+| Note | Desktop mint | Pi 4 mint | Pi 4 per char | Resident |
+| ---: | ---: | ---: | ---: | ---: |
+| 12 KB (1,500 words) | 8 ms | 94 ms | 7.6 µs | 4–7 MB |
+| 44 KB (5,000 words) | 32 ms | 0.5 s | 11.5 µs | 23 MB |
+| 189 KB (20,000 words) | 165 ms | 1.9 s | 10.1 µs | 100 MB |
+| 589 KB (60,000 words) | 640 ms | 6.3 s | 10.7 µs | 308 MB |
+
+Memory is **~550 bytes per character on both machines** — the 470 measured
+above, plus what a real document carries over a bare handler — and it is
+identical on the Pi, so the constraint is target-independent. Time is not:
+the Pi seeds at **~10 µs per character**, twelve times the desktop, and it is
+the per-character tree construction, not I/O — reading a thousand notes off
+the SD card cost 54 ms. Reopening from the op-log is fast for a seed (58 ms
+for the largest, since a seed is one change); a note with a long edit history
+would be a different measurement.
+
+**Scanning a folder.** The first scan over an existing engram mints every
+file in it; every later scan is a stat per note against the size/mtime
+pre-filter. Notes here are synthetic prose of the stated length.
+
+| Folder | First scan, desktop | First scan, Pi 4 | Later scans, Pi 4 |
+| :-- | ---: | ---: | ---: |
+| 200 × 2.3 KB notes | 0.46 s (2.3 ms/note) | 5.7 s (29 ms/note) | 0.44 s |
+| 200 × 12 KB notes | 2.3 s (11 ms/note) | 26 s (130 ms/note) | 0.31 s |
+| 1,000 × 2.3 KB notes | 1.7 s (1.7 ms/note) | 21 s (21 ms/note) | 1.1 s |
+
+Adopting a cold copy — every ULID taken from another device's map, nothing
+seeded — costs 2–4 ms per note on the Pi; seeding is the whole of the first
+scan's cost. Two consequences are recorded where they land: the first scan of
+an existing engram *is* adoption at scale and must be non-blocking on this
+target (step 12 of the plan), and the steady-state scan is about a
+millisecond per note on the Pi — tolerable, and the place to look first if
+launch or resume ever feels slow on a large vault.
+
+**The ceiling: 128 KiB of text per note, on every target.** At ~550 bytes
+per character that is roughly 70 MB resident and, on the Pi, about 1.4 s to
+seed or open for the first time — comfortably inside every target's headroom,
+including a 2 GB Pi and iOS, which is what lets one ceiling serve all of them
+rather than a per-target threshold. It is also above every note anyone writes
+by hand; what lives beyond it is generated or pasted text, which is the case
+the design was always willing to treat differently. What happens to a text
+file above the ceiling — refused, opened read-only without CRDT backing, or
+held as a `blobLww` note from the moment it is minted — is the decision that
+remains, and it is **#124**'s. No step may pick one by quietly adding a limit.
+
+To reproduce: the scan benchmark seeds N synthetic notes through
+`DriftReconciler.scan` and times the first and second scans, a map flush, and
+a cold-copy adoption; the seed benchmark times `NoteDocument.mint`,
+`NoteDocument.open`, and `computeSketch` at each size around
+`ProcessInfo.currentRss`. Both are scratch tests, run by hand on a target and
+not committed.
 
 ## What changes in `lib/`
 
@@ -1377,14 +1441,23 @@ installed dependency and it decides how defensive the importer must be.
   be settled before **#67**, since that is the moment peers below the frontier
   become possible. Tracked as **#118**, whose scope narrows with this revision:
   there are no export files to compact, only the local op-log.
-- **The note-size ceiling.** "Performance envelope" above measures roughly 470
-  bytes per character, putting a 3.2 MB note near 1.5 GB resident — comfortable
-  on desktop, fatal on iOS and on a 2 GB Pi. The measurement exists; the policy
-  does not, and setting one needs real numbers from the other targets. Tracked
-  as **#124**, and hardware-blocked until those targets can be measured.
+- **What happens above the note-size ceiling.** The ceiling itself is set
+  — 128 KiB, measured on the Raspberry Pi 4 and recorded under "Performance
+  envelope" — but whether a text file beyond it is refused, opened read-only
+  without CRDT backing, or minted as a `blobLww` note is not. Tracked as
+  **#124**, whose remaining scope is that policy and its UX.
 
 ### Decided during review — recorded so it is not relitigated
 
+- **The note-size ceiling's value: decided, 128 KiB of text, one ceiling for
+  every target.** Set from the Raspberry Pi 4 measurements under "Performance
+  envelope": memory is ~550 bytes per character on every machine measured,
+  and the Pi seeds at ~10 µs per character, so 128 KiB is ~70 MB resident and
+  ~1.4 s to open for the first time on the slowest target — inside every
+  target's headroom, which is what makes a single ceiling possible. It sits
+  above anything written by hand and below the generated or pasted text the
+  design was always willing to treat differently. The value is decided; the
+  behaviour above it is not, and stays with **#124**.
 - **The similarity threshold's value: decided, measured against the fixture
   engram in step 11.** Word trigrams, a 128-slot MinHash signature stored as
   one blob per catalog row, and a cutoff of **0.5**. Against

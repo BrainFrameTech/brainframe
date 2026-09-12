@@ -481,6 +481,22 @@ with no catalog row is simply "a new note" next time — claimed deliberately
 here, because a step that mints ids before the scan is durable would break
 it. Non-blocking, with progress, and never waiting for a peer.
 
+- **The first scan of an existing engram is this operation, and gets the same
+  treatment.** Step 11 made the scan mint every file the catalog has never
+  seen, and it runs on start inside the window where the session host
+  withholds its child — so an engram that already has its `.brainframe/` but
+  predates the catalog, which is every engram a user has today, pays adoption's
+  whole cost as a blank window on first launch. Measured on the Raspberry Pi 4
+  (design, "Performance envelope"): 21–29 ms per ordinary note and 130 ms per
+  12 KB one, so a 2,000-note vault is around 45 s and a 5,000-note one about
+  two minutes, none of it I/O — seeding is the cost and it scales with note
+  length. Non-blocking with progress is therefore a requirement on this target
+  rather than polish, and it applies to the start-up scan's mint phase as much
+  as to a folder with no marker: notes not yet reached behave as
+  history-pending, exactly as the design says for adoption, and the editor
+  opens them as ordinary files until the scan gets there. The steady-state
+  scan is separate and cheap — about a millisecond per note on the Pi — and is
+  not what this bullet is about.
 - **The hidden-path filter is load-bearing here, not in step 11.** The two
   folders a real user adopts are an Obsidian vault and a checkout of notes
   under version control — which is to say a folder containing `.obsidian/` and
@@ -603,11 +619,13 @@ nothing is missing.
 
 ## Questions this plan does not answer
 
-- **The note-size ceiling** (**#124**). Roughly 470 bytes per character puts
-  a 3.2 MB note near 1.5 GB resident — comfortable on desktop, fatal on iOS
-  and a 2 GB Pi. The measurement exists; the policy does not, and it needs
-  numbers from targets we cannot measure yet. No step here may quietly pick
-  one by adding a limit.
+- **What happens above the note-size ceiling** (**#124**). The ceiling is
+  set — 128 KiB of text, from the Raspberry Pi 4 measurements in the design's
+  "Performance envelope" — but whether a text file beyond it is refused,
+  opened read-only without CRDT backing, or minted as a `blobLww` note is not,
+  and each leads to different UX. No step here may quietly pick one by adding
+  a limit; when it is decided it becomes a step of its own, and the scan's
+  mint path is where it lands.
 - **Snapshot and compaction policy** (**#118**). Purely local use has no
   stranded peers, so it stays deferred — but it must be settled before
   **#67**, which is the moment peers below the frontier become possible.

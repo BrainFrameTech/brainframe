@@ -1119,8 +1119,9 @@ with materialization around 200 ms every time Decision 6 re-materializes it.
 
 That is a structural property of the locked storage model, not a tuning
 problem, and it lands hardest exactly where headroom is smallest: iOS
-terminates around 1-2 GB, and a 2 GB Raspberry Pi cannot open such a note at
-all. Desktop absorbs it; the other targets do not.
+terminates around 1-2 GB, and the e-ink target's ultimate hardware — a
+**512 MB Raspberry Pi Zero 2 W** — cannot open such a note at all. Desktop
+absorbs it; the other targets do not.
 
 Nothing here is a reason to reopen the storage model, which is settled and
 correct for the notes people actually write. It is a reason to know the ceiling
@@ -1182,12 +1183,21 @@ millisecond per note on the Pi — tolerable, and the place to look first if
 launch or resume ever feels slow on a large vault.
 
 **The ceiling: 128 KiB of text per note, on every target.** At ~550 bytes
-per character that is roughly 70 MB resident and, on the Pi, about 1.4 s to
-seed or open for the first time — comfortably inside every target's headroom,
-including a 2 GB Pi and iOS, which is what lets one ceiling serve all of them
-rather than a per-target threshold. It is also above every note anyone writes
-by hand; what lives beyond it is generated or pasted text, which is the case
-the design was always willing to treat differently. What happens to a text
+per character that is roughly 70 MB resident and, on the Pi 4, about 1.4 s to
+seed or open for the first time. The floor this is measured against is not
+the Pi 4 it was measured on but the **512 MB Raspberry Pi Zero 2 W** the
+e-ink target is ultimately headed for. There, 70 MB is not comfortable: it is
+around an eighth of the machine, on top of the OS and the Flutter engine, and
+it is affordable only because the app holds **one** document at a time — the
+editor keeps a buffer, not a document, and the scan's lock opens one note and
+disposes it before the next. That is the constraint a single ceiling rests on,
+and it is why the ceiling is set where it is rather than where the Pi 4 or
+desktop would allow. The Zero 2 W's slower cores (a Cortex-A53 at 1 GHz
+against the Pi 4's A72 at 1.5 GHz) also mean a 128 KiB note will take
+several seconds to seed there; that number is unmeasured and should be, once
+one is on the bench. The ceiling is still above every note anyone writes by
+hand; what lives beyond it is generated or pasted text, which is the case the
+design was always willing to treat differently. What happens to a text
 file above the ceiling — refused, opened read-only without CRDT backing, or
 held as a `blobLww` note from the moment it is minted — is the decision that
 remains, and it is **#124**'s. No step may pick one by quietly adding a limit.
@@ -1452,9 +1462,11 @@ installed dependency and it decides how defensive the importer must be.
 - **The note-size ceiling's value: decided, 128 KiB of text, one ceiling for
   every target.** Set from the Raspberry Pi 4 measurements under "Performance
   envelope": memory is ~550 bytes per character on every machine measured,
-  and the Pi seeds at ~10 µs per character, so 128 KiB is ~70 MB resident and
-  ~1.4 s to open for the first time on the slowest target — inside every
-  target's headroom, which is what makes a single ceiling possible. It sits
+  and the Pi 4 seeds at ~10 µs per character, so 128 KiB is ~70 MB resident
+  and ~1.4 s to open for the first time there. The floor is the 512 MB Pi
+  Zero 2 W the e-ink target is headed for, where 70 MB is roughly an eighth
+  of the machine and is affordable only because the app holds one document
+  at a time — which is the constraint a single ceiling rests on. It sits
   above anything written by hand and below the generated or pasted text the
   design was always willing to treat differently. The value is decided; the
   behaviour above it is not, and stays with **#124**.

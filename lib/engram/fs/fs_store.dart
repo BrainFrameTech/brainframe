@@ -9,4 +9,5 @@
 library;
 
 export 'engram_location.dart';
+export 'folder_preview.dart';
 export 'fs_store_stub.dart' if (dart.library.io) 'fs_store_io.dart';

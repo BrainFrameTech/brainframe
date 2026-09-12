@@ -1,5 +1,6 @@
 import '../engram.dart';
 import 'engram_location.dart';
+import 'folder_preview.dart';
 
 /// Web (and any non-`dart:io`) build: there is no filesystem for user engrams.
 ///
@@ -24,6 +25,9 @@ Future<Engram> openOrCreateFileSystemEngram(
   EngramLocation location, {
   required String displayName,
 }) =>
+    throw UnsupportedError(_unsupported);
+
+Future<FolderAdoptionPreview> previewFolderAdoption(EngramLocation location) =>
     throw UnsupportedError(_unsupported);
 
 Future<String> applicationEngramContainerPath() =>

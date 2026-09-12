@@ -101,6 +101,12 @@ class _FakeReconciler implements NoteReconciler {
   @override
   Future<void> noteDeleted(String path) async {}
 
+  @override
+  Stream<AdoptionProgress?> get adoption => const Stream<AdoptionProgress?>.empty();
+
+  @override
+  AdoptionProgress? get currentAdoption => null;
+
   /// A reconciliation that happened elsewhere — the resume scan — and left
   /// [text] on disk.
   void reconciledElsewhere(String path, String text) {

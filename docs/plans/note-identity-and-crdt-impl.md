@@ -505,15 +505,35 @@ it. Non-blocking, with progress, and never waiting for a peer.
   seeded document for every object in that repository: the largest, least
   note-like input the design has, on the one path where the cost is multiplied
   by the whole vault.
-- **Adoption rewrites line endings, and the user must be told first.** Seeding
-  runs the Decision 10 normalization, so adopting a folder of Windows-authored
-  markdown rewrites the terminators of every file in it at first
-  materialization. That is a large, immediate, and — to someone with the folder
-  under version control — alarming change to files the user already owned, made
-  before they have any reason to trust the app. Surface it in the adoption
-  confirmation, with the file count, rather than letting it be discovered in a
-  `git diff`. This is the step where the cost recorded in Decision 10 becomes
-  visible, and it is the only one where it arrives all at once.
+- **Adoption asks first, and says what it writes.** Adopting writes into a
+  folder the user already owns — the `.brainframe/` marker now, an
+  identity-map file once the scan runs — and turns every content file into a
+  note, and someone with the folder under version control sees both. The
+  desktop flow therefore confirms before a marker-less folder is touched:
+  the folder's name, what is added inside it, and how many of its files
+  become notes, counted through the scan's own filter so the number told is
+  the number minted. A folder that is already an engram is opened without
+  asking, since nothing new is written.
+- **Line endings are told, not rewritten.** This bullet once said adoption
+  rewrites every file's terminators at first materialization and must warn
+  first. Step 11 changed the premise: the scan records a file as found and
+  rewrites nothing, and Decision 10's normalization reaches the file only
+  when the note is first saved through the editor — so the cost never
+  arrives all at once, and there is no wholesale change to warn about. The
+  confirmation still says it, in one sentence, because a folder under
+  version control would otherwise discover it one diff at a time.
+- **Landed as: the scan runs behind the UI, with a progress bar in the
+  sidebar.** The session host publishes the session the moment it opens and
+  starts the scan without waiting; the reconciler reports its progress
+  through the files it is bringing in — and only those, so a steady-state
+  scan never flashes a bar — and the browser shows it above the file tree.
+  The engram is usable throughout: a note the user opens before the scan
+  reaches it is brought in by the editor's before-open reconciliation, and the
+  scan finds it present when it gets there, so nothing is seeded twice. A
+  session closed mid-scan stops the scan at its next note and skips the
+  tombstone pass, since a cut-short pass has not looked at every file that
+  might have matched a missing note; the next open resumes where it left
+  off, which is the resumability claimed above, exercised rather than argued.
 - **Tests that matter:** adoption resumes after interruption — every note
   ends with exactly one ULID, none minted twice, no content duplicated. Two
   machines adopting one folder converge on the same ULID per path with each
@@ -523,8 +543,8 @@ it. Non-blocking, with progress, and never waiting for a peer.
   byte-identical — and adopting `blobLww` content leaves its bytes untouched,
   which is the assertion that catches normalization applied too broadly.
 - **Manual test plan:** a new adoption section; user-visible progress and a
-  usable engram while it runs; and the line-ending warning appearing before
-  anything is written, with its file count.
+  usable engram while it runs; and the confirmation appearing before anything
+  is written, with its file count.
 
 ### Step 13 — Housekeeping surface
 

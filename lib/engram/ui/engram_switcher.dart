@@ -7,6 +7,7 @@ import '../desktop_folder_adoption.dart';
 import '../engram.dart';
 import '../engram_repository.dart';
 import '../engram_scope.dart';
+import '../fs/fs_store.dart';
 
 /// The sidebar-footer engram switcher (Decision 8's "travel there" entry point).
 ///
@@ -24,6 +25,7 @@ class EngramSwitcher extends StatelessWidget {
     required this.repository,
     required this.current,
     this.allowCreateEngram = !kIsWeb,
+    this.folderPicker,
   });
 
   final EngramRepository repository;
@@ -32,6 +34,10 @@ class EngramSwitcher extends StatelessWidget {
   /// Whether creating a new engram is offered. False on web, where the
   /// filesystem store is unsupported. Injectable so both branches are testable.
   final bool allowCreateEngram;
+
+  /// The directory chooser behind **Open folder…**, or the native dialog when
+  /// null. Injected so the adoption confirmation can be driven in a test.
+  final DirectoryPicker? folderPicker;
 
   @override
   Widget build(BuildContext context) {
@@ -101,12 +107,48 @@ class EngramSwitcher extends StatelessWidget {
         onOpenFolder: isDesktopFolderAdoptionSupported
             ? () async {
                 Navigator.of(sheetContext).pop();
-                final engram = await pickAndAdoptFolder(repository);
+                final engram = await pickAndAdoptFolder(
+                  repository,
+                  picker: folderPicker,
+                  confirm: (preview) => _confirmAdoption(context, preview),
+                );
                 if (engram != null) await scope.switchTo(engram);
               }
             : null,
       ),
     );
+  }
+
+  /// The adoption confirmation: what will be written into the folder, and how
+  /// many of its files become notes. Decision 10's line-ending cost is stated
+  /// here too — not as a rewrite that happens now, since the scan records a
+  /// file as found rather than rewriting it, but as the change each note sees
+  /// on its first edit, which a folder under version control would otherwise
+  /// discover one diff at a time.
+  Future<bool> _confirmAdoption(
+    BuildContext context,
+    FolderAdoptionPreview preview,
+  ) async {
+    if (!context.mounted) return false;
+    final l10n = AppLocalizations.of(context);
+    final adopt = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog.adaptive(
+        title: Text(l10n.adoptFolderTitle),
+        content: Text(l10n.adoptFolderBody(preview.name, preview.fileCount)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.adopt),
+          ),
+        ],
+      ),
+    );
+    return adopt ?? false;
   }
 
   Future<void> _createEngram(BuildContext context, EngramScopeData scope) async {

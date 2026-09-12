@@ -40,4 +40,21 @@ void main() {
     );
     expect(report.isClean, isFalse);
   });
+
+  group('AdoptionProgress', () {
+    test('is running until done reaches total', () {
+      expect(const AdoptionProgress(done: 0, total: 3).isRunning, isTrue);
+      expect(const AdoptionProgress(done: 2, total: 3).isRunning, isTrue);
+      expect(const AdoptionProgress(done: 3, total: 3).isRunning, isFalse);
+    });
+
+    test('is a value', () {
+      const a = AdoptionProgress(done: 1, total: 2);
+      const b = AdoptionProgress(done: 1, total: 2);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(const AdoptionProgress(done: 2, total: 2)));
+      expect(a.toString(), 'AdoptionProgress(1 of 2)');
+    });
+  });
 }

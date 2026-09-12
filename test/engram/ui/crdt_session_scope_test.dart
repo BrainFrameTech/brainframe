@@ -148,11 +148,12 @@ void main() {
   });
 
   group('the scan on start', () {
-    testWidgets('runs when the session opens, before the child mounts', (
-      tester,
-    ) async {
-      // The editor that mounts afterwards opens a file whose history already
-      // includes whatever changed while the app was closed.
+    testWidgets('starts when the session opens, and the child does not wait',
+        (tester) async {
+      // A first scan over a large folder mints every note in it, minutes on
+      // the slowest target. The engram is usable throughout: the editor's
+      // before-open reconciliation brings in whichever note the user reaches
+      // first, and the scan finds it present when it gets there.
       final reconciler = _RecordingReconciler()..gate = Completer<void>();
       await tester.pumpWidget(
         EngramScope(
@@ -168,11 +169,33 @@ void main() {
       await tester.pump();
 
       expect(reconciler.scans, 1);
-      expect(find.text('crdt'), findsNothing, reason: 'withheld mid-scan');
+      expect(find.text('crdt'), findsOneWidget, reason: 'published mid-scan');
 
       reconciler.gate!.complete();
       await tester.pumpAndSettle();
       expect(find.text('crdt'), findsOneWidget);
+    });
+
+    testWidgets('a scan that throws is logged, not raised', (tester) async {
+      // The scan collects per-note failures itself; what can still throw is
+      // the catalog being unreadable, and a fire-and-forget must not turn
+      // that into an unhandled error in the zone.
+      final reconciler = _RecordingReconciler()..failScans = true;
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async =>
+                _FakeSession(() {}, reconciler: reconciler),
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(reconciler.scans, 1);
+      expect(find.text('crdt'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('runs again for the incoming engram on a switch', (
@@ -338,12 +361,14 @@ class _RecordingReconciler implements NoteReconciler {
   final List<String> log;
   int scans = 0;
   Completer<void>? gate;
+  bool failScans = false;
 
   @override
   Future<DriftScanReport> scan() async {
     scans++;
     log.add('scan');
     if (gate != null) await gate!.future;
+    if (failScans) throw StateError('catalog unreadable');
     return DriftScanReport.clean;
   }
 
@@ -358,6 +383,12 @@ class _RecordingReconciler implements NoteReconciler {
 
   @override
   Future<void> noteDeleted(String path) async {}
+
+  @override
+  Stream<AdoptionProgress?> get adoption => const Stream<AdoptionProgress?>.empty();
+
+  @override
+  AdoptionProgress? get currentAdoption => null;
 
   @override
   Stream<String> get reconciled => const Stream<String>.empty();

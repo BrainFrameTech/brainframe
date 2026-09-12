@@ -86,6 +86,15 @@ class DriftReconciler implements NoteReconciler {
 
   final StreamController<String> _reconciled =
       StreamController<String>.broadcast();
+  final StreamController<AdoptionProgress?> _adoption =
+      StreamController<AdoptionProgress?>.broadcast();
+  AdoptionProgress? _currentAdoption;
+
+  /// Set by [close]. A scan still running when its session closes stops at
+  /// the next note rather than failing one note at a time against a closed
+  /// database — an engram switch mid-adoption is the ordinary way this
+  /// happens, and the next open of that engram resumes where this left off.
+  bool _closed = false;
 
   /// The scan in progress, so a second trigger joins it instead of starting a
   /// concurrent one. A resume that lands while the start-up scan is still
@@ -94,6 +103,17 @@ class DriftReconciler implements NoteReconciler {
 
   @override
   Stream<String> get reconciled => _reconciled.stream;
+
+  @override
+  Stream<AdoptionProgress?> get adoption => _adoption.stream;
+
+  @override
+  AdoptionProgress? get currentAdoption => _currentAdoption;
+
+  void _reportAdoption(AdoptionProgress? progress) {
+    _currentAdoption = progress;
+    if (!_adoption.isClosed) _adoption.add(progress);
+  }
 
   @override
   Future<DriftScanReport> scan() =>
@@ -147,6 +167,7 @@ class DriftReconciler implements NoteReconciler {
     // Decision 6; absent ones are held as candidates for Decision 7.
     final missing = <CatalogRow>[];
     for (final row in database.catalog.findable()) {
+      if (_closed) break;
       try {
         if (merged != null && merged.retired.contains(row.ulid)) {
           // A lost election: the loser retires, before anything else is
@@ -177,11 +198,19 @@ class DriftReconciler implements NoteReconciler {
     // Phase 2: files the catalog does not know. Each is a move, a rename
     // with edit, or new — in that order, because the exact test is cheap
     // and certain, the sketch is neither, and minting is the last resort.
-    if (complete) {
+    if (complete && !_closed) {
       final unknown =
           onDisk.where((path) => database.catalog.byPath(path) == null).toList()
             ..sort();
+      // This is the expensive half, and the only one worth a progress bar:
+      // every file here is seeded, and on a folder that predates the catalog
+      // that is every file in it.
+      var done = 0;
+      if (unknown.isNotEmpty) {
+        _reportAdoption(AdoptionProgress(done: 0, total: unknown.length));
+      }
       for (final path in unknown) {
+        if (_closed) break;
         try {
           final match = await _matchMissing(path, missing);
           if (match != null) {
@@ -197,15 +226,29 @@ class DriftReconciler implements NoteReconciler {
               created.add(path);
             case _Arrival.adopted:
               adopted.add(path);
+            case _Arrival.present:
+              // The editor got there first: the user opened it, and
+              // reconcile() brought it in. Nothing to report.
+              break;
           }
         } on Object catch (error, stack) {
           _fail(failed, path, error, stack);
+        } finally {
+          done++;
+          if (unknown.isNotEmpty) {
+            _reportAdoption(
+              AdoptionProgress(done: done, total: unknown.length),
+            );
+          }
         }
       }
+      if (unknown.isNotEmpty) _reportAdoption(null);
 
       // Phase 3: what is still missing is gone. Known complete, confirmed
-      // absent, and nothing on disk claimed it.
-      for (final row in missing) {
+      // absent, and nothing on disk claimed it. Not after a cut-short phase
+      // 2, though: a file that would have matched a missing note was never
+      // looked at, and tombstoning the note now would lose its history.
+      for (final row in _closed ? const <CatalogRow>[] : missing) {
         try {
           await _tombstone(row);
           tombstoned.add(row.path);
@@ -266,8 +309,10 @@ class DriftReconciler implements NoteReconciler {
     final map = identity;
     if (map == null) return false;
     if (await engram.statFile(path) == null) return false;
-    await _bringIn(path, mergeIdentity(await map.map.readAll()));
-    return true;
+    final arrival = await _bringIn(path, mergeIdentity(await map.map.readAll()));
+    // Present means a scan got there first while this was waiting on the
+    // lock — nothing changed on this call's account.
+    return arrival != _Arrival.present;
   }
 
   @override
@@ -435,7 +480,7 @@ class DriftReconciler implements NoteReconciler {
   /// seed if another device does, recovered if this device's own map does.
   Future<_Arrival> _bringIn(String path, MergedIdentity merged) =>
       lock.run(() async {
-        if (database.catalog.byPath(path) != null) return _Arrival.adopted;
+        if (database.catalog.byPath(path) != null) return _Arrival.present;
         final map = identity!;
         final bytes = await engram.readBytes(path);
 
@@ -577,10 +622,16 @@ class DriftReconciler implements NoteReconciler {
     seedClaim: row.seedClaim,
   );
 
-  /// Closes the event stream. The session calls this on the way out; nothing
-  /// else needs to.
-  Future<void> close() => _reconciled.close();
+  /// Stops a running scan at its next note and closes the event streams. The
+  /// session calls this on the way out; nothing else needs to.
+  Future<void> close() async {
+    _closed = true;
+    _reportAdoption(null);
+    await _reconciled.close();
+    await _adoption.close();
+  }
 }
 
-/// How a file the catalog did not know was brought in.
-enum _Arrival { minted, adopted }
+/// How a file the catalog did not know was brought in — or was found to be in
+/// already, because the editor opened it before the scan reached it.
+enum _Arrival { minted, adopted, present }

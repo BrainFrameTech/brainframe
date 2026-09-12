@@ -735,5 +735,33 @@
   "menuPreferences": "Preferences",
   "@menuPreferences": {
     "description": "Menu item that opens the Settings screen. Under Edit on Linux and Windows; in the application menu on macOS, where the platform convention puts it."
+  },
+
+  "adoptionProgress": "Adopting notes… {done} of {total}",
+  "@adoptionProgress": {
+    "description": "Caption under the sidebar's progress bar while the scan brings a folder's files into the note catalog for the first time. Also its screen-reader label.",
+    "placeholders": {
+      "done": { "type": "int", "example": "120" },
+      "total": { "type": "int", "example": "500" }
+    }
+  },
+
+  "adoptFolderTitle": "Adopt this folder?",
+  "@adoptFolderTitle": {
+    "description": "Title of the confirmation shown after the user picks a folder that is not yet an engram."
+  },
+
+  "adoptFolderBody": "“{name}” will become an engram. BrainFrame adds a .brainframe folder inside it, and its {count, plural, =0{files become notes as they are added} =1{one file becomes a note} other{{count} files become notes}}. Windows line endings are converted to LF as notes are edited.",
+  "@adoptFolderBody": {
+    "description": "Body of the adoption confirmation: names the folder, says what is written into it, and how many files it holds. The line-ending sentence is Decision 10's cost, told before it is discovered.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Notes" },
+      "count": { "type": "int", "example": "312" }
+    }
+  },
+
+  "adopt": "Adopt",
+  "@adopt": {
+    "description": "Confirm button of the adoption dialog."
   }
 }

@@ -20,6 +20,7 @@ import '../engram_repository.dart';
 import '../engram_scope.dart';
 import '../engram_store.dart';
 import '../note_reconciler.dart';
+import 'adoption_progress.dart';
 import 'browser_preferences.dart';
 import 'engram_switcher.dart';
 import 'file_tree.dart';
@@ -372,6 +373,9 @@ class _EngramBrowserState extends State<EngramBrowser> {
       engram: engram,
       repository: widget.repository,
       tree: tree,
+      // Visible only while the scan is adopting files, which for an engram
+      // that predates the catalog is its whole first launch.
+      progress: AdoptionProgressBar(reconciler: _notes),
       onNewNote: engram.readOnly ? null : _newNote,
       onNewFolder: engram.readOnly ? null : _newFolder,
     );
@@ -906,6 +910,7 @@ class _Sidebar extends StatelessWidget {
     required this.engram,
     required this.repository,
     required this.tree,
+    required this.progress,
     this.onNewNote,
     this.onNewFolder,
   });
@@ -913,6 +918,9 @@ class _Sidebar extends StatelessWidget {
   final Engram engram;
   final EngramRepository repository;
   final Widget tree;
+
+  /// The adoption progress bar, which renders nothing when idle.
+  final Widget progress;
 
   /// Creates a new note / folder; null for a read-only engram, which shows no
   /// header. Both are null or both are set together.
@@ -930,6 +938,7 @@ class _Sidebar extends StatelessWidget {
           children: [
             if (onNewNote != null && onNewFolder != null)
               _SidebarHeader(onNewNote: onNewNote!, onNewFolder: onNewFolder!),
+            progress,
             Expanded(child: tree),
             const Divider(height: 1),
             Row(

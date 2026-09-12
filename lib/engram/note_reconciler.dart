@@ -95,6 +95,36 @@ class DriftScanReport {
       listingFailure == null;
 }
 
+/// How far a scan has got through bringing new files into the catalog.
+///
+/// Reported only for the expensive part of a scan — minting or adopting files
+/// the catalog has never seen, which is adoption whether the folder was picked
+/// a moment ago or has been an engram since before the catalog existed. The
+/// drift half of a scan is a stat per note and reports nothing: a bar that
+/// flashed on every resume would be noise, and on e-ink a repaint for nothing.
+class AdoptionProgress {
+  const AdoptionProgress({required this.done, required this.total});
+
+  /// Files brought in so far, including ones found already present.
+  final int done;
+
+  /// Files the scan set out to bring in.
+  final int total;
+
+  /// Whether there is still work to show.
+  bool get isRunning => done < total;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AdoptionProgress && other.done == done && other.total == total;
+
+  @override
+  int get hashCode => Object.hash(done, total);
+
+  @override
+  String toString() => 'AdoptionProgress($done of $total)';
+}
+
 /// Reconciles the folder into the catalog: files that changed outside the app
 /// into their notes' history, and files that appeared, moved, or vanished into
 /// the notes' identities.
@@ -122,7 +152,21 @@ abstract class NoteReconciler {
   /// the report so a single unreadable file cannot leave the rest of the
   /// engram unreconciled. Two overlapping calls share one scan rather than
   /// racing each other.
+  ///
+  /// **Runs behind the UI, not ahead of it.** The session host starts it and
+  /// does not wait: a first scan over a large folder mints every note in it,
+  /// which on the slowest target is minutes, and the engram is usable
+  /// throughout because [reconcile] brings in whichever note the editor opens
+  /// before the scan gets there. Its progress is on [adoption].
   Future<DriftScanReport> scan();
+
+  /// The scan's progress through files the catalog has never seen, or null
+  /// while no scan is doing that. Broadcast, with [currentAdoption] for a
+  /// subscriber that arrives mid-scan.
+  Stream<AdoptionProgress?> get adoption;
+
+  /// What [adoption] last reported, or null.
+  AdoptionProgress? get currentAdoption;
 
   /// Reconciles the one note at engram-relative [path], if it has drifted —
   /// or brings it into the catalog if it is not there yet, by minting or by

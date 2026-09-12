@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1321,6 +1322,23 @@ void main() {
       );
     });
 
+    testWidgets('the sidebar shows adoption progress while the scan adopts',
+        (tester) async {
+      final store = _RwStore({'welcome.md': '# W'});
+      final reconciler = await pumpBrowser(tester, store);
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+
+      reconciler.report(const AdoptionProgress(done: 40, total: 312));
+      await tester.pump();
+
+      expect(find.text('Adopting notes… 40 of 312'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+      reconciler.report(null);
+      await tester.pump();
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+    });
+
     testWidgets('a moved file is reported as moved', (tester) async {
       final store = _RwStore(
         {'welcome.md': '# W', 'archive/old.md': '# O'},
@@ -1556,6 +1574,22 @@ class _RecordingReconciler implements NoteReconciler {
 
   @override
   Future<void> noteDeleted(String path) async => log.add('deleted $path');
+
+  final StreamController<AdoptionProgress?> _adoption =
+      StreamController<AdoptionProgress?>.broadcast(sync: true);
+  AdoptionProgress? _current;
+
+  /// What the scan would report as it adopts.
+  void report(AdoptionProgress? progress) {
+    _current = progress;
+    _adoption.add(progress);
+  }
+
+  @override
+  Stream<AdoptionProgress?> get adoption => _adoption.stream;
+
+  @override
+  AdoptionProgress? get currentAdoption => _current;
 
   @override
   Stream<String> get reconciled => const Stream<String>.empty();

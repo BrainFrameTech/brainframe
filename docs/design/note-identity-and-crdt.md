@@ -1389,9 +1389,9 @@ installed dependency and it decides how defensive the importer must be.
   engram in step 11.** Word trigrams, a 128-slot MinHash signature stored as
   one blob per catalog row, and a cutoff of **0.5**. Against
   `test/fixtures/engram` (notes of 44–670 words) no two distinct notes score
-  above 0.09; a note with a paragraph appended scores at least 0.63 and one
-  with its first fifth deleted at least 0.57; one with every fifth line
-  rewritten can fall to 0.40 and every third to 0.21. The cutoff catches the
+  above 0.12; a note with a paragraph appended scores at least 0.67 and one
+  with its first fifth deleted at least 0.71; one with every fifth line
+  rewritten can fall to 0.43 and every third to 0.20. The cutoff catches the
   first two edits and not the last two, on purpose: a rewrite that heavy has
   replaced most of the note, losing its history is the surfaced and
   recoverable cost, and attaching the wrong history is the silent one. The

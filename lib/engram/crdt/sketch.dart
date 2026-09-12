@@ -56,10 +56,10 @@ const int _slotBytes = 4;
 /// carried across.
 ///
 /// Measured against the fixture engram, whose notes run from 44 to 670 words:
-/// no two distinct notes score above 0.09; a note with a paragraph appended
-/// scores at least 0.63 and one with its first fifth deleted at least 0.57;
-/// one with every fifth line rewritten can fall to 0.40 and one with every
-/// third line rewritten to 0.21. The cutoff sits five times the unrelated
+/// no two distinct notes score above 0.12; a note with a paragraph appended
+/// scores at least 0.67 and one with its first fifth deleted at least 0.71;
+/// one with every fifth line rewritten can fall to 0.43 and one with every
+/// third line rewritten to 0.20. The cutoff sits four times the unrelated
 /// maximum and catches the first two edits but not the last two — deliberately,
 /// because the two failure modes are not symmetric (see the library comment).
 /// A rewrite that heavy has changed most of the note's shingles, and losing
@@ -76,25 +76,48 @@ const int _slotBytes = 4;
 const double renameSimilarityCutoff = 0.5;
 
 /// The [sketchWidth] hash functions, as pairs `(a, b)` of a wrapping affine
-/// map `h ↦ a·h + b` over 64-bit integers. With `a` odd the map is a bijection,
-/// so each slot is a genuine random permutation of the shingle hashes.
+/// map `h ↦ a·h + b` over 64-bit integers. With `a` odd the map is a bijection
+/// of the 64-bit integers, so each slot is a genuine permutation of the
+/// shingle hashes, which is what MinHash's estimate rests on.
 ///
-/// Generated once from a fixed seed: the constants are part of the format,
-/// since a sketch written today must compare with one computed next year.
-final List<int> _multipliers = _constants(0x9E3779B97F4A7C15, odd: true);
-final List<int> _offsets = _constants(0xD1B54A32D192ED03, odd: false);
+/// **Every constant from here to the end of the file is part of the on-disk
+/// format.** A sketch written today must compare with one computed years from
+/// now, so the numbers must never change, and so each of them has to be
+/// something with a name and an origin rather than a value someone typed:
+///
+/// - **The seed, `0x9E3779B97F4A7C15`, is ⌊2⁶⁴ / φ⌋** — the golden ratio
+///   scaled to 64 bits. It is the conventional seed and increment for 64-bit
+///   mixers (SplitMix64's Weyl increment, Knuth's multiplicative hashing),
+///   chosen because its bits are as far as a constant can be from any
+///   pattern a shift-and-xor generator might resonate with.
+/// - **The generator is xorshift64\*, exactly as published**: Marsaglia's
+///   shift triple `13, 7, 17` scrambled to `12, 25, 27` and the multiplier
+///   `0x2545F4914F6CDD1D`, from Vigna, *An experimental exploration of
+///   Marsaglia's xorshift generators, scrambled*, ACM TOMS 42(4), 2016. A
+///   written-out generator rather than `dart:math`'s `Random(seed)` because
+///   the latter's algorithm is an implementation detail, not a contract, and
+///   this one has to be reproducible on every VM forever.
+/// - **The string hash is FNV-1a**, at the end of the file, with its
+///   published 64-bit offset basis and prime.
+///
+/// One stream supplies both lists: the first [sketchWidth] draws are the
+/// multipliers (forced odd), the next [sketchWidth] the offsets. A second
+/// seed would be a second constant to account for, for nothing.
+final List<int> _multipliers = _permutationConstants.sublist(0, sketchWidth);
+final List<int> _offsets = _permutationConstants.sublist(sketchWidth);
 
-List<int> _constants(int seed, {required bool odd}) {
-  var state = seed;
-  return List<int>.generate(sketchWidth, (_) {
-    // xorshift64*: cheap, well distributed, and deterministic across VMs.
+final List<int> _permutationConstants = () {
+  var state = 0x9E3779B97F4A7C15;
+  return List<int>.generate(2 * sketchWidth, (i) {
     state ^= state >>> 12;
     state ^= state << 25;
     state ^= state >>> 27;
     final value = state * 0x2545F4914F6CDD1D;
-    return odd ? value | 1 : value;
+    // A multiplier must be odd to be a bijection mod 2^64; an offset may be
+    // anything.
+    return i < sketchWidth ? value | 1 : value;
   });
-}
+}();
 
 /// The signature of [text], as the bytes the catalog stores.
 ///
@@ -175,7 +198,11 @@ bool _unsignedLess(int a, int b) => (a ^ _signBit) < (b ^ _signBit);
 
 const int _signBit = 0x8000000000000000;
 
-/// FNV-1a over the string's UTF-16 code units, 64-bit, wrapping.
+/// FNV-1a over the string's UTF-16 code units, 64-bit, wrapping: the
+/// Fowler–Noll–Vo hash, with the published 64-bit offset basis
+/// `0xcbf29ce484222325` and prime `0x100000001b3`. Chosen for being tiny,
+/// well understood, and fully specified — a shingle hash needs to spread
+/// similar strings apart and nothing more, and this is part of the format.
 int _fnv1a64(String s) {
   var hash = 0xcbf29ce484222325;
   for (var i = 0; i < s.length; i++) {

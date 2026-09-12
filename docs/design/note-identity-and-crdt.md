@@ -1202,12 +1202,13 @@ file above the ceiling — refused, opened read-only without CRDT backing, or
 held as a `blobLww` note from the moment it is minted — is the decision that
 remains, and it is **#124**'s. No step may pick one by quietly adding a limit.
 
-To reproduce: the scan benchmark seeds N synthetic notes through
-`DriftReconciler.scan` and times the first and second scans, a map flush, and
-a cold-copy adoption; the seed benchmark times `NoteDocument.mint`,
-`NoteDocument.open`, and `computeSketch` at each size around
-`ProcessInfo.currentRss`. Both are scratch tests, run by hand on a target and
-not committed.
+To reproduce, on any target with the Flutter tool:
+`flutter test tool/bench_crdt.dart` (`BENCH=quick` for a short run; `scan` or
+`seed` for one half). It seeds synthetic notes through `DriftReconciler.scan`
+and times the first and second scans, a map flush, and a cold-copy adoption,
+then times `NoteDocument.mint`, `NoteDocument.open`, and `computeSketch` at
+each size around `ProcessInfo.currentRss`, and prints both tables as Markdown.
+The tables above are its output on the two machines named.
 
 ## What changes in `lib/`
 

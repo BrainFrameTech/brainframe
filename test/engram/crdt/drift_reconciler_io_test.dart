@@ -619,6 +619,32 @@ void main() {
       expect(await d.reconciler.reconcile('.DS_Store'), isFalse);
     });
 
+    test('a row at a hidden path is never reconciled, and the scan retires it',
+        () async {
+      // No path in the app creates one; if one exists it is a mistake, and
+      // both entry points must give the same answer rather than one keeping
+      // it alive. The scan treats it as a file renamed into a dot-directory.
+      final d = await device();
+      await engram.writeString('.obsidian/note.md', 'hidden\n');
+      final note = NoteDocument.mint(
+        store: d.store,
+        path: '.obsidian/note.md',
+        content: 'stale\n',
+      );
+      note.dispose();
+      final before = changesOf(d, '.obsidian/note.md');
+
+      expect(await d.reconciler.reconcile('.obsidian/note.md'), isFalse);
+      expect(changesOf(d, '.obsidian/note.md'), before, reason: 'not diffed');
+
+      final report = await d.reconciler.scan();
+
+      expect(report.tombstoned, ['.obsidian/note.md']);
+      expect(report.reconciled, isEmpty);
+      expect(d.store.catalog.byPath('.obsidian/note.md'), isNull);
+      expect(await engram.readString('.obsidian/note.md'), 'hidden\n');
+    });
+
     test('a file renamed into a dot-directory is a deletion, not a move',
         () async {
       final d = await device();

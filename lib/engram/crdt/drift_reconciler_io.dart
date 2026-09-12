@@ -155,6 +155,13 @@ class DriftReconciler implements NoteReconciler {
           retired.add(row.path);
           continue;
         }
+        if (complete && isHiddenEngramPath(row.path)) {
+          // A note living where no note may. The listing never admits the
+          // path, so it is treated exactly as a file renamed into a
+          // dot-directory: gone, whatever a stat would say.
+          missing.add(row);
+          continue;
+        }
         if (!complete || onDisk.contains(row.path)) {
           if (await _reconcileRow(row)) reconciled.add(row.path);
           continue;
@@ -250,9 +257,12 @@ class DriftReconciler implements NoteReconciler {
 
   @override
   Future<bool> reconcile(String path) async {
+    // First, before the catalog is even consulted: a hidden path is outside
+    // the scan's world whether or not a row claims it. A row at one can only
+    // be a mistake, and reconciling it would keep the mistake alive.
+    if (isHiddenEngramPath(path)) return false;
     final row = database.catalog.byPath(path);
     if (row != null) return _reconcileRow(row);
-    if (isHiddenEngramPath(path)) return false;
     final map = identity;
     if (map == null) return false;
     if (await engram.statFile(path) == null) return false;

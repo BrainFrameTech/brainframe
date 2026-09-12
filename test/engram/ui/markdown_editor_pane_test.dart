@@ -92,6 +92,15 @@ class _FakeReconciler implements NoteReconciler {
     return true;
   }
 
+  @override
+  Future<void> noteCreated(String path) async {}
+
+  @override
+  Future<void> noteMoved(String from, String to) async {}
+
+  @override
+  Future<void> noteDeleted(String path) async {}
+
   /// A reconciliation that happened elsewhere — the resume scan — and left
   /// [text] on disk.
   void reconciledElsewhere(String path, String text) {

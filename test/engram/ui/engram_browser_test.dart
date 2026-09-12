@@ -3,11 +3,15 @@ import 'dart:io';
 
 import 'package:brainframe/commands/app_commands.dart';
 import 'package:brainframe/engram/built_in_engrams.dart';
+import 'package:brainframe/engram/crdt/crdt_session.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
 import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
+import 'package:brainframe/engram/note_reconciler.dart';
+import 'package:brainframe/engram/note_writer.dart';
 import 'package:brainframe/engram/ui/browser_preferences.dart';
+import 'package:brainframe/engram/ui/crdt_session_scope.dart';
 import 'package:brainframe/engram/ui/engram_browser.dart';
 import 'package:brainframe/engram/ui/file_tree.dart';
 import 'package:brainframe/engram/ui/markdown_editor_pane.dart';
@@ -1189,6 +1193,152 @@ void main() {
     });
   });
 
+  group('reporting file management to the note catalog', () {
+    // Every create, rename, move, and delete is told to the session's
+    // reconciler, because the app knows what it did and the scan would only
+    // infer — and an inferred rename of a history-pending note loses the
+    // identity the map carried for it.
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    Engram writable(EngramStore store) =>
+        Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
+
+    Finder dialogField() => find.descendant(
+        of: find.byType(Dialog), matching: find.byType(TextField));
+
+    Future<_RecordingReconciler> pumpBrowser(
+      WidgetTester tester,
+      EngramStore store,
+    ) async {
+      final reconciler = _RecordingReconciler();
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      setWidth(tester, 1000);
+      await tester.pumpWidget(
+        AppSettings(
+          designOverride: DesignLanguage.material,
+          child: localizedApp(
+            home: EngramScope(
+              initialEngram: writable(store),
+              child: CrdtSessionHost(
+                openSession: (_) async => _FakeSession(reconciler),
+                child: EngramBrowser(repository: repo()),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+      return reconciler;
+    }
+
+    Future<void> rowAction(
+      WidgetTester tester,
+      String action, {
+      required int row,
+    }) async {
+      await tester.tap(find.byIcon(Icons.more_vert).at(row));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(action));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    testWidgets('a new note is reported as created', (tester) async {
+      final store = _RwStore({'welcome.md': '# W'});
+      final reconciler = await pumpBrowser(tester, store);
+
+      await tester.tap(find.byTooltip('New note'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(dialogField(), 'Fresh');
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+
+      expect(reconciler.log, contains('created Fresh.md'));
+    });
+
+    testWidgets('a renamed file is reported as moved', (tester) async {
+      final store = _RwStore({'welcome.md': '# W'});
+      final reconciler = await pumpBrowser(tester, store);
+
+      await rowAction(tester, 'Rename', row: 0);
+      await tester.enterText(dialogField(), 'intro');
+      await tester.tap(find.widgetWithText(TextButton, 'Rename'));
+      await tester.pumpAndSettle();
+
+      expect(reconciler.log, contains('moved welcome.md -> intro.md'));
+    });
+
+    testWidgets('a renamed folder reports every note inside it',
+        (tester) async {
+      final store = _RwStore(
+        {'notes/a.md': '# A', 'notes/sub/b.md': '# B'},
+        directories: {'notes', 'notes/sub'},
+      );
+      final reconciler = await pumpBrowser(tester, store);
+
+      await rowAction(tester, 'Rename', row: 0); // the notes folder
+      await tester.enterText(dialogField(), 'ideas');
+      await tester.tap(find.widgetWithText(TextButton, 'Rename'));
+      await tester.pumpAndSettle();
+
+      expect(
+        reconciler.log.where((e) => e.startsWith('moved')),
+        unorderedEquals([
+          'moved notes/a.md -> ideas/a.md',
+          'moved notes/sub/b.md -> ideas/sub/b.md',
+        ]),
+      );
+    });
+
+    testWidgets('a deleted file is reported as deleted', (tester) async {
+      final store = _RwStore({'welcome.md': '# W', 'other.md': '# O'});
+      final reconciler = await pumpBrowser(tester, store);
+
+      await rowAction(tester, 'Delete', row: 1); // welcome.md
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pumpAndSettle();
+
+      expect(reconciler.log, contains('deleted welcome.md'));
+    });
+
+    testWidgets('a deleted folder reports every note inside it',
+        (tester) async {
+      final store = _RwStore(
+        {'notes/a.md': '# A', 'notes/b.md': '# B', 'keep.md': '# K'},
+        directories: {'notes'},
+      );
+      final reconciler = await pumpBrowser(tester, store);
+
+      await rowAction(tester, 'Delete', row: 0); // the notes folder
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pumpAndSettle();
+
+      expect(
+        reconciler.log.where((e) => e.startsWith('deleted')),
+        unorderedEquals(['deleted notes/a.md', 'deleted notes/b.md']),
+      );
+    });
+
+    testWidgets('a moved file is reported as moved', (tester) async {
+      final store = _RwStore(
+        {'welcome.md': '# W', 'archive/old.md': '# O'},
+        directories: {'archive'},
+      );
+      final reconciler = await pumpBrowser(tester, store);
+
+      await rowAction(tester, 'Move', row: 2); // welcome.md
+      await tester.tap(find.descendant(
+          of: find.byType(Dialog), matching: find.text('archive')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Move'));
+      await tester.pumpAndSettle();
+
+      expect(reconciler.log, contains('moved welcome.md -> archive/welcome.md'));
+    });
+  });
+
   group('publishing to the desktop menu bar', () {
     Engram writable(EngramStore store) =>
         Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
@@ -1367,4 +1517,46 @@ class _DotStore extends EngramStore {
 
   @override
   Future<void> writeBytes(String path, Uint8List bytes) async {}
+}
+
+/// A session whose reconciler only records what the browser tells it.
+class _FakeSession implements CrdtSession {
+  _FakeSession(this.reconciler);
+
+  @override
+  final _RecordingReconciler reconciler;
+
+  @override
+  NoteWriter get writer => _InertWriter();
+
+  @override
+  Future<void> close() async {}
+}
+
+class _InertWriter implements NoteWriter {
+  @override
+  Future<void> write(String path, String text) async {}
+}
+
+class _RecordingReconciler implements NoteReconciler {
+  final List<String> log = [];
+
+  @override
+  Future<DriftScanReport> scan() async => DriftScanReport.clean;
+
+  @override
+  Future<bool> reconcile(String path) async => false;
+
+  @override
+  Future<void> noteCreated(String path) async => log.add('created $path');
+
+  @override
+  Future<void> noteMoved(String from, String to) async =>
+      log.add('moved $from -> $to');
+
+  @override
+  Future<void> noteDeleted(String path) async => log.add('deleted $path');
+
+  @override
+  Stream<String> get reconciled => const Stream<String>.empty();
 }

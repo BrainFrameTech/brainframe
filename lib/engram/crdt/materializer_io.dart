@@ -24,6 +24,7 @@ import 'catalog.dart';
 import 'drift.dart';
 import 'metadata_db_io.dart';
 import 'note_document_io.dart';
+import 'sketch.dart';
 
 /// Writes [note]'s current value to its file and records what was written.
 ///
@@ -94,7 +95,10 @@ Future<CatalogRow> materializeNote({
     // a wasted read, never a missed edit, which is the direction this whole
     // decision leans.
     mtimeUtc: stat?.mtimeUtc,
-    sketch: row.sketch,
+    // The sketch describes the same text the hash does, so it is refreshed in
+    // the same commit; a sketch of an older value would recognise the wrong
+    // rename. Device-local derived data, like the hash: never shared.
+    sketch: computeSketch(note.value),
     seedClaim: row.seedClaim,
   );
   // One statement, so it is atomic without an explicit transaction. If this
@@ -115,4 +119,41 @@ Future<bool> noteFileHasDrifted(EngramStore engram, CatalogRow row) async {
   if (stat == null) return true;
   if (!mayHaveDrifted(row, stat)) return false;
   return hasDrifted(row, contentHash(await engram.readBytes(row.path)));
+}
+
+/// Records what the file behind [row] holds right now — its hash, size,
+/// mtime, and (for a text note) sketch — without writing it.
+///
+/// For the two cases where the file is the authority rather than the
+/// projection: a `blobLww` note, whose bytes the op-log does not carry and
+/// which nothing materializes until step 14, and a row that predates the
+/// sketch and needs one built. What goes into `materializedHash` is then the
+/// bytes this device last *observed*, which is the statement Decision 5 needs
+/// — the next scan compares against it to decide whether the file changed —
+/// and becomes literally true again the moment a materializer for that policy
+/// writes them.
+///
+/// Returns the committed row.
+Future<CatalogRow> recordFileState({
+  required MetadataDatabase store,
+  required EngramStore engram,
+  required CatalogRow row,
+  required Uint8List bytes,
+}) async {
+  final stat = await engram.statFile(row.path);
+  final committed = CatalogRow(
+    ulid: row.ulid,
+    path: row.path,
+    mergePolicy: row.mergePolicy,
+    state: row.state,
+    materializedHash: contentHash(bytes),
+    size: bytes.length,
+    mtimeUtc: stat?.mtimeUtc,
+    sketch: row.mergePolicy == MergePolicy.fugueText
+        ? computeSketch(utf8.decode(bytes))
+        : null,
+    seedClaim: row.seedClaim,
+  );
+  store.catalog.upsert(committed);
+  return committed;
 }

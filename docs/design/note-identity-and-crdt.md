@@ -1371,12 +1371,6 @@ installed dependency and it decides how defensive the importer must be.
 
 ### Parked — waiting on data that does not exist yet
 
-- **The similarity threshold's value.** Decision 7 now names the metric — a
-  shingled content sketch — but the shingle size, sketch width, and the cutoff
-  itself still need choosing against the real fixture engram rather than in the
-  abstract. Picking them wrongly fails in one direction only: too low
-  re-associates unrelated notes and merges their histories, which is worse than
-  too high, so bias toward missing a match.
 - **Snapshot and compaction policy.** Case 5b of the frozen suite pins that
   garbage collection can strand a peer below the frontier. Purely local,
   single-device use has no stranded peers, so this can be deferred — but it must
@@ -1391,6 +1385,23 @@ installed dependency and it decides how defensive the importer must be.
 
 ### Decided during review — recorded so it is not relitigated
 
+- **The similarity threshold's value: decided, measured against the fixture
+  engram in step 11.** Word trigrams, a 128-slot MinHash signature stored as
+  one blob per catalog row, and a cutoff of **0.5**. Against
+  `test/fixtures/engram` (notes of 44–670 words) no two distinct notes score
+  above 0.09; a note with a paragraph appended scores at least 0.63 and one
+  with its first fifth deleted at least 0.57; one with every fifth line
+  rewritten can fall to 0.40 and every third to 0.21. The cutoff catches the
+  first two edits and not the last two, on purpose: a rewrite that heavy has
+  replaced most of the note, losing its history is the surfaced and
+  recoverable cost, and attaching the wrong history is the silent one. The
+  measurements are pinned by `test/engram/crdt/sketch_test.dart`, which fails
+  if the fixture drifts under the constants or the constants change without
+  re-measuring. One limit is on record rather than solved: two short notes
+  sharing a large template can score above the cutoff on the template alone.
+  The comparison runs only against notes that went missing in the same scan,
+  which bounds the exposure without removing it; weighting shingles by rarity
+  would, and nothing needs it yet.
 - **What a ULID-collision loser does: decided, retire rather than re-key.**
   Review found the two corrections in tension: Decision 9 told the loser of a
   path collision to re-key its document onto the winner's ULID, which is

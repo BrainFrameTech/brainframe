@@ -24,7 +24,11 @@ class EngramFileOps {
   /// move even though no file would recreate them — then each descendant file
   /// is moved into the mirrored path, then the source directories are removed
   /// deepest-first. [to] must not already exist.
-  Future<void> moveFolder(String from, String to) async {
+  ///
+  /// Returns every file moved, as `(from, to)` pairs, so the caller can tell
+  /// the note catalog what happened to each: a folder move is a rename of
+  /// every note in it, and each keeps its identity.
+  Future<List<(String, String)>> moveFolder(String from, String to) async {
     final fromPrefix = _prefix(from);
     final descendantDirs = [
       for (final d in await store.listDirectories())
@@ -39,9 +43,12 @@ class EngramFileOps {
     }
 
     // Move each descendant file into the mirrored destination path.
+    final moved = <(String, String)>[];
     for (final file in await store.list()) {
       if (file.startsWith(fromPrefix)) {
-        await store.move(file, '$to${file.substring(from.length)}');
+        final destination = '$to${file.substring(from.length)}';
+        await store.move(file, destination);
+        moved.add((file, destination));
       }
     }
 
@@ -49,13 +56,14 @@ class EngramFileOps {
     for (final dir in _deepestFirst(descendantDirs)) {
       await store.deleteDirectory(dir);
     }
+    return moved;
   }
 
   /// Renames the folder at [path] to [newName] within the same parent.
   ///
   /// A thin wrapper over [moveFolder]; [newName] is a single path segment and
-  /// must be free among the folder's siblings.
-  Future<void> renameFolder(String path, String newName) {
+  /// must be free among the folder's siblings. Returns what [moveFolder] does.
+  Future<List<(String, String)>> renameFolder(String path, String newName) {
     final slash = path.lastIndexOf('/');
     final parent = slash == -1 ? '' : path.substring(0, slash + 1);
     return moveFolder(path, '$parent$newName');
@@ -63,10 +71,16 @@ class EngramFileOps {
 
   /// Deletes the folder at [path] and everything beneath it: every descendant
   /// file, then the emptied directory shells deepest-first (including [path]).
-  Future<void> deleteFolder(String path) async {
+  ///
+  /// Returns every file deleted, so the caller can tombstone each note.
+  Future<List<String>> deleteFolder(String path) async {
     final prefix = _prefix(path);
+    final deleted = <String>[];
     for (final file in await store.list()) {
-      if (file.startsWith(prefix)) await store.delete(file);
+      if (file.startsWith(prefix)) {
+        await store.delete(file);
+        deleted.add(file);
+      }
     }
     final dirs = [
       for (final d in await store.listDirectories())
@@ -75,6 +89,7 @@ class EngramFileOps {
     for (final dir in _deepestFirst(dirs)) {
       await store.deleteDirectory(dir);
     }
+    return deleted;
   }
 
   /// Returns [desired] if no sibling name in [existing] uses it, otherwise the

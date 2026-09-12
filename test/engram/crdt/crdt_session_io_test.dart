@@ -4,10 +4,12 @@ import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
 import 'package:brainframe/engram/crdt/crdt_session_io.dart';
 import 'package:brainframe/engram/crdt/drift_reconciler_io.dart';
+import 'package:brainframe/engram/crdt/identity_map_io.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
+import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// One engram's op-log, opened for as long as that engram is active.
@@ -92,6 +94,46 @@ void main() {
     await Future.wait([reconcile, save]);
 
     expect(await engram.store.readString('inbox/today.md'), 'ONE\ntwo\n');
+  });
+
+  test('the session announces mints in the engram\'s shared map', () async {
+    // One file per device, inside the engram: what a second machine reads
+    // to adopt this one's ULIDs rather than minting its own.
+    final engram = engramWith(readOnly: false);
+    final session = await CrdtSession.openFor(
+      engram,
+      resolveRoot: resolveRoot,
+    );
+
+    await session!.writer.write('inbox/today.md', '# Today\n');
+    await session.close();
+
+    final shared = Directory('${root.path}/engram/.brainframe/shared');
+    final files = shared.listSync().whereType<File>().toList();
+    expect(files, hasLength(1), reason: 'exactly one file, for this device');
+    expect(files.single.path, endsWith('.db'));
+  });
+
+  test('the map is flushed before the database closes', () async {
+    // A rename recorded seconds before the engram was switched away from
+    // must reach the folder, or every other device keeps the old path.
+    final engram = engramWith(readOnly: false);
+    final session = await CrdtSession.openFor(
+      engram,
+      resolveRoot: resolveRoot,
+    );
+    await session!.writer.write('a.md', 'content\n');
+    await engram.store.move('a.md', 'b.md');
+    await session.reconciler.noteMoved('a.md', 'b.md');
+
+    await session.close();
+
+    // Read as any other device would: every file in the shared directory.
+    final rows = await IdentityMap(
+      engramRoot: '${root.path}/engram',
+      peerId: PeerId.generate(),
+    ).readAll();
+    expect(rows.single.path, 'b.md');
   });
 
   test('close ends the reconciled stream', () async {

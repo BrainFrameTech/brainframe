@@ -1,9 +1,12 @@
 import '../engram.dart';
+import '../fs/fs_store_io.dart';
 import '../note_reconciler.dart';
 import '../note_writer.dart';
 import 'app_data_resolver.dart';
 import 'crdt_note_writer_io.dart';
 import 'drift_reconciler_io.dart';
+import 'identity_authorship_io.dart';
+import 'identity_map_io.dart';
 import 'metadata_db_io.dart';
 import 'note_document_lock.dart';
 
@@ -19,9 +22,15 @@ import 'note_document_lock.dart';
 /// transaction boundary the schema depends on, so switching engrams closes the
 /// outgoing session before the incoming one opens.
 class CrdtSession {
-  CrdtSession._(this._database, this.writer, this._reconciler);
+  CrdtSession._(
+    this._database,
+    this.writer,
+    this._reconciler,
+    this._identity,
+  );
 
   final MetadataDatabase _database;
+  final AuthoredIdentity? _identity;
 
   /// How the editor should save into this engram.
   final NoteWriter writer;
@@ -50,18 +59,48 @@ class CrdtSession {
       engram.id,
       resolveRoot: resolveRoot,
     );
+    // The shared identity map lives inside the engram folder, so it exists
+    // only for an engram that has one. Every writable engram today is a
+    // filesystem engram; the seam allows otherwise, and such an engram would
+    // get drift reconciliation and nothing that needs a listing.
+    final store = engram.store;
+    final identity = store is FileSystemEngramStore
+        ? await AuthoredIdentity.load(
+            IdentityMap(
+              engramRoot: store.location.path,
+              peerId: database.peerId,
+            ),
+          )
+        : null;
     // One lock between the two: a save and a reconciliation of the same note
     // must never overlap, and nothing above the session sequences them.
     final lock = NoteDocumentLock();
     return CrdtSession._(
       database,
-      CrdtNoteWriter(database: database, engram: engram.store, lock: lock),
-      DriftReconciler(database: database, engram: engram.store, lock: lock),
+      CrdtNoteWriter(
+        database: database,
+        engram: store,
+        lock: lock,
+        identity: identity,
+      ),
+      DriftReconciler(
+        database: database,
+        engram: store,
+        lock: lock,
+        identity: identity,
+      ),
+      identity,
     );
   }
 
-  /// Closes the database and the reconciler's event stream. Safe to call twice.
+  /// Writes any identity-map rows still in the timers, closes the
+  /// reconciler's event stream, and closes the database. Safe to call twice.
+  ///
+  /// The map is flushed *before* the database closes, and awaited: a rename
+  /// recorded seconds before the engram was switched away from must reach
+  /// the folder, or every other device keeps the old path.
   Future<void> close() async {
+    await _identity?.flush();
     await _reconciler.close();
     _database.close();
   }

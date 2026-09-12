@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
+import 'package:brainframe/engram/crdt/identity_authorship_io.dart';
+import 'package:brainframe/engram/crdt/identity_map_io.dart';
 import 'package:brainframe/engram/crdt/materializer_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/note_document_io.dart';
@@ -86,6 +88,58 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('the identity map', () {
+    test('a mint is announced to other devices', () async {
+      // A note minted here and recorded nowhere else is a note a second
+      // device mints again under another ULID.
+      final store = await openStore();
+      addTearDown(store.close);
+      final map = IdentityMap(
+        engramRoot: '${root.path}/engram',
+        peerId: store.peerId,
+      );
+      final identity = await AuthoredIdentity.load(map);
+      addTearDown(identity.dispose);
+      final writer = CrdtNoteWriter(
+        database: store,
+        engram: engram,
+        lock: NoteDocumentLock(),
+        identity: identity,
+      );
+
+      await writer.write('inbox/today.md', '# Today\n');
+      await identity.flush();
+
+      final row = (await map.readOurs()).single;
+      expect(row.ulid, store.catalog.byPath('inbox/today.md')!.ulid);
+      expect(row.path, 'inbox/today.md');
+      expect(row.seededBy, store.peerId);
+      expect(row.deleted, isFalse);
+    });
+
+    test('a save to an existing note announces nothing new', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final identity = await AuthoredIdentity.load(
+        IdentityMap(engramRoot: '${root.path}/engram', peerId: store.peerId),
+      );
+      addTearDown(identity.dispose);
+      final writer = CrdtNoteWriter(
+        database: store,
+        engram: engram,
+        lock: NoteDocumentLock(),
+        identity: identity,
+      );
+      await writer.write('inbox/today.md', 'first\n');
+      final before = identity.rows[store.catalog.byPath('inbox/today.md')!.ulid];
+
+      await writer.write('inbox/today.md', 'first\nsecond\n');
+
+      expect(identity.rows.length, 1);
+      expect(identical(identity.rows.values.single, before), isTrue);
     });
   });
 

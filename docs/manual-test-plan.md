@@ -1125,6 +1125,19 @@ folder.
    changing any text; save. Switch back to BrainFrame (resume).
 7. **Unsaved buffer at resume:** type in **X** and, *within the 5 s debounce*,
    switch to the other editor; switch straight back without touching **X**.
+8. **External rename (step 11):** with **Y** open in BrainFrame, rename **X**
+   to `X-renamed.md` in the file manager (content untouched). Switch back;
+   open `X-renamed.md`; add a line and let it save.
+9. **External rename *and* edit:** rename `X-renamed.md` to `X-again.md` in
+   the other editor and append a paragraph in the same go, before switching
+   back. Switch back and open it.
+10. **External create:** in the other editor, create `Z.md` with a few lines.
+    Switch back; open **Z**; edit and let it save.
+11. **External delete:** in the file manager, delete **Z**. Switch back. Then
+    create a new `Z.md` in the other editor with different content; switch
+    back; open it.
+12. **One file per device:** look inside the engram folder at
+    `.brainframe/shared/`.
 
 **Expected:**
 
@@ -1142,6 +1155,20 @@ folder.
   actually changed on disk is reloaded. Reloading moves the caret to the end
   of the text — accepted for now, note it only if it happens *without* an
   external change.
+- Step 8: `X-renamed.md` appears in the tree, **X** is gone, and the note
+  opens with its content intact and saves normally. Nothing visible says
+  "this is the same note" — that is the point; a defect here looks like a
+  note that opens empty, or a second copy.
+- Step 9: as step 8, with the appended paragraph showing. A rename *plus* a
+  rewrite of most of the note is allowed to come back as a fresh note (the
+  similarity cutoff, biased toward missing); an appended paragraph is not.
+- Step 10: **Z** appears, opens, and saves like any other note.
+- Step 11: the first **Z** disappears from the tree; the second one opens
+  with its own content and none of the first's.
+- Step 12: exactly **one** `<peerId>.db` file per BrainFrame install that has
+  ever written to this engram, and nothing else the app did not put there.
+  Two installs over one synced folder show two files. It is never renamed,
+  and it is small (kilobytes).
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1159,7 +1186,17 @@ folder.
 - **Inspection point:** a note that fails to reconcile (an unreadable file,
   invalid UTF-8) is skipped, logged under `brainframe.engram.drift`, and tried
   again on the next scan; the rest of the engram still reconciles. There is no
-  UI for it yet (Housekeeping, step 13).
+  UI for it yet (Housekeeping, step 13). The same log names every note the
+  scan created, moved, or tombstoned, and calls out a delete-plus-create in
+  one scan — the rename-past-recognition case, whose lost history has no
+  surface yet either.
+- **Dot-directories are not notes.** A `.obsidian/` or `.git/` folder inside
+  the engram must never gain entries in `.brainframe/shared/`; the tree
+  already hides them (F4), and the scan uses the same rule.
+- **In-app rename, move, and delete (F12–F14) report to the same catalog**,
+  so a note renamed inside BrainFrame keeps its history exactly as one renamed
+  outside does — there is no visible difference to check, only the absence of
+  one.
 
 ---
 

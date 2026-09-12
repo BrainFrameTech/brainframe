@@ -117,6 +117,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS bf_catalog_findable_path
       .map(_rowFrom)
       .toList();
 
+  /// Every note that is not tombstoned, ordered by path: the notes whose file
+  /// this device expects to find in the folder.
+  ///
+  /// The scan's other input (Decision 7): a findable note whose path is
+  /// absent has gone somewhere, and which of the three answers — moved,
+  /// deleted, or merely unavailable — is the scan's to work out. Tombstones
+  /// are excluded because their absence is the expected state.
+  List<CatalogRow> findable() => database
+      .select('SELECT * FROM bf_catalog WHERE state <> ? ORDER BY path', [
+        NoteState.tombstoned.name,
+      ])
+      .map(_rowFrom)
+      .toList();
+
   /// Writes [row], replacing any existing row with the same ULID.
   ///
   /// Whole-row, never a delta — the same discipline the shared identity map

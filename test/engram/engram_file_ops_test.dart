@@ -70,11 +70,19 @@ void main() {
       await store.writeString('notes/a.md', 'A');
       await store.writeString('notes/sub/b.md', 'B');
 
-      await EngramFileOps(store).renameFolder('notes', 'ideas');
+      final moved = await EngramFileOps(store).renameFolder('notes', 'ideas');
 
       expect(
         await store.list(),
         unorderedEquals(['ideas/a.md', 'ideas/sub/b.md']),
+      );
+      // Every file, old path to new, so each note's identity can follow it.
+      expect(
+        moved,
+        unorderedEquals([
+          ('notes/a.md', 'ideas/a.md'),
+          ('notes/sub/b.md', 'ideas/sub/b.md'),
+        ]),
       );
       expect(await store.readString('ideas/a.md'), 'A');
       expect(await store.readString('ideas/sub/b.md'), 'B');
@@ -116,9 +124,10 @@ void main() {
       await store.createDirectory('notes/empty');
       await store.writeString('keep.md', 'K');
 
-      await EngramFileOps(store).deleteFolder('notes');
+      final deleted = await EngramFileOps(store).deleteFolder('notes');
 
       expect(await store.list(), ['keep.md']);
+      expect(deleted, unorderedEquals(['notes/a.md', 'notes/sub/b.md']));
       final dirs = await store.listDirectories();
       expect(
         dirs.where((d) => d == 'notes' || d.startsWith('notes/')),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
@@ -7,6 +8,7 @@ import 'package:brainframe/engram/crdt/line_chunked_diff.dart';
 import 'package:brainframe/engram/crdt/materializer_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/note_document_io.dart';
+import 'package:brainframe/engram/crdt/sketch.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
@@ -422,6 +424,101 @@ void main() {
         isFalse,
         reason: 'the file is canonical again and the hash matches it',
       );
+    });
+  });
+
+  group('the sketch', () {
+    test('is recorded beside the hash, describing the same text', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'some words that will be sketched\n',
+      );
+      addTearDown(note.dispose);
+
+      final row = await materializeNote(
+        store: store,
+        engram: engram,
+        note: note,
+      );
+
+      expect(row.sketch, computeSketch('some words that will be sketched\n'));
+    });
+
+    test('is refreshed on every materialization', () async {
+      // A sketch of an older value would recognise the wrong rename.
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(
+        store: store,
+        path: 'inbox/today.md',
+        content: 'the first version of this note\n',
+      );
+      addTearDown(note.dispose);
+      final first = await materializeNote(
+        store: store,
+        engram: engram,
+        note: note,
+      );
+
+      note.applyExternalText('an entirely different second version\n');
+      final second = await materializeNote(
+        store: store,
+        engram: engram,
+        note: note,
+      );
+
+      expect(second.sketch, isNot(first.sketch));
+      expect(
+        second.sketch,
+        computeSketch('an entirely different second version\n'),
+      );
+    });
+  });
+
+  group('recordFileState', () {
+    test('records the file as found, without writing it', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(store: store, path: 'inbox/today.md');
+      addTearDown(note.dispose);
+      await engram.writeString('inbox/today.md', 'as found\r\n');
+      final bytes = await engram.readBytes('inbox/today.md');
+
+      final row = await recordFileState(
+        store: store,
+        engram: engram,
+        row: store.catalog.byUlid(note.ulid)!,
+        bytes: bytes,
+      );
+
+      expect(await engram.readString('inbox/today.md'), 'as found\r\n');
+      expect(row.materializedHash, contentHash(bytes));
+      expect(row.size, bytes.length);
+      expect(row.mtimeUtc, isNotNull);
+      expect(row.sketch, computeSketch('as found\r\n'));
+      expect(await noteFileHasDrifted(engram, row), isFalse);
+    });
+
+    test('a blob gets a hash and no sketch', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(store: store, path: 'pic.png');
+      addTearDown(note.dispose);
+      final bytes = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47]);
+      await engram.writeBytes('pic.png', bytes);
+
+      final row = await recordFileState(
+        store: store,
+        engram: engram,
+        row: store.catalog.byUlid(note.ulid)!,
+        bytes: bytes,
+      );
+
+      expect(row.materializedHash, contentHash(bytes));
+      expect(row.sketch, isNull);
     });
   });
 

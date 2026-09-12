@@ -351,6 +351,15 @@ class _RecordingReconciler implements NoteReconciler {
   Future<bool> reconcile(String path) async => false;
 
   @override
+  Future<void> noteCreated(String path) async {}
+
+  @override
+  Future<void> noteMoved(String from, String to) async {}
+
+  @override
+  Future<void> noteDeleted(String path) async {}
+
+  @override
   Stream<String> get reconciled => const Stream<String>.empty();
 }
 

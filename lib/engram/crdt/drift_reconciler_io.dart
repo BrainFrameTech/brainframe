@@ -490,27 +490,45 @@ class DriftReconciler implements NoteReconciler {
             // blob the sequence stays empty, since the op-log does not carry
             // its bytes (Decision 3). Disposed once the seed is durable, so
             // a folder of notes costs one document at a time.
+            final policy = mergePolicyForPath(path);
             final note = NoteDocument.mint(
               store: database,
               path: path,
-              content: mergePolicyForPath(path) == MergePolicy.fugueText
+              content: policy == MergePolicy.fugueText
                   ? utf8.decode(bytes)
                   : '',
             );
-            note.dispose();
-            // The file is recorded as found, not rewritten. Seeding
-            // normalized the sequence (Decision 10), so a CRLF file and its
-            // note now differ by terminators alone — which the first save
-            // through the editor settles by writing LF, as it would have
-            // anyway. Rewriting every file the scan meets would be adoption's
-            // wholesale change to a folder the user has not yet had reason to
-            // trust the app with, and step 12 owes them a warning before it.
-            await recordFileState(
-              store: database,
-              engram: engram,
-              row: database.catalog.byUlid(note.ulid)!,
-              bytes: bytes,
-            );
+            try {
+              if (policy == MergePolicy.fugueText) {
+                // Materialized, which is where Decision 10 lands on disk: a
+                // CRLF file is rewritten LF here, in the one sweep adoption
+                // makes over the folder, rather than one note at a time as
+                // each is first edited. A drip of terminator changes over
+                // months — never ending, if some notes are never opened —
+                // is the worse experience for exactly the user who would
+                // notice either, one with the folder under version control;
+                // one warned, one-time change is something they can commit
+                // on its own. The confirmation states the count first. A
+                // file already LF is left untouched, mtime and all.
+                await materializeNote(
+                  store: database,
+                  engram: engram,
+                  note: note,
+                  onDiskHash: contentHash(bytes),
+                );
+              } else {
+                // A blob's bytes are never normalized and never rewritten;
+                // it is recorded as found so a later move can be matched.
+                await recordFileState(
+                  store: database,
+                  engram: engram,
+                  row: database.catalog.byUlid(note.ulid)!,
+                  bytes: bytes,
+                );
+              }
+            } finally {
+              note.dispose();
+            }
             map.record(database.catalog.byUlid(note.ulid)!, deleted: false);
             return _Arrival.minted;
 

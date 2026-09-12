@@ -119,23 +119,31 @@ class EngramSwitcher extends StatelessWidget {
     );
   }
 
-  /// The adoption confirmation: what will be written into the folder, and how
-  /// many of its files become notes. Decision 10's line-ending cost is stated
-  /// here too — not as a rewrite that happens now, since the scan records a
-  /// file as found rather than rewriting it, but as the change each note sees
-  /// on its first edit, which a folder under version control would otherwise
-  /// discover one diff at a time.
+  /// The adoption confirmation: what will be written into the folder, how
+  /// many of its files become notes, and — when any will be — how many are
+  /// rewritten from Windows line endings to LF. That rewrite is Decision 10's
+  /// one-time cost, made in one sweep at adoption rather than dripped out as
+  /// notes are first edited, and it is the change a folder under version control
+  /// notices most, so it is stated with its count before it happens.
   Future<bool> _confirmAdoption(
     BuildContext context,
     FolderAdoptionPreview preview,
   ) async {
     if (!context.mounted) return false;
     final l10n = AppLocalizations.of(context);
+    final body = StringBuffer(
+      l10n.adoptFolderBody(preview.name, preview.fileCount),
+    );
+    if (preview.crlfCount > 0) {
+      body
+        ..write(' ')
+        ..write(l10n.adoptFolderLineEndings(preview.crlfCount));
+    }
     final adopt = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog.adaptive(
         title: Text(l10n.adoptFolderTitle),
-        content: Text(l10n.adoptFolderBody(preview.name, preview.fileCount)),
+        content: Text(body.toString()),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

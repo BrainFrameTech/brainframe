@@ -751,12 +751,20 @@
     "description": "Title of the confirmation shown after the user picks a folder that is not yet an engram."
   },
 
-  "adoptFolderBody": "“{name}” will become an engram. BrainFrame adds a .brainframe folder inside it, and its {count, plural, =0{files become notes as they are added} =1{one file becomes a note} other{{count} files become notes}}. Windows line endings are converted to LF as notes are edited.",
+  "adoptFolderBody": "“{name}” will become an engram. BrainFrame adds a .brainframe folder inside it, and its {count, plural, =0{files become notes as they are added} =1{one file becomes a note} other{{count} files become notes}}.",
   "@adoptFolderBody": {
-    "description": "Body of the adoption confirmation: names the folder, says what is written into it, and how many files it holds. The line-ending sentence is Decision 10's cost, told before it is discovered.",
+    "description": "Body of the adoption confirmation: names the folder, says what is written into it, and how many files it holds. Followed by adoptFolderLineEndings when any file will be rewritten.",
     "placeholders": {
       "name": { "type": "String", "example": "Notes" },
       "count": { "type": "int", "example": "312" }
+    }
+  },
+
+  "adoptFolderLineEndings": "{count, plural, =1{One of them uses Windows line endings and will be converted to LF now.} other{{count} of them use Windows line endings and will be converted to LF now.}}",
+  "@adoptFolderLineEndings": {
+    "description": "Appended to the adoption confirmation when adoption will rewrite files: the one-time, whole-folder conversion of CRLF text files to LF (Decision 10), stated with its count before it happens. Omitted when the count is zero.",
+    "placeholders": {
+      "count": { "type": "int", "example": "40" }
     }
   },
 

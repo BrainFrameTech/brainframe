@@ -215,8 +215,8 @@ void main() {
 
     setUp(() async {
       folder = await Directory.systemTemp.createTemp('switcher_adopt');
-      await File('${folder.path}/one.md').writeAsString('1');
-      await File('${folder.path}/two.md').writeAsString('2');
+      await File('${folder.path}/one.md').writeAsString('1\r\n');
+      await File('${folder.path}/two.md').writeAsString('2\n');
       await Directory('${folder.path}/.obsidian').create();
       await File('${folder.path}/.obsidian/app.json').writeAsString('{}');
     });
@@ -255,7 +255,14 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('2 files become notes'), findsOneWidget);
-      expect(find.textContaining('line endings'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'One of them uses Windows line endings and will be converted to LF '
+          'now.',
+        ),
+        findsOneWidget,
+        reason: 'the one-time rewrite, with its count, before it happens',
+      );
       expect(repo.adopted, isEmpty, reason: 'nothing until confirmed');
 
       // The rest of the flow was started under real time, so its
@@ -268,6 +275,23 @@ void main() {
 
       expect(repo.adopted, [folder.path]);
       expect(find.text('active:adopted-${folder.path}'), findsOneWidget);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('a folder with no CRLF files says nothing about line endings',
+        (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      // Synchronous: real async I/O started in the test zone never completes.
+      File('${folder.path}/one.md').writeAsStringSync('1\n');
+      final repo = _FakeRepo(discovery: discovery());
+      await tester.pumpWidget(
+        harness(repo, tutorial, folderPicker: () async => folder.path),
+      );
+
+      await openFolder(tester);
+
+      expect(find.text('Adopt this folder?'), findsOneWidget);
+      expect(find.textContaining('line endings'), findsNothing);
       debugDefaultTargetPlatformOverride = null;
     });
 

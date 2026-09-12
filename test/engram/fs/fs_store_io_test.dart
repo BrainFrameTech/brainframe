@@ -695,10 +695,10 @@ void main() {
       final loc = locFor('Vault');
       await Directory('${loc.path}/notes').create(recursive: true);
       await Directory('${loc.path}/.git/objects').create(recursive: true);
-      await File('${loc.path}/a.md').writeAsString('a');
-      await File('${loc.path}/notes/b.md').writeAsString('b');
-      await File('${loc.path}/pic.png').writeAsString('p');
-      await File('${loc.path}/.DS_Store').writeAsString('junk');
+      await File('${loc.path}/a.md').writeAsString('a\r\nb\r\n');
+      await File('${loc.path}/notes/b.md').writeAsString('b\n');
+      await File('${loc.path}/pic.png').writeAsString('p\r\n');
+      await File('${loc.path}/.DS_Store').writeAsString('junk\r\n');
       await File('${loc.path}/.git/objects/x').writeAsString('blob');
 
       final preview = await previewFolderAdoption(loc);
@@ -706,6 +706,11 @@ void main() {
       expect(preview.name, 'Vault');
       expect(preview.path, loc.path);
       expect(preview.fileCount, 3);
+      expect(
+        preview.crlfCount,
+        1,
+        reason: 'only text notes count; a blob and a hidden file do not',
+      );
       expect(preview.isEngram, isFalse);
     });
 
@@ -723,6 +728,7 @@ void main() {
     test('a folder that does not exist previews as empty', () async {
       final preview = await previewFolderAdoption(locFor('Nowhere'));
       expect(preview.fileCount, 0);
+      expect(preview.crlfCount, 0);
       expect(preview.isEngram, isFalse);
       expect(preview.name, 'Nowhere');
     });

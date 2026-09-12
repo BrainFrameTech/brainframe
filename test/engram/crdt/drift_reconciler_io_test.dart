@@ -519,8 +519,8 @@ void main() {
       expect(d.valueOf('new.md'), 'nobody minted me\n', reason: 'seeded LF');
       expect(
         await engram.readString('new.md'),
-        'nobody minted me\r\n',
-        reason: 'found, not rewritten: the first save normalizes',
+        'nobody minted me\n',
+        reason: 'rewritten LF in the sweep (Decision 10)',
       );
       expect((await d.reconciler.scan()).isClean, isTrue);
 
@@ -547,7 +547,7 @@ void main() {
 
     test('a first save on a minted-by-scan note applies on top', () async {
       final d = await device();
-      await engram.writeString('new.md', 'one\r\ntwo\r\n');
+      await engram.writeString('new.md', 'one\ntwo\n');
       await d.reconciler.scan();
 
       await d.writer.write('new.md', 'one\ntwo\nthree\n');
@@ -1299,27 +1299,34 @@ void main() {
       expect((await resumed.scan()).isClean, isTrue);
     });
 
-    test('adopting CRLF files seeds LF and leaves the files alone', () async {
-      // Decision 10's normalization runs at the seed; the file is recorded as
-      // found, and the first save through the editor writes LF. Nothing the
-      // user has not touched is rewritten under them.
+    test('adopting rewrites CRLF text files LF in the one sweep', () async {
+      // Decision 10 lands on disk here, once, for the whole folder — not as a
+      // drip of terminator changes as each note is first edited, which for a
+      // folder under version control would never end. An LF file is left
+      // untouched, mtime and all; a blob's bytes are never normalized.
       final d = await device();
       await engram.writeString('win.md', 'one\r\ntwo\r\n');
+      await engram.writeString('unix.md', 'one\ntwo\n');
       await engram.writeBytes('pic.png', Uint8List.fromList([0x0d, 0x0a, 0x0d]));
+      final unixBefore = (await engram.statFile('unix.md'))!.mtimeUtc;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
       await d.reconciler.scan();
 
       expect(d.valueOf('win.md'), 'one\ntwo\n', reason: 'LF sequence');
-      expect(await engram.readString('win.md'), 'one\r\ntwo\r\n');
+      expect(await engram.readString('win.md'), 'one\ntwo\n', reason: 'LF file');
+      expect(await engram.readString('unix.md'), 'one\ntwo\n');
+      expect(
+        (await engram.statFile('unix.md'))!.mtimeUtc,
+        unixBefore,
+        reason: 'an LF file is not rewritten',
+      );
       expect(
         await engram.readBytes('pic.png'),
         [0x0d, 0x0a, 0x0d],
         reason: 'a blob is never normalized',
       );
       expect((await d.reconciler.scan()).isClean, isTrue);
-
-      await d.writer.write('win.md', 'one\ntwo\nthree\n');
-      expect(await engram.readString('win.md'), 'one\ntwo\nthree\n');
     });
   });
 

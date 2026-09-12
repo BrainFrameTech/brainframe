@@ -393,9 +393,11 @@ snapshot.
   content you typed, byte for byte. **Any difference you can see is a defect**,
   including a changed byte count, a stray blank line, or reordered frontmatter.
 - **Step 10 — line endings are normalized to LF.** A note that was CRLF on disk
-  will come back LF after its first save through the editor. This one *is*
-  expected (Decision 10): confirm it once, then do not report it. On Windows,
-  check with an editor that shows line endings rather than by eye.
+  will come back LF after its first save through the editor — and, since the
+  scan adopted it (F30), was most likely LF already, because adoption
+  converts the whole folder in one sweep. Either way it *is* expected
+  (Decision 10): confirm it once, then do not report it. On Windows, check
+  with an editor that shows line endings rather than by eye.
 - **Step 10 — a second engram must not be affected.** Switch engrams, edit a
   note there, switch back. Both notes keep their own content: each engram has
   its own op-log, and switching closes one before opening the other.
@@ -1222,7 +1224,8 @@ bar easy to watch.
 5. Let the bar finish. Look inside the folder's `.brainframe/`.
 6. **Interrupt:** quit the app (or switch engrams) while the bar is still
    moving on a fresh adoption of a larger folder. Relaunch / switch back.
-7. Open the CRLF file; save an edit; check it in another editor.
+7. Once the bar has finished, check the CRLF file in another editor before
+   opening it in BrainFrame; then open it, save an edit, and check again.
 8. Open a file inside the dot-directory in another editor and look for it in
    BrainFrame.
 
@@ -1230,8 +1233,10 @@ bar easy to watch.
 
 - Step 1: a dialog titled **Adopt this folder?** naming the folder, saying a
   `.brainframe` folder is added inside it, giving the count of files that
-  become notes (**not** counting anything under a dot-directory), and saying
-  Windows line endings are converted to LF as notes are edited.
+  become notes (**not** counting anything under a dot-directory), and — only
+  when there are any — how many of them use Windows line endings and will be
+  converted to LF **now**. A folder with no CRLF text files says nothing
+  about line endings. A CRLF `.png` or other blob is not counted.
 - Step 2: nothing written — no `.brainframe/`, the switcher unchanged.
 - Step 3: the browser switches to the folder at once; a thin progress bar
   with "Adopting notes… *n* of *N*" appears at the top of the sidebar and
@@ -1243,8 +1248,10 @@ bar easy to watch.
 - Step 6: the app comes back with no complaint, the bar resumes with the
   remaining count, and no note appears twice. Nothing is tombstoned by the
   interrupted pass.
-- Step 7: the file is LF **after** its first save through BrainFrame, and
-  was still CRLF on disk before it — adoption itself rewrites nothing.
+- Step 7: the CRLF file is LF on disk as soon as the bar has passed it —
+  before it is ever opened in BrainFrame. Check it in the other editor, then
+  open and save it: no further change. An LF file's modification time is
+  untouched by adoption; a blob's bytes are byte-identical.
 - Step 8: the dot-directory's contents never appear in the tree and never
   gain a note.
 - On every later launch of the same engram there is **no** progress bar: the

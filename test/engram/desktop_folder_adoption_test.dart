@@ -96,8 +96,8 @@ void main() {
       final picked = '${tempRoot.path}/Notes';
       await Directory('$picked/sub').create(recursive: true);
       await Directory('$picked/.obsidian').create(recursive: true);
-      await File('$picked/a.md').writeAsString('a');
-      await File('$picked/sub/b.md').writeAsString('b');
+      await File('$picked/a.md').writeAsString('a\r\n');
+      await File('$picked/sub/b.md').writeAsString('b\n');
       await File('$picked/.obsidian/app.json').writeAsString('{}');
       FolderAdoptionPreview? asked;
 
@@ -118,6 +118,7 @@ void main() {
       expect(engram, isNotNull);
       expect(asked!.name, 'Notes');
       expect(asked!.fileCount, 2, reason: 'the hidden file is not a note');
+      expect(asked!.crlfCount, 1);
       expect(asked!.isEngram, isFalse);
       expect(File('$picked/.brainframe/engram.json').existsSync(), isTrue);
     });

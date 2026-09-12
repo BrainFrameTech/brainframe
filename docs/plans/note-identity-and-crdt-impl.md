@@ -459,10 +459,9 @@ failure.
   inference has a blind spot the app does not: a history-pending note has no
   hash to match, so an inferred rename of one is a tombstone and a fresh mint,
   and the identity the map carried for it is lost. And the scan-mint of a file
-  the catalog has never seen records the file as found rather than rewriting
-  it: seeding normalizes the sequence, and the first save through the editor
-  writes LF, so nothing the user has not touched is rewritten under them —
-  that wholesale change is step 12's, with its warning. **Deferred:** taking
+  the catalog has never seen materializes it, so a CRLF file is rewritten LF
+  as the scan passes — step 12 makes the case for one sweep over a drip, and
+  adds the confirmation that counts them first. **Deferred:** taking
   an *unclaimed* seed on the user's first edit (Decision 9). An adopted note
   whose seed nobody holds is recorded history-pending like any other, its
   edits are written directly, and nothing claims it; the contested-seed
@@ -514,14 +513,25 @@ it. Non-blocking, with progress, and never waiting for a peer.
   become notes, counted through the scan's own filter so the number told is
   the number minted. A folder that is already an engram is opened without
   asking, since nothing new is written.
-- **Line endings are told, not rewritten.** This bullet once said adoption
-  rewrites every file's terminators at first materialization and must warn
-  first. Step 11 changed the premise: the scan records a file as found and
-  rewrites nothing, and Decision 10's normalization reaches the file only
-  when the note is first saved through the editor — so the cost never
-  arrives all at once, and there is no wholesale change to warn about. The
-  confirmation still says it, in one sentence, because a folder under
-  version control would otherwise discover it one diff at a time.
+- **Adoption rewrites line endings, in one sweep, and the user is told
+  first — with the count.** Seeding runs the Decision 10 normalization, and
+  the scan materializes each text note it mints, so every CRLF file in the
+  folder is rewritten LF as adoption passes over it; an LF file is left
+  untouched, mtime and all, and a blob's bytes are never touched. That is a
+  large, immediate change to files the user already owned, made before they
+  have any reason to trust the app — and it is still the right one, because
+  the alternative is worse for exactly the person who would notice either.
+  Step 11 briefly left the file as found, so that normalization reached it
+  only on the note's first save through the editor; that turns one warned,
+  one-time change into a drip of terminator diffs mixed in with real edits,
+  for as long as it takes the user to open every note, which for a large
+  folder may be never. Someone with the folder under version control can commit
+  one sweep on its own; they cannot separate a drip. So the confirmation
+  counts the files that will be rewritten and says so before anything is
+  written, and the sweep happens at adoption. The first scan of an existing
+  engram makes the same sweep, unprompted: that launch has no dialog, the
+  design accepted the cost when it accepted Decision 10, and the manual test
+  plan tells testers to expect it.
 - **Landed as: the scan runs behind the UI, with a progress bar in the
   sidebar.** The session host publishes the session the moment it opens and
   starts the scan without waiting; the reconciler reports its progress

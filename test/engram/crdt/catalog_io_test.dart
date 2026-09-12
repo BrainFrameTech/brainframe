@@ -311,6 +311,23 @@ void main() {
     });
   });
 
+  group('findable', () {
+    test('returns everything but tombstones, ordered by path', () {
+      // The notes whose file this device expects to find: an absent one has
+      // gone somewhere, and which is the scan's to work out.
+      final live = row(path: 'b.md');
+      final pending = row(path: 'a.md', state: NoteState.historyPending);
+      final offline = row(path: 'c.md', state: NoteState.unavailable);
+      catalog
+        ..upsert(live)
+        ..upsert(pending)
+        ..upsert(offline)
+        ..upsert(row(path: 'gone.md', state: NoteState.tombstoned));
+
+      expect(catalog.findable(), [pending, live, offline]);
+    });
+  });
+
   group('a row it cannot read is refused, not half-read', () {
     /// Writes [value] straight into a column, standing in for a row another
     /// build — or a person with a SQLite browser — left behind.

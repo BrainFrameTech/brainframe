@@ -15,9 +15,11 @@ import 'crdt_session_scope.dart';
 import '../built_in_engrams.dart';
 import '../engram.dart';
 import '../engram_file_ops.dart';
+import '../engram_paths.dart';
 import '../engram_repository.dart';
 import '../engram_scope.dart';
 import '../engram_store.dart';
+import '../note_reconciler.dart';
 import 'browser_preferences.dart';
 import 'engram_switcher.dart';
 import 'file_tree.dart';
@@ -477,6 +479,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
     parent ??= _targetFolder;
     final store = _contentStore;
     if (store == null) return;
+    final notes = _notes;
     final l10n = AppLocalizations.of(context);
     final name = await showDialog<String>(
       context: context,
@@ -497,10 +500,21 @@ class _EngramBrowserState extends State<EngramBrowser> {
     final stem = EngramFileOps.freeName(_sanitizeName(name), existingStems);
     final notePath = parent.isEmpty ? '$stem.md' : '$parent/$stem.md';
     await store.writeString(notePath, '# ${_noteTitle(stem)}\n');
+    await notes?.noteCreated(notePath);
     if (!mounted) return;
     setState(() => _drawerOpen = false);
     _refresh(selectPath: notePath);
   }
+
+  /// The note catalog's ear for what this browser does to files, or null
+  /// when the engram has no catalog: a read-only engram, a platform without
+  /// SQLite, a widget test that installed no session.
+  ///
+  /// Every create, rename, move, and delete here is reported to it, because
+  /// the app knows what it did and the next scan would only be inferring —
+  /// and an inferred rename of a note whose history has not arrived is a
+  /// tombstone and a fresh mint, with the identity the map carried lost.
+  NoteReconciler? get _notes => CrdtSessionScope.maybeReconcilerOf(context);
 
   /// Prompts for a name and creates a new empty folder inside [parent]
   /// (defaulting to [_targetFolder]), visible in the tree via
@@ -561,6 +575,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
   Future<void> _deleteEntry(FileTreeNode node, String fullPath) async {
     final store = _contentStore;
     if (store == null) return;
+    final notes = _notes;
     final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -589,9 +604,12 @@ class _EngramBrowserState extends State<EngramBrowser> {
     if (confirmed != true || !mounted) return;
 
     if (node.isFolder) {
-      await EngramFileOps(store).deleteFolder(fullPath);
+      for (final path in await EngramFileOps(store).deleteFolder(fullPath)) {
+        await notes?.noteDeleted(path);
+      }
     } else {
       await store.delete(fullPath);
+      await notes?.noteDeleted(fullPath);
     }
     if (!mounted) return;
     _refresh();
@@ -605,6 +623,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
   Future<void> _moveEntry(FileTreeNode node, String fullPath) async {
     final store = _contentStore;
     if (store == null) return;
+    final notes = _notes;
     final currentParent = _parentOf(fullPath);
     final candidates = <String>[
       for (final dir in await store.listDirectories())
@@ -642,11 +661,16 @@ class _EngramBrowserState extends State<EngramBrowser> {
     final newPath = dest.isEmpty ? newName : '$dest/$newName';
 
     if (node.isFolder) {
-      await EngramFileOps(store).moveFolder(fullPath, newPath);
+      for (final (from, to) in await EngramFileOps(
+        store,
+      ).moveFolder(fullPath, newPath)) {
+        await notes?.noteMoved(from, to);
+      }
       if (!mounted) return;
       _refresh(selectPath: _selectionAfterFolderMove(fullPath, newPath));
     } else {
       await store.move(fullPath, newPath);
+      await notes?.noteMoved(fullPath, newPath);
       if (!mounted) return;
       _refresh(selectPath: _selectedPath == fullPath ? newPath : null);
     }
@@ -659,6 +683,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
   Future<void> _renameEntry(FileTreeNode node, String fullPath) async {
     final store = _contentStore;
     if (store == null) return;
+    final notes = _notes;
     final l10n = AppLocalizations.of(context);
     final isFolder = node.isFolder;
     final extension = isFolder ? '' : _extensionOf(node.name);
@@ -690,7 +715,11 @@ class _EngramBrowserState extends State<EngramBrowser> {
       final newName = EngramFileOps.freeName(desiredStem, siblings);
       if (newName == node.name) return; // unchanged
       final newPath = parent.isEmpty ? newName : '$parent/$newName';
-      await EngramFileOps(store).renameFolder(fullPath, newName);
+      for (final (from, to) in await EngramFileOps(
+        store,
+      ).renameFolder(fullPath, newName)) {
+        await notes?.noteMoved(from, to);
+      }
       if (!mounted) return;
       _refresh(selectPath: _selectionAfterFolderMove(fullPath, newPath));
     } else {
@@ -706,6 +735,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
       if (newName == node.name) return; // unchanged
       final newPath = parent.isEmpty ? newName : '$parent/$newName';
       await store.move(fullPath, newPath);
+      await notes?.noteMoved(fullPath, newPath);
       if (!mounted) return;
       _refresh(selectPath: _selectedPath == fullPath ? newPath : null);
     }

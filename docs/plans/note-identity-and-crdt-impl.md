@@ -453,6 +453,22 @@ failure.
   dot-directories produces catalog rows for the visible notes and none for the
   hidden paths; a file that *becomes* hidden by a rename into a dot-directory
   is a deletion, not a move.
+- **Landed with two things the sketch did not name, and one deferral.** The
+  app's own file management reports to the catalog explicitly — created,
+  moved, deleted — rather than leaving the next scan to infer it, because
+  inference has a blind spot the app does not: a history-pending note has no
+  hash to match, so an inferred rename of one is a tombstone and a fresh mint,
+  and the identity the map carried for it is lost. And the scan-mint of a file
+  the catalog has never seen records the file as found rather than rewriting
+  it: seeding normalizes the sequence, and the first save through the editor
+  writes LF, so nothing the user has not touched is rewritten under them —
+  that wholesale change is step 12's, with its warning. **Deferred:** taking
+  an *unclaimed* seed on the user's first edit (Decision 9). An adopted note
+  whose seed nobody holds is recorded history-pending like any other, its
+  edits are written directly, and nothing claims it; the contested-seed
+  retraction that only that claim can provoke is deferred with it. Both are
+  additive, and neither is needed until a map can outlive every op-log behind
+  it, which no code path produces yet.
 
 ### Step 12 — Adopting a folder with no `.brainframe/`
 

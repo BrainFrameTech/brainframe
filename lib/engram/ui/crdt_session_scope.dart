@@ -169,7 +169,9 @@ class CrdtSessionScope extends InheritedWidget {
   /// engram has no op-log — in which case nothing can drift from anything.
   final NoteReconciler? reconciler;
 
-  /// The writer for the nearest host, or null if there is no host at all.
+  /// The writer published by the enclosing [CrdtSessionHost] widget — the
+  /// closest one up the widget tree from [context] — or null if this widget
+  /// is not under one at all.
   ///
   /// Null is an ordinary answer, not a failure: it means "write to the store",
   /// which is correct for a read-only engram, for web, and for any widget test
@@ -178,8 +180,9 @@ class CrdtSessionScope extends InheritedWidget {
       .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
       ?.writer;
 
-  /// The reconciler for the nearest host, or null if there is none — the same
-  /// three cases as [maybeOf], and null means "nothing to reconcile against".
+  /// The reconciler published by the enclosing [CrdtSessionHost] widget, or
+  /// null if there is none — the same three cases as [maybeOf], and null
+  /// means "nothing to reconcile against".
   static NoteReconciler? maybeReconcilerOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
       ?.reconciler;

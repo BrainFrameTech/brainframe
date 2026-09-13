@@ -12,6 +12,7 @@
 /// device-local store's strictness stance is expressed in exactly one place.
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crdt_lf/crdt_lf.dart';
@@ -69,8 +70,9 @@ const Set<String> fugueTextExtensions = {'md', 'markdown', 'txt', 'text'};
 ///
 /// A name with no dot after its last separator — `LICENSE` — and a dotfile
 /// with no further dot — `.gitignore` — both have no extension and are
-/// therefore blobs. Derivation is v1's rule only: policy is fixed at note
-/// creation, and the column's ability to change is reserved, not built.
+/// therefore blobs. Derivation is the rule at creation only: a text note
+/// that grows past [noteSizeCapabilityBytes] may later become a blob, one
+/// way and by the user's consent (the note size ceiling design, Decision 3).
 MergePolicy mergePolicyForPath(String path) =>
     fugueTextExtensions.contains(_extensionOf(path))
     ? MergePolicy.fugueText
@@ -85,6 +87,48 @@ String _extensionOf(String path) {
   if (dot <= separator + 1) return '';
   return path.substring(dot + 1).toLowerCase();
 }
+
+/// The largest text note this build can hold, in bytes on disk: 128 KiB.
+///
+/// This is a *capability*, not the limit an engram enforces. The note size
+/// ceiling design records the enforced value per engram (its Decision 7), and
+/// an engram's value may be lower than this — never higher, or this build
+/// refuses to open it. Until step 16 lands that field, every engram's
+/// ceiling is this number.
+///
+/// The unit is bytes of UTF-8 as the file exists on disk, frontmatter
+/// included, line endings as found — not characters and not code units
+/// (Decision 1). It is the one measure a user can check with `ls -l`, and
+/// it errs in the safe direction: UTF-8 bytes are never fewer than the
+/// UTF-16 code units the Fugue tree allocates one element for, so a note
+/// under this many bytes is under this many elements. The value comes from
+/// ~550 bytes per element on the 512 MB Raspberry Pi Zero 2 W, the smallest
+/// target, where the app holds one document at a time; see the companion
+/// design's "Performance envelope".
+const int noteSizeCapabilityBytes = 128 * 1024;
+
+/// The size of [text] as the materializer would write it: its UTF-8 length.
+///
+/// The one function every door measures a note through, so the editor and
+/// the scan can never disagree about the same note. The scan has the file's
+/// size from a `stat` and needs no decode; the editor has a Dart string,
+/// whose `length` is UTF-16 code units and would let a CJK note past the
+/// ceiling — three bytes on disk for every unit — which is why this exists
+/// rather than a comparison against `text.length` at each call site.
+///
+/// [text] is expected to be LF-normalized already, as every buffer and every
+/// sequence is (Decision 10); this is then exactly the size the file will
+/// have. A caller with a raw file's bytes should measure those directly.
+int noteSizeInBytes(String text) => utf8.encode(text).length;
+
+/// Where the editor starts warning that a note is approaching [ceiling]:
+/// 90 % of it, rounded up — 117,965 bytes for the 128 KiB capability.
+///
+/// One tier, the same on every target (Decision 2 rules out a per-target
+/// soft limit); a little over 10 KiB of headroom at the capability, about
+/// two pages of prose. Takes the ceiling rather than assuming the capability
+/// because the ceiling is the engram's (Decision 7).
+int noteSizeWarningBytes(int ceiling) => (ceiling * 9 + 9) ~/ 10;
 
 /// What this device currently believes about a note's existence.
 enum NoteState {

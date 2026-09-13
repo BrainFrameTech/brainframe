@@ -11,7 +11,9 @@
 The design is whole and accepted; this plan is only about **how it lands**.
 It takes the design's five-phase suggestion and decomposes it into fifteen
 steps, each of which is one worktree, one branch, and one pull request to
-review — per the git-workflow rule.
+review — per the git-workflow rule. Steps 15–23 were added later, for the
+[note size ceiling](../design/note-size-ceiling.md) design, in the same
+shape.
 
 The scope is the design's scope, unchanged: identity, the local op-log,
 materialization, and reconciliation. No network, no transport, no peer
@@ -75,8 +77,9 @@ lib/engram/crdt/
 
 ## Build order
 
-Fifteen steps, fifteen PRs. Step 0 is near-trivial and independent; fold it
-into step 1 if you would rather not review a two-line resource diff.
+Fifteen steps, fifteen PRs, then nine more for the ceiling. Step 0 is
+near-trivial and independent; fold it into step 1 if you would rather not
+review a two-line resource diff.
 
 ### Step 0 — Windows: separate debug and release identity (#117)
 
@@ -724,6 +727,142 @@ and is not made here.
   including one byte; the filesystem store's `openRead` yields more than one
   chunk for a file larger than `dart:io`'s 64 KiB read size.
 
+## The note size ceiling — steps 15–23
+
+The [note size ceiling](../design/note-size-ceiling.md) design is accepted;
+these are its steps, one PR each, tracked as **#157**. Its decisions are
+cited by number below. The order is foundation first — the constant and the
+per-engram value are what every later step checks against — then the writer
+a converted note needs, then the doors, then the surface that shows them.
+
+### Step 15 — The capability constant and the size helper
+
+`noteSizeCapabilityBytes` (128 KiB) beside `fugueTextExtensions` in
+[catalog.dart](../../lib/engram/crdt/catalog.dart), with `noteSizeInBytes`
+— the UTF-8 length of a buffer, never `String.length`, which is code units
+and would let a CJK note past the ceiling — and `noteSizeWarningBytes`, 90 %
+of a given ceiling rounded up (Decisions 1, 5). Nothing consults them yet;
+this step exists so every later door measures through one function on one
+constant, the way every terminator door goes through `normalizeTerminators`.
+
+- **Tests that matter:** the capability is pinned as a literal, so changing
+  it is a change to that line; a CJK string measures three bytes per code
+  unit and an emoji four for two; bytes are never fewer than code units — the
+  property the byte limit's safety rests on; the warning is 117,965 at the
+  capability and scales with the ceiling it is given.
+
+### Step 16 — The ceiling in `engram.json`
+
+The field, read at engram open; absent means 128 KiB, the value that was
+implicitly true; a new engram records the creating build's capability;
+**refuse to open** an engram whose value exceeds this build's capability,
+the way an unreadable `schemaVersion` is refused, with a message naming the
+fix; and a newer build **never writes the field on open** (Decision 7). The
+Housekeeping job that changes it is step 23.
+
+- **Tests that matter:** an engram with no field opens at 128 KiB; one
+  recording 64 KiB is enforced at 64 KiB; one recording 256 KiB is refused
+  by a 128 KiB build with the message; opening never rewrites the file.
+
+### Step 17 — A writer for plain-file notes
+
+`BlobNoteWriter`: write the file directly, then `BlobDocument.record` with
+its digest — whole-file last-writer-wins through the existing `NoteWriter`
+seam, so a `blobLww` note with a text extension is editable (Decision 3).
+The session hands the editor the writer the note's policy calls for.
+
+- **Tests that matter:** a save writes the file and one register claim;
+  saving the same text again writes nothing; the editor opens a `.md` blob
+  and saves through this writer, never `CrdtNoteWriter`.
+
+### Step 18 — Oversized arrivals
+
+The scan's mint path checks the `stat` size before any read: a text file
+over the engram's ceiling is minted as a `blobLww` note and reported with a
+new scan-history event kind, *oversized on arrival* (Decisions 4, 6). The
+adoption's completion states the count; the ledger counts plain-file text
+notes. The fixture gains a note just over 128 KiB.
+
+- **Tests that matter:** a 129 KiB `.md` arrives as a blob with an event of
+  the new kind; one at exactly 128 KiB arrives as text; the file is never
+  read whole to decide (the `_NoWholeBlobStore` pattern from #153); the
+  adoption count and the ledger count are right.
+
+### Step 19 — Conversion, here and from elsewhere
+
+Converting a text note: clear the ULID's op-log, write one register claim,
+flip the catalog row's policy and drop its sketch, publish the policy in the
+identity map — event kind *converted* (Decision 3). And following a
+conversion another device made: a `merge_policy` change from the map is
+applied to a **known** catalog row (today only unknown paths take one from
+the map), with event kind *converted elsewhere* carrying the count of
+unsynced local edits now unreachable (Decision 4). No UI yet; the doors that
+call this are steps 20 and 22.
+
+- **Tests that matter:** after conversion the log holds one claim and
+  `NoteDocument.open` refuses the note; two devices — one converts, the
+  other scans — converge on `blobLww` and the follower's report says so;
+  a policy row in the map never changes a row in the *other* direction.
+
+### Step 20 — The external-edit door
+
+A tracked text note the scan finds over the ceiling enters a persisted
+*oversized, awaiting decision* `NoteState`, is listed in Housekeeping, and
+opens read-only. Its two verbs: **reconstruct** — materialize the CRDT's
+last state over the file, keeping the oversized version beside it as
+`<name> (oversized).<ext>` — or **convert** (step 19) (Decision 4). The
+state survives a restart.
+
+- **Tests that matter:** the state persists across a session close and
+  reopen; the scan does not touch the file while pending; reconstruct
+  restores the last materialized text and the kept copy is byte-identical to
+  the external one; the kept copy is minted as a blob on the next scan;
+  convert leaves the file as found.
+
+### Step 21 — The status bar
+
+At the bottom of the editor: bytes with thousands separators, words as
+whitespace runs, lines as LF count plus one; recomputed on the controller's
+change notification; no animation; the limit shown beside the bytes only in
+the warning and wall states; the warning at `noteSizeWarningBytes` as a
+labeled button whose popup says what is coming and what to do; and, for a
+plain-file note with a text extension, the regime line in the warning's
+slot (Decision 5). Every string through `AppLocalizations`. The fixture
+gains a note just under the warning. First user-visible step of the ceiling;
+the manual test plan gains its case.
+
+- **Tests that matter:** the three counts on a known text, including a CJK
+  one; the warning appears at 117,965 and not at 117,964; the popup's
+  Semantics; the regime line for a blob `.md` and not for a text one.
+
+### Step 22 — The wall
+
+A paste that would cross the ceiling is refused at the paste with the popup:
+undo the paste or convert. Typing past it is allowed; the save is withheld,
+the chip says so, the bar is in the wall state, and the popup offers roll
+back to the last saved version or convert. The external-edit door of step 20
+opens on the same surface with reconstruct or convert (Decisions 4, 5).
+Conversion calls step 19. Manual test plan: the wall by paste and by typing,
+and the external door.
+
+- **Tests that matter:** a paste landing at 131,073 bytes is refused and the
+  buffer is unchanged; typing to 131,073 leaves the buffer intact and the
+  file unsaved; roll back restores the last saved text; convert saves the
+  buffer through the plain-file writer and the log holds one claim.
+
+### Step 23 — Housekeeping
+
+Tap-to-open on scan cards' paths, so the notice of an oversized or converted
+note leads to it; and the job that changes an engram's ceiling, in either
+direction, with a counted confirmation — *devices older than X will no
+longer open it* / *N notes are over that and will be asked* — that states
+the consequence before anything happens (Decisions 6, 7). Manual test plan:
+the job, and the engram-open refusal from step 16 seen from the other side.
+
+- **Tests that matter:** lowering counts exactly the notes between the
+  limits and puts them in step 20's state; raising writes the field and
+  nothing else; the confirmation's numbers match what the job then does.
+
 ## Rules that apply to every step
 
 - **One worktree, one branch, one PR**, per the git-workflow rule, reviewed
@@ -784,12 +923,9 @@ and is not made here.
 
 ## Questions this plan does not answer
 
-- **What happens above the note-size ceiling** is now answered — the
+- ~~What happens above the note-size ceiling.~~ Answered by the
   [note size ceiling](../design/note-size-ceiling.md) design, which closed
-  **#124** — but not yet planned. **#157** carries its "What this asks of
-  the implementation" list as the steps to add here; none of them is any of
-  the fifteen above, and the scan's mint path is still where the check
-  lands. Until those steps exist, no step here may quietly add a limit.
+  **#124**, and planned as steps 15–23 above, tracked as **#157**.
 - **Snapshot and compaction policy** (**#118**). Purely local use has no
   stranded peers, so it stays deferred — but it must be settled before
   **#67**, which is the moment peers below the frontier become possible.

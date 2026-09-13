@@ -110,6 +110,58 @@ void main() {
     });
   });
 
+  group('the note size ceiling (Decision 1)', () {
+    test('the capability is 128 KiB, in bytes', () {
+      // Pinned as a number, not an expression, so a change to it is a
+      // change to this line — the value is part of the shared format.
+      expect(noteSizeCapabilityBytes, 131072);
+    });
+
+    test('a note is measured in UTF-8 bytes, never code units', () {
+      // ASCII: one byte per unit, so the two agree.
+      expect(noteSizeInBytes('hello'), 5);
+      expect(noteSizeInBytes(''), 0);
+      // CJK: three bytes per unit. String.length would say 3; the file on
+      // disk is 9, and 9 is what the ceiling is stated in.
+      expect('日本語'.length, 3);
+      expect(noteSizeInBytes('日本語'), 9);
+      // An emoji: two code units, four bytes. Bytes are never the smaller.
+      expect('😀'.length, 2);
+      expect(noteSizeInBytes('😀'), 4);
+      // A terminator is one byte; a buffer is LF-normalized, so this is the
+      // file's size exactly.
+      expect(noteSizeInBytes('a\nb\n'), 4);
+    });
+
+    test('bytes are never fewer than code units', () {
+      // The property the byte limit's safety rests on: under the ceiling in
+      // bytes means under it in Fugue elements.
+      for (final sample in ['plain', 'naïve', 'Ωmega', '日本語', '😀🏳️‍🌈', '']) {
+        expect(
+          noteSizeInBytes(sample),
+          greaterThanOrEqualTo(sample.length),
+          reason: sample,
+        );
+      }
+    });
+
+    test('the warning is 90 % of the ceiling, rounded up', () {
+      expect(noteSizeWarningBytes(noteSizeCapabilityBytes), 117965);
+      expect(noteSizeWarningBytes(100), 90);
+      expect(noteSizeWarningBytes(101), 91, reason: '90.9 rounds up');
+      expect(noteSizeWarningBytes(0), 0);
+    });
+
+    test('the warning takes the ceiling it is given, not the capability', () {
+      // Decision 7: an engram's ceiling may be lower than this build's.
+      expect(noteSizeWarningBytes(64 * 1024), 58983);
+      expect(
+        noteSizeWarningBytes(64 * 1024),
+        lessThan(noteSizeWarningBytes(noteSizeCapabilityBytes)),
+      );
+    });
+  });
+
   group('NoteState', () {
     test('round-trips through its stored spelling', () {
       for (final state in NoteState.values) {

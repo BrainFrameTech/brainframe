@@ -40,6 +40,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../engram_paths.dart';
 import '../engram_store.dart';
@@ -322,7 +323,11 @@ class DriftReconciler implements NoteReconciler {
       for (final path in unknown) {
         if (_closed) break;
         try {
-          final match = await _matchMissing(path, missing);
+          // One pass over the file, shared by the match and the mint: a
+          // blob is digested over a stream and its bytes are never held;
+          // text is read whole, since the sketch and the seed need it.
+          final content = await _NewFile.read(engram, path);
+          final match = await _matchMissing(path, content, missing);
           if (match != null) {
             missing.remove(match);
             moved[match.path] = path;
@@ -331,7 +336,7 @@ class DriftReconciler implements NoteReconciler {
             }
             continue;
           }
-          switch (await _bringIn(path, merged!)) {
+          switch (await _bringIn(path, content, merged!)) {
             case _Arrival.minted:
               created.add(path);
             case _Arrival.adopted:
@@ -426,6 +431,7 @@ class DriftReconciler implements NoteReconciler {
     // which re-reads anyway) is the fix if it ever shows up in a profile.
     final arrival = await _bringIn(
       path,
+      await _NewFile.read(engram, path),
       mergeIdentity(await map.map.readEveryDevicesRows()),
     );
     // Present means a scan got there first while this was waiting on the
@@ -499,7 +505,8 @@ class DriftReconciler implements NoteReconciler {
             store: database,
             engram: engram,
             row: current,
-            bytes: bytes,
+            digest: ContentDigest(hash: onDiskHash, size: bytes.length),
+            text: utf8.decode(bytes),
           );
         }
         return false;
@@ -547,14 +554,16 @@ class DriftReconciler implements NoteReconciler {
   /// second device that later receives it knows which bytes won.
   Future<bool> _reconcileBlob(CatalogRow current, FileFingerprint stat) async {
     if (!mayHaveDrifted(current, stat)) return false;
-    final bytes = await engram.readBytes(current.path);
-    if (!hasDrifted(current, contentHash(bytes))) return false;
+    // Streamed, never read whole: a blob may be larger than memory, and the
+    // only thing anything below needs to know about it is its digest.
+    final digest = await digestFile(engram, current.path);
+    if (!hasDrifted(current, digest.hash)) return false;
 
     var claimed = false;
     try {
       final blob = BlobDocument.open(store: database, ulid: current.ulid);
       try {
-        claimed = blob.record(bytes);
+        claimed = blob.record(digest);
       } finally {
         blob.dispose();
       }
@@ -568,7 +577,7 @@ class DriftReconciler implements NoteReconciler {
       store: database,
       engram: engram,
       row: current,
-      bytes: bytes,
+      digest: digest,
     );
     if (claimed) _reconciled.add(current.path);
     return claimed;
@@ -577,15 +586,16 @@ class DriftReconciler implements NoteReconciler {
   // ---------------------------------------------------------- Decision 7
 
   /// The missing note that the new file at [path] is, if any: an exact
-  /// content match first, then the closest sketch above the cutoff. On a
-  /// match the note is re-pointed at [path] and the match is returned.
+  /// content match first, then — for text, whose bytes [content] holds —
+  /// the closest sketch above the cutoff. On a match the note is re-pointed
+  /// at [path] and the match is returned.
   Future<CatalogRow?> _matchMissing(
     String path,
+    _NewFile content,
     List<CatalogRow> missing,
   ) async {
     if (missing.isEmpty) return null;
-    final bytes = await engram.readBytes(path);
-    final hash = contentHash(bytes);
+    final hash = content.digest.hash;
 
     CatalogRow? match;
     for (final candidate in missing) {
@@ -595,7 +605,8 @@ class DriftReconciler implements NoteReconciler {
       }
     }
 
-    if (match == null && mergePolicyForPath(path) == MergePolicy.fugueText) {
+    final bytes = content.bytes;
+    if (match == null && bytes != null) {
       final sketch = computeSketch(utf8.decode(bytes));
       var best = 0.0;
       for (final candidate in missing) {
@@ -621,116 +632,126 @@ class DriftReconciler implements NoteReconciler {
   /// Brings a file the catalog does not know into it, as the identity map
   /// says: minted and seeded if nobody claims the path, adopted without a
   /// seed if another device does, recovered if this device's own map does.
-  Future<_Arrival> _bringIn(String path, MergedIdentity merged) =>
-      lock.run(() async {
-        if (database.catalog.byPath(path) != null) return _Arrival.present;
-        final map = identity!;
-        final bytes = await engram.readBytes(path);
+  ///
+  /// [content] was read before the lock was taken, so a save that lands in
+  /// between seeds from bytes a moment old. That is the same window the
+  /// crash-ordering case already tolerates: the next scan sees the file
+  /// differ from what was seeded and reconciles it. Reading under the lock
+  /// instead would cost a blob a second full pass, which is the thing a
+  /// video cannot afford.
+  Future<_Arrival> _bringIn(
+    String path,
+    _NewFile content,
+    MergedIdentity merged,
+  ) => lock.run(() async {
+    if (database.catalog.byPath(path) != null) return _Arrival.present;
+    final map = identity!;
 
-        switch (dispositionForPath(merged, path, self: map.map.peerId)) {
-          case NoteDisposition.mint:
-            // One shape per policy (Decision 3): a text note is seeded from
-            // the file's full text as a single insert, a blob's register from
-            // its hash and size — the op-log never carries a blob's bytes.
-            // Either is disposed once the seed is durable, so a folder of
-            // notes costs one document at a time.
-            final CatalogRow committed;
-            if (mergePolicyForPath(path) == MergePolicy.fugueText) {
-              final note = NoteDocument.mint(
-                store: database,
-                path: path,
-                content: utf8.decode(bytes),
-              );
-              try {
-                // Materialized, which is where Decision 10 lands on disk: a
-                // CRLF file is rewritten LF here, in the one sweep adoption
-                // makes over the folder, rather than one note at a time as
-                // each is first edited. A drip of terminator changes over
-                // months — never ending, if some notes are never opened —
-                // is the worse experience for exactly the user who would
-                // notice either, one with the folder under version control;
-                // one warned, one-time change is something they can commit
-                // on its own. The confirmation states the count first. A
-                // file already LF is left untouched, mtime and all.
-                committed = await materializeNote(
-                  store: database,
-                  engram: engram,
-                  note: note,
-                  onDiskHash: contentHash(bytes),
-                );
-              } finally {
-                note.dispose();
-              }
-            } else {
-              final blob = BlobDocument.mint(
-                store: database,
-                path: path,
-                bytes: bytes,
-              );
-              // Just written by mint, under this same lock; a missing row
-              // here is a bug, and a named exception says so rather than a
-              // bare null-check failure.
-              final minted = database.catalog.byUlid(blob.ulid);
-              if (minted == null) throw UnknownNoteException(blob.ulid);
-              try {
-                // A blob's bytes are never normalized and never rewritten;
-                // the file is the only copy. It is recorded as found so a
-                // later move can be matched by hash.
-                committed = await recordFileState(
-                  store: database,
-                  engram: engram,
-                  row: minted,
-                  bytes: bytes,
-                );
-              } finally {
-                blob.dispose();
-              }
-            }
-            map.record(committed, deleted: false);
-            return _Arrival.minted;
-
-          case NoteDisposition.adoptPending:
-          case NoteDisposition.adoptClaimable:
-            // Never seed under a ULID this device did not mint: two seeds of
-            // one document id are disjoint element universes, and the merge
-            // concatenates rather than recognises. History-pending until a
-            // log arrives; an unclaimed seed is taken on the first edit, and
-            // that door is not built yet — the row records the honest state
-            // and the writer treats both alike.
-            final row = merged.forPath(path)!;
-            database.catalog.upsert(
-              CatalogRow(
-                ulid: row.ulid,
-                path: path,
-                mergePolicy: row.mergePolicy,
-                state: NoteState.historyPending,
-                seedClaim: row.seedClaim,
-              ),
+    switch (dispositionForPath(merged, path, self: map.map.peerId)) {
+      case NoteDisposition.mint:
+        // One shape per policy (Decision 3): a text note is seeded from
+        // the file's full text as a single insert, a blob's register from
+        // its digest — the op-log never carries a blob's bytes, and
+        // neither does this method. Either is disposed once the seed is
+        // durable, so a folder of notes costs one document at a time.
+        final CatalogRow committed;
+        final bytes = content.bytes;
+        if (bytes != null) {
+          final note = NoteDocument.mint(
+            store: database,
+            path: path,
+            content: utf8.decode(bytes),
+          );
+          try {
+            // Materialized, which is where Decision 10 lands on disk: a
+            // CRLF file is rewritten LF here, in the one sweep adoption
+            // makes over the folder, rather than one note at a time as
+            // each is first edited. A drip of terminator changes over
+            // months — never ending, if some notes are never opened —
+            // is the worse experience for exactly the user who would
+            // notice either, one with the folder under version control;
+            // one warned, one-time change is something they can commit
+            // on its own. The confirmation states the count first. A
+            // file already LF is left untouched, mtime and all.
+            committed = await materializeNote(
+              store: database,
+              engram: engram,
+              note: note,
+              onDiskHash: content.digest.hash,
             );
-            return _Arrival.adopted;
-
-          case NoteDisposition.alreadyOurs:
-            // Our own map, but no catalog row: the local database was lost.
-            // Identity survives, history does not. The row is live with our
-            // seed claim, an empty log, and no hash — "this device has never
-            // written this file" — so the next reconciliation of it seeds
-            // the empty document from the file. That is the one seed this
-            // device is entitled to make again, because it made the first;
-            // a peer that still holds the old log will see two, which is
-            // #67's to notice from the claim's clock.
-            final row = merged.forPath(path)!;
-            database.catalog.upsert(
-              CatalogRow(
-                ulid: row.ulid,
-                path: path,
-                mergePolicy: row.mergePolicy,
-                state: NoteState.live,
-                seedClaim: row.seedClaim,
-              ),
+          } finally {
+            note.dispose();
+          }
+        } else {
+          final blob = BlobDocument.mint(
+            store: database,
+            path: path,
+            digest: content.digest,
+          );
+          // Just written by mint, under this same lock; a missing row
+          // here is a bug, and a named exception says so rather than a
+          // bare null-check failure.
+          final minted = database.catalog.byUlid(blob.ulid);
+          if (minted == null) throw UnknownNoteException(blob.ulid);
+          try {
+            // A blob's bytes are never normalized and never rewritten;
+            // the file is the only copy. It is recorded as found so a
+            // later move can be matched by hash.
+            committed = await recordFileState(
+              store: database,
+              engram: engram,
+              row: minted,
+              digest: content.digest,
             );
-            return _Arrival.adopted;
+          } finally {
+            blob.dispose();
+          }
         }
-      });
+        map.record(committed, deleted: false);
+        return _Arrival.minted;
+
+      case NoteDisposition.adoptPending:
+      case NoteDisposition.adoptClaimable:
+        // Never seed under a ULID this device did not mint: two seeds of
+        // one document id are disjoint element universes, and the merge
+        // concatenates rather than recognises. History-pending until a
+        // log arrives; an unclaimed seed is taken on the first edit, and
+        // that door is not built yet — the row records the honest state
+        // and the writer treats both alike.
+        final row = merged.forPath(path)!;
+        database.catalog.upsert(
+          CatalogRow(
+            ulid: row.ulid,
+            path: path,
+            mergePolicy: row.mergePolicy,
+            state: NoteState.historyPending,
+            seedClaim: row.seedClaim,
+          ),
+        );
+        return _Arrival.adopted;
+
+      case NoteDisposition.alreadyOurs:
+        // Our own map, but no catalog row: the local database was lost.
+        // Identity survives, history does not. The row is live with our
+        // seed claim, an empty log, and no hash — "this device has never
+        // written this file" — so the next reconciliation of it seeds
+        // the empty document from the file. That is the one seed this
+        // device is entitled to make again, because it made the first;
+        // a peer that still holds the old log will see two, which is
+        // #67's to notice from the claim's clock.
+        final row = merged.forPath(path)!;
+        database.catalog.upsert(
+          CatalogRow(
+            ulid: row.ulid,
+            path: path,
+            mergePolicy: row.mergePolicy,
+            state: NoteState.live,
+            seedClaim: row.seedClaim,
+          ),
+        );
+        return _Arrival.adopted;
+    }
+  });
 
   /// A note gone from the folder with nothing to show for it.
   Future<void> _tombstone(CatalogRow row) => lock.run(() async {
@@ -810,3 +831,25 @@ class DriftReconciler implements NoteReconciler {
 /// How a file the catalog did not know was brought in — or was found to be in
 /// already, because the editor opened it before the scan reached it.
 enum _Arrival { minted, adopted, present }
+
+/// What one pass over a new file established, shared by the match and the
+/// mint so a file is read once per scan.
+///
+/// A blob is digested over a stream and [bytes] is null: nothing downstream
+/// needs more than its digest, and a video is a blob like any other. Text is
+/// read whole, because the sketch and the seed both need it, and it is
+/// bounded by the note-size ceiling.
+class _NewFile {
+  const _NewFile(this.digest, this.bytes);
+
+  static Future<_NewFile> read(EngramStore engram, String path) async {
+    if (mergePolicyForPath(path) == MergePolicy.fugueText) {
+      final bytes = await engram.readBytes(path);
+      return _NewFile(ContentDigest.of(bytes), bytes);
+    }
+    return _NewFile(await digestFile(engram, path), null);
+  }
+
+  final ContentDigest digest;
+  final Uint8List? bytes;
+}

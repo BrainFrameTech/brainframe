@@ -77,6 +77,11 @@ class FileSystemEngramStore extends EngramStore {
   Future<Uint8List> readBytes(String path) =>
       File(_resolve(path)).readAsBytes();
 
+  /// The real stream: `dart:io` reads the file in 64 KiB chunks, so hashing
+  /// a multi-gigabyte file holds one chunk at a time.
+  @override
+  Stream<List<int>> openRead(String path) => File(_resolve(path)).openRead();
+
   @override
   Future<void> writeBytes(String path, Uint8List bytes) async {
     _refuseMarker(path);

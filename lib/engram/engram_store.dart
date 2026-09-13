@@ -82,6 +82,21 @@ abstract class EngramStore {
   /// Reads the raw bytes of the file at engram-relative [path].
   Future<Uint8List> readBytes(String path);
 
+  /// Reads the file at engram-relative [path] as a stream of chunks, so a
+  /// caller that only needs to pass over the bytes — hashing them, searching
+  /// them — never holds the whole file at once.
+  ///
+  /// A blob is any file that is not text, and a video dropped into an engram
+  /// folder is a blob like any other; the targets this app runs on cannot
+  /// hold one in memory. Defaults to [readBytes] delivered as a single chunk,
+  /// which is correct for every backend that has no streaming primitive —
+  /// the asset bundle, the test fakes — and is only ever as large as such a
+  /// backend's files are. The filesystem store, the one backend that can hold
+  /// a file larger than memory, overrides it with a real stream.
+  Stream<List<int>> openRead(String path) async* {
+    yield await readBytes(path);
+  }
+
   /// Writes [bytes] to the file at engram-relative [path], creating or
   /// overwriting it.
   ///

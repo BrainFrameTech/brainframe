@@ -33,6 +33,61 @@ String contentHash(Uint8List bytes) => sha256.convert(bytes).toString();
 String contentHashOfString(String text) =>
     contentHash(Uint8List.fromList(utf8.encode(text)));
 
+/// What one pass over a file's bytes establishes: its [contentHash] and its
+/// length.
+///
+/// The two are always computed together, from the same bytes, so a caller
+/// can never pair a hash of one thing with the size of another. This is what
+/// a `blobLww` register records (Decision 3), and what the catalog's
+/// `materializedHash` and `size` columns hold for any note.
+class ContentDigest {
+  const ContentDigest({required this.hash, required this.size});
+
+  /// The digest of [bytes] already in memory — for text, which the diff
+  /// needs whole anyway, and for tests.
+  factory ContentDigest.of(Uint8List bytes) =>
+      ContentDigest(hash: contentHash(bytes), size: bytes.length);
+
+  /// Lowercase hex SHA-256, as [contentHash] spells it.
+  final String hash;
+
+  /// The length in bytes.
+  final int size;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContentDigest && other.hash == hash && other.size == size;
+
+  @override
+  int get hashCode => Object.hash(hash, size);
+
+  @override
+  String toString() => 'ContentDigest($hash, $size bytes)';
+}
+
+/// The digest of [chunks], holding one chunk at a time.
+///
+/// This is how a blob is hashed: a video dropped into the folder is a blob
+/// like any other, and the targets this app runs on cannot hold one in
+/// memory. `crypto` folds each chunk into the running SHA-256 as it arrives,
+/// so the cost is the read, and the memory is a chunk.
+Future<ContentDigest> digestStream(Stream<List<int>> chunks) async {
+  var size = 0;
+  final digest = await sha256
+      .bind(
+        chunks.map((chunk) {
+          size += chunk.length;
+          return chunk;
+        }),
+      )
+      .single;
+  return ContentDigest(hash: digest.toString(), size: size);
+}
+
+/// The digest of the file at engram-relative [path], streamed from [store].
+Future<ContentDigest> digestFile(EngramStore store, String path) =>
+    digestStream(store.openRead(path));
+
 /// Whether [current] *might* differ from what this device last wrote — the
 /// cheap pre-filter that decides whether hashing is worth it.
 ///

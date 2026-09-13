@@ -118,11 +118,12 @@ Future<bool> noteFileHasDrifted(EngramStore engram, CatalogRow row) async {
   final stat = await engram.statFile(row.path);
   if (stat == null) return true;
   if (!mayHaveDrifted(row, stat)) return false;
-  return hasDrifted(row, contentHash(await engram.readBytes(row.path)));
+  // Streamed: the row may be a blob, and a blob may be larger than memory.
+  return hasDrifted(row, (await digestFile(engram, row.path)).hash);
 }
 
-/// Records what the file behind [row] holds right now — its hash, size,
-/// mtime, and (for a text note) sketch — without writing it.
+/// Records what the file behind [row] holds right now — its [digest], its
+/// mtime, and (for a text note, from [text]) its sketch — without writing it.
 ///
 /// For the two cases where the file is the authority rather than the
 /// projection: a `blobLww` note, whose bytes the op-log does not carry and
@@ -132,12 +133,19 @@ Future<bool> noteFileHasDrifted(EngramStore engram, CatalogRow row) async {
 /// last *observed*, which is the statement Decision 5 needs: the next scan
 /// compares against it to decide whether the file changed.
 ///
+/// Takes the digest rather than the bytes because a blob's caller has only
+/// the digest, computed over a stream: the bytes may be larger than memory.
+/// A text caller, which had to read its file whole for the diff anyway,
+/// passes the decoded [text] so the sketch can be built; a blob has no
+/// sketch and passes none.
+///
 /// Returns the committed row.
 Future<CatalogRow> recordFileState({
   required MetadataDatabase store,
   required EngramStore engram,
   required CatalogRow row,
-  required Uint8List bytes,
+  required ContentDigest digest,
+  String? text,
 }) async {
   final stat = await engram.statFile(row.path);
   final committed = CatalogRow(
@@ -145,12 +153,10 @@ Future<CatalogRow> recordFileState({
     path: row.path,
     mergePolicy: row.mergePolicy,
     state: row.state,
-    materializedHash: contentHash(bytes),
-    size: bytes.length,
+    materializedHash: digest.hash,
+    size: digest.size,
     mtimeUtc: stat?.mtimeUtc,
-    sketch: row.mergePolicy == MergePolicy.fugueText
-        ? computeSketch(utf8.decode(bytes))
-        : null,
+    sketch: text == null ? null : computeSketch(text),
     seedClaim: row.seedClaim,
   );
   store.catalog.upsert(committed);

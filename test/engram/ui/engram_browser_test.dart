@@ -1592,5 +1592,17 @@ class _RecordingReconciler implements NoteReconciler {
   AdoptionProgress? get currentAdoption => _current;
 
   @override
+  Future<NoteLedger> ledger() async => const NoteLedger(
+    peers: 1,
+    minted: 0,
+    adopted: 0,
+    unclaimed: 0,
+    tombstoned: 0,
+  );
+
+  @override
+  List<ScanNotice> get recentScans => const [];
+
+  @override
   Stream<String> get reconciled => const Stream<String>.empty();
 }

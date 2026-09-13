@@ -117,6 +117,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS bf_catalog_findable_path
       .map(_rowFrom)
       .toList();
 
+  /// How many notes this device remembers as deleted.
+  int countTombstoned() =>
+      database.select('SELECT COUNT(*) AS n FROM bf_catalog WHERE state = ?', [
+        NoteState.tombstoned.name,
+      ]).first['n'] as int;
+
   /// Every note that is not tombstoned, ordered by path: the notes whose file
   /// this device expects to find in the folder.
   ///

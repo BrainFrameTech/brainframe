@@ -115,6 +115,18 @@ class _FakeReconciler implements NoteReconciler {
   }
 
   @override
+  Future<NoteLedger> ledger() async => const NoteLedger(
+    peers: 1,
+    minted: 0,
+    adopted: 0,
+    unclaimed: 0,
+    tombstoned: 0,
+  );
+
+  @override
+  List<ScanNotice> get recentScans => const [];
+
+  @override
   Stream<String> get reconciled => _events.stream;
 }
 

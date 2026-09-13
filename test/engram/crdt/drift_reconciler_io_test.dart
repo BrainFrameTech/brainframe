@@ -1330,6 +1330,125 @@ void main() {
     });
   });
 
+  group('the ledger (step 13)', () {
+    test('counts what this device knows', () async {
+      final a = await device();
+      await engram.writeString('mine.md', 'minted here\n');
+      await engram.writeString('gone.md', 'to be deleted\n');
+      await a.reconciler.scan();
+      await engram.delete('gone.md');
+      await a.reconciler.scan();
+      await a.publish();
+
+      // A second device adopts what the first minted and mints one of its
+      // own; its ledger and the first's tell the same story from each side.
+      final b = await device();
+      await engram.writeString('theirs.md', 'minted on b\n');
+      await b.reconciler.scan();
+      await b.publish();
+      b.store.catalog.upsert(
+        CatalogRow(
+          ulid: newUlid(),
+          path: 'orphan.md',
+          mergePolicy: MergePolicy.fugueText,
+          state: NoteState.historyPending,
+        ),
+      );
+
+      final ledgerA = await a.reconciler.ledger();
+      final ledgerB = await b.reconciler.ledger();
+
+      expect(ledgerA.peers, 2);
+      expect(ledgerA.minted, 1);
+      expect(ledgerA.adopted, 0);
+      expect(ledgerA.tombstoned, 1);
+
+      expect(ledgerB.peers, 2);
+      expect(ledgerB.minted, 1, reason: 'theirs.md');
+      expect(ledgerB.adopted, 2, reason: 'mine.md, and the planted orphan');
+      expect(ledgerB.unclaimed, 1, reason: 'the orphan has no seed claim');
+      expect(ledgerB.tombstoned, 0);
+    });
+
+    test('this device counts as a peer before it has written its file',
+        () async {
+      final d = await device();
+      expect((await d.reconciler.ledger()).peers, 1);
+    });
+
+    test('without a map, this device is the only peer', () async {
+      final store = MetadataDatabase.openInMemory();
+      addTearDown(store.close);
+      final reconciler = DriftReconciler(
+        database: store,
+        engram: engram,
+        lock: NoteDocumentLock(),
+        identity: null,
+      );
+      addTearDown(reconciler.close);
+      expect((await reconciler.ledger()).peers, 1);
+    });
+  });
+
+  group('recent scans (step 13)', () {
+    test('a clean scan is not remembered; one that changed something is',
+        () async {
+      final d = await device();
+      expect(d.reconciler.recentScans, isEmpty);
+      await d.reconciler.scan();
+      expect(d.reconciler.recentScans, isEmpty, reason: 'nothing to say');
+
+      await engram.writeString('a.md', 'new\n');
+      final before = DateTime.now();
+      await d.reconciler.scan();
+
+      final notice = d.reconciler.recentScans.single;
+      expect(notice.report.created, ['a.md']);
+      expect(notice.at.isBefore(before), isFalse);
+      expect(notice.lostHistory, isFalse);
+    });
+
+    test('newest first, and bounded', () async {
+      final d = await device();
+      for (var i = 0; i < 25; i++) {
+        await engram.writeString('n$i.md', 'note $i\n');
+        await d.reconciler.scan();
+      }
+
+      final scans = d.reconciler.recentScans;
+      expect(scans.length, 20);
+      expect(scans.first.report.created, ['n24.md'], reason: 'newest first');
+      expect(scans.last.report.created, ['n5.md']);
+    });
+
+    test('a delete plus a create in one scan is marked as a history loss',
+        () async {
+      // The one cost Decision 7 requires to be surfaced.
+      final d = await device();
+      await d.writer.write(
+        'old.md',
+        List.generate(20, (i) => 'original line number $i here').join('\n'),
+      );
+      await engram.delete('old.md');
+      await engram.writeString(
+        'new.md',
+        List.generate(20, (i) => 'completely different text $i').join('\n'),
+      );
+
+      await d.reconciler.scan();
+
+      final notice = d.reconciler.recentScans.single;
+      expect(notice.lostHistory, isTrue);
+      expect(notice.report.tombstoned, ['old.md']);
+      expect(notice.report.created, ['new.md']);
+    });
+
+    test('the list handed out cannot be edited', () async {
+      final d = await device();
+      expect(() => d.reconciler.recentScans.clear(), throwsUnsupportedError);
+    });
+  });
+
   group('the sketch is rebuilt by a scan', () {
     test('a row that predates the sketch gets one without drifting', () async {
       final d = await device();

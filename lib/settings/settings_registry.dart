@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../about/about_screen.dart';
 import '../engram/engram_scope.dart';
+import '../engram/ui/crdt_session_scope.dart';
 import '../engram/repository_scope.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theme/app_settings.dart';
@@ -224,9 +225,13 @@ List<SettingsGroup> buildCoreGroups(BuildContext context) {
           name: l10n.settingsHousekeepingName,
           initial: 'H',
           description: l10n.settingsHousekeepingDesc,
-          // Housekeeping renders a live list of forgettable engrams with actions.
-          detail: (ctx) =>
-              HousekeepingPane.forRepository(RepositoryScope.of(ctx)),
+          // Housekeeping renders a live list of forgettable engrams with
+          // actions, and what the active engram's note catalog knows.
+          detail: (ctx) => HousekeepingPane.forRepository(
+            RepositoryScope.of(ctx),
+            engram: engramScope?.engram,
+            notes: CrdtSessionScope.maybeReconcilerOf(ctx),
+          ),
         ),
         SettingsCategory(
           id: 'about',

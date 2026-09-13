@@ -311,6 +311,18 @@ void main() {
     });
   });
 
+  group('countTombstoned', () {
+    test('counts only tombstones', () {
+      catalog
+        ..upsert(row(path: 'a.md'))
+        ..upsert(row(path: 'b.md', state: NoteState.tombstoned))
+        ..upsert(row(path: 'c.md', state: NoteState.tombstoned))
+        ..upsert(row(path: 'd.md', state: NoteState.historyPending));
+
+      expect(catalog.countTombstoned(), 2);
+    });
+  });
+
   group('findable', () {
     test('returns everything but tombstones, ordered by path', () {
       // The notes whose file this device expects to find: an absent one has

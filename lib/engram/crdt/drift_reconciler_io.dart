@@ -101,6 +101,11 @@ class DriftReconciler implements NoteReconciler {
   /// running is the ordinary way this happens.
   Future<DriftScanReport>? _running;
 
+  /// Scans worth remembering, newest first. Bounded: a session that resumes
+  /// a hundred times keeps the last [_keptScans], not all of them.
+  final List<ScanNotice> _recentScans = [];
+  static const int _keptScans = 20;
+
   @override
   Stream<String> get reconciled => _reconciled.stream;
 
@@ -116,8 +121,48 @@ class DriftReconciler implements NoteReconciler {
   }
 
   @override
-  Future<DriftScanReport> scan() =>
-      _running ??= _scan().whenComplete(() => _running = null);
+  Future<DriftScanReport> scan() => _running ??= _scan()
+      .then((report) {
+        if (!report.isClean) {
+          _recentScans.insert(0, ScanNotice(at: DateTime.now(), report: report));
+          if (_recentScans.length > _keptScans) _recentScans.removeLast();
+        }
+        return report;
+      })
+      .whenComplete(() => _running = null);
+
+  @override
+  List<ScanNotice> get recentScans => List.unmodifiable(_recentScans);
+
+  @override
+  Future<NoteLedger> ledger() async {
+    final map = identity;
+    final ours = database.peerId;
+    var minted = 0;
+    var adopted = 0;
+    var unclaimed = 0;
+    for (final row in database.catalog.findable()) {
+      if (row.seededBy == ours) minted++;
+      if (row.state == NoteState.historyPending) {
+        adopted++;
+        if (row.seedClaim == null) unclaimed++;
+      }
+    }
+    // This device counts whether or not it has written its file yet — it is
+    // plainly here — and with no map at all it is the only one.
+    var peers = 1;
+    if (map != null) {
+      final seen = await map.map.peersSeen();
+      peers = seen.contains(ours) ? seen.length : seen.length + 1;
+    }
+    return NoteLedger(
+      peers: peers,
+      minted: minted,
+      adopted: adopted,
+      unclaimed: unclaimed,
+      tombstoned: database.catalog.countTombstoned(),
+    );
+  }
 
   // ---------------------------------------------------------------- the scan
 

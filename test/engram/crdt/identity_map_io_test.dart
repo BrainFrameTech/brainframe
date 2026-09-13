@@ -491,4 +491,30 @@ void main() {
       ]);
     });
   });
+
+  group('peersSeen', () {
+    test('no shared directory means no peers', () async {
+      final map = IdentityMap(engramRoot: engram.path, peerId: peerA);
+      expect(await map.peersSeen(), isEmpty);
+    });
+
+    test('one peer per map file, ours included once written', () async {
+      final ours = IdentityMap(engramRoot: engram.path, peerId: peerA);
+      final theirs = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      await theirs.write(const []);
+      expect(await ours.peersSeen(), [peerB], reason: 'an empty file counts');
+
+      await ours.write(const []);
+      expect(await ours.peersSeen(), unorderedEquals([peerA, peerB]));
+    });
+
+    test('a file that is not named for a peer is not a device', () async {
+      final map = IdentityMap(engramRoot: engram.path, peerId: peerA);
+      await map.write(const []);
+      File('${map.directoryPath}/stray.db').writeAsStringSync('');
+      File('${map.directoryPath}/notes.txt').writeAsStringSync('');
+
+      expect(await map.peersSeen(), [peerA]);
+    });
+  });
 }

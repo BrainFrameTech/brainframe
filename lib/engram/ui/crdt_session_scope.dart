@@ -189,6 +189,22 @@ class CrdtSessionScope extends InheritedWidget {
     required super.child,
   });
 
+  /// Re-publishes a captured session inside a pushed route.
+  ///
+  /// The host lives at the app's `home`, so a route pushed over it is a
+  /// sibling, not a descendant, and would not see the session at all — the
+  /// same reason `openSettingsScreen` proxies the engram scope. A caller
+  /// captures [maybeOf] and [maybeReconcilerOf] before the push and wraps the
+  /// route's content in this, so Settings can ask the reconciler what it
+  /// knows. It publishes and nothing more: no session is opened or closed
+  /// here, and the host underneath still owns both.
+  const CrdtSessionScope.republish({
+    super.key,
+    required this.writer,
+    required this.reconciler,
+    required super.child,
+  });
+
   /// How to save into the active engram, or null when it has no op-log.
   final NoteWriter? writer;
 

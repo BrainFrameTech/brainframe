@@ -771,5 +771,143 @@
   "adopt": "Adopt",
   "@adopt": {
     "description": "Confirm button of the adoption dialog."
+  },
+
+  "housekeepingForgetTitle": "Engrams added from a folder",
+  "@housekeepingForgetTitle": {
+    "description": "Heading of the Housekeeping section listing the registry-backed engrams that can be forgotten."
+  },
+
+  "housekeepingLedgerTitle": "Notes in “{name}”",
+  "@housekeepingLedgerTitle": {
+    "description": "Heading of the Housekeeping section describing what this device knows about the active engram's notes.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Field Notebook" }
+    }
+  },
+
+  "housekeepingLedgerIntro": "BrainFrame never asks whether an engram came from another machine. It reads the shared map inside the folder, adopts what it finds, and shows the result here.",
+  "@housekeepingLedgerIntro": {
+    "description": "Explains why the ledger exists in place of a prompt when an engram is opened (design Decision 9)."
+  },
+
+  "housekeepingLedgerUnavailable": "This engram has no note catalog: it is read-only, or this platform keeps none.",
+  "@housekeepingLedgerUnavailable": {
+    "description": "Shown in place of the ledger for a built-in (read-only) engram, or on a platform with no local database."
+  },
+
+  "housekeepingPeers": "{count, plural, =1{One device has written to this engram — this one.} other{{count} devices have written to this engram, including this one.}}",
+  "@housekeepingPeers": {
+    "description": "Ledger line: how many devices have a file in the engram's shared map.",
+    "placeholders": {
+      "count": { "type": "int", "example": "2" }
+    }
+  },
+
+  "housekeepingMinted": "{count, plural, =0{No notes were minted on this device.} =1{1 note was minted on this device; its whole history is here.} other{{count} notes were minted on this device; their whole history is here.}}",
+  "@housekeepingMinted": {
+    "description": "Ledger line: notes this device created the identity and first history for.",
+    "placeholders": {
+      "count": { "type": "int", "example": "312" }
+    }
+  },
+
+  "housekeepingAdopted": "{count, plural, =0{No notes were adopted from another device.} =1{1 note was adopted from another device and is waiting for its history. Until it arrives, the note is an ordinary file.} other{{count} notes were adopted from another device and are waiting for their history. Until it arrives, they are ordinary files.}}",
+  "@housekeepingAdopted": {
+    "description": "Ledger line: notes whose identity came from another device's map and whose history has not arrived (history-pending).",
+    "placeholders": {
+      "count": { "type": "int", "example": "5" }
+    }
+  },
+
+  "housekeepingUnclaimed": "{count, plural, =1{1 of them has no history anywhere.} other{{count} of them have no history anywhere.}}",
+  "@housekeepingUnclaimed": {
+    "description": "Ledger line under the adopted count, shown only when non-zero: adopted notes whose seed nobody has claimed — the shared map outlived every op-log behind them.",
+    "placeholders": {
+      "count": { "type": "int", "example": "2" }
+    }
+  },
+
+  "housekeepingTombstoned": "{count, plural, =0{No deleted notes are remembered.} =1{1 deleted note is remembered, so a new file at its path is a new note.} other{{count} deleted notes are remembered, so a new file at any of their paths is a new note.}}",
+  "@housekeepingTombstoned": {
+    "description": "Ledger line: tombstoned notes this device keeps.",
+    "placeholders": {
+      "count": { "type": "int", "example": "3" }
+    }
+  },
+
+  "housekeepingScansTitle": "Recent scans",
+  "@housekeepingScansTitle": {
+    "description": "Heading of the list of this session's scans that changed something or failed."
+  },
+
+  "housekeepingScansEmpty": "No scan has changed anything since this engram was opened.",
+  "@housekeepingScansEmpty": {
+    "description": "Shown under Recent scans when every scan this session was clean."
+  },
+
+  "housekeepingScanUpdated": "{count, plural, =1{1 note updated from disk} other{{count} notes updated from disk}}",
+  "@housekeepingScanUpdated": {
+    "description": "Part of a scan summary: notes whose file had changed outside the app and were reconciled.",
+    "placeholders": { "count": { "type": "int", "example": "3" } }
+  },
+
+  "housekeepingScanCreated": "{count, plural, =1{1 created} other{{count} created}}",
+  "@housekeepingScanCreated": {
+    "description": "Part of a scan summary: new files minted as notes.",
+    "placeholders": { "count": { "type": "int", "example": "2" } }
+  },
+
+  "housekeepingScanAdopted": "{count, plural, =1{1 adopted} other{{count} adopted}}",
+  "@housekeepingScanAdopted": {
+    "description": "Part of a scan summary: notes adopted from another device's map.",
+    "placeholders": { "count": { "type": "int", "example": "2" } }
+  },
+
+  "housekeepingScanMoved": "{count, plural, =1{1 moved} other{{count} moved}}",
+  "@housekeepingScanMoved": {
+    "description": "Part of a scan summary: notes found at a new path.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingScanDeleted": "{count, plural, =1{1 deleted} other{{count} deleted}}",
+  "@housekeepingScanDeleted": {
+    "description": "Part of a scan summary: notes tombstoned because their file was gone.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingScanRetired": "{count, plural, =1{1 identity retired} other{{count} identities retired}}",
+  "@housekeepingScanRetired": {
+    "description": "Part of a scan summary: local notes that lost an identity election to another device's and were retired.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingScanFailed": "{count, plural, =1{1 failed} other{{count} failed}}",
+  "@housekeepingScanFailed": {
+    "description": "Part of a scan summary: notes the scan could not reconcile.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingScanIncomplete": "The folder could not be listed, so nothing was created or deleted.",
+  "@housekeepingScanIncomplete": {
+    "description": "Scan detail line when the engram folder could not be enumerated (unmounted drive, permission)."
+  },
+
+  "housekeepingHistoryLoss": "Deleted and created in the same scan. A note renamed and rewritten past recognition comes back as a new note, and its history stays with the deleted one. Deleted: {deleted}. Created: {created}.",
+  "@housekeepingHistoryLoss": {
+    "description": "Scan detail line for the below-similarity-threshold case (design Decision 7), which must be surfaced rather than silent. Both placeholders are comma-separated path lists.",
+    "placeholders": {
+      "deleted": { "type": "String", "example": "old.md" },
+      "created": { "type": "String", "example": "new.md" }
+    }
+  },
+
+  "housekeepingScanFailure": "Could not reconcile {path}: {error}",
+  "@housekeepingScanFailure": {
+    "description": "Scan detail line, one per note the scan could not reconcile, with the error's text.",
+    "placeholders": {
+      "path": { "type": "String", "example": "notes/bad.md" },
+      "error": { "type": "String", "example": "FormatException: Unexpected byte" }
+    }
   }
 }

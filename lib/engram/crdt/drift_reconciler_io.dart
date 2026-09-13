@@ -101,10 +101,12 @@ class DriftReconciler implements NoteReconciler {
   /// running is the ordinary way this happens.
   Future<DriftScanReport>? _running;
 
-  /// Scans worth remembering, newest first. Bounded: a session that resumes
-  /// a hundred times keeps the last [_keptScans], not all of them.
-  final List<ScanNotice> _recentScans = [];
-  static const int _keptScans = 20;
+  /// The one `bf_meta` key overwritten with the finish time of the latest
+  /// scan, clean or not. A clean scan writes nothing else: it changed
+  /// nothing, so the history has no row for it — this stamp is the only sign
+  /// it ran. Nothing reads it to decide whether to scan; it feeds the
+  /// ledger's "last scan" line and that is all.
+  static const String lastScanKey = 'last_scan_utc';
 
   @override
   Stream<String> get reconciled => _reconciled.stream;
@@ -121,18 +123,70 @@ class DriftReconciler implements NoteReconciler {
   }
 
   @override
-  Future<DriftScanReport> scan() => _running ??= _scan()
-      .then((report) {
-        if (!report.isClean) {
-          _recentScans.insert(0, ScanNotice(at: DateTime.now(), report: report));
-          if (_recentScans.length > _keptScans) _recentScans.removeLast();
-        }
-        return report;
-      })
-      .whenComplete(() => _running = null);
+  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) {
+    final started = DateTime.now();
+    return _running ??= _scan()
+        .then((report) {
+          _recordScan(report, trigger: trigger, startedAt: started);
+          return report;
+        })
+        .whenComplete(() => _running = null);
+  }
+
+  /// Writes what the scan did to the history, or — for a clean scan — only
+  /// when it ran. Recording is not allowed to fail the scan: the work is
+  /// done and the report is true whether or not it was written down, so a
+  /// database that refuses the row is logged and the report still returned.
+  void _recordScan(
+    DriftScanReport report, {
+    required ScanTrigger trigger,
+    required DateTime startedAt,
+  }) {
+    if (_closed) return;
+    final finished = DateTime.now();
+    try {
+      database.writeMeta(
+        lastScanKey,
+        '${finished.toUtc().millisecondsSinceEpoch}',
+      );
+      database.scans.record(
+        report,
+        startedAt: startedAt,
+        finishedAt: finished,
+        trigger: trigger,
+        // The identity is the whole point of recording the event, and for
+        // these two kinds byPath cannot supply it. A tombstoned note has no
+        // live row at its path at all. A retired note does — but it is the
+        // election winner's, adopted in the same pass; the note this device
+        // gave up is the loser's, which _retire tombstoned. Both are found
+        // among the tombstones.
+        ulidOf: (kind, path) => switch (kind) {
+          ScanEventKind.tombstoned ||
+          ScanEventKind.retired => database.catalog.lastTombstoneAt(path)?.ulid,
+          _ => database.catalog.byPath(path)?.ulid,
+        },
+      );
+    } on Object catch (error, stack) {
+      developer.log(
+        'scan history could not be written',
+        name: driftScanLogName,
+        error: error,
+        stackTrace: stack,
+      );
+    }
+  }
 
   @override
-  List<ScanNotice> get recentScans => List.unmodifiable(_recentScans);
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async => [
+    for (final record in database.scans.recent(
+      limit: limit,
+      unacknowledgedOnly: true,
+    ))
+      record.notice,
+  ];
+
+  @override
+  Future<void> dismissScan(int id) async => database.scans.acknowledge(id);
 
   @override
   Future<NoteLedger> ledger() async {
@@ -161,7 +215,15 @@ class DriftReconciler implements NoteReconciler {
       adopted: adopted,
       unclaimed: unclaimed,
       tombstoned: database.catalog.countTombstoned(),
+      lastScanAt: _lastScanAt(),
     );
+  }
+
+  DateTime? _lastScanAt() {
+    final stamp = int.tryParse(database.readMeta(lastScanKey) ?? '');
+    return stamp == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(stamp, isUtc: true).toLocal();
   }
 
   // ---------------------------------------------------------------- the scan

@@ -114,7 +114,7 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
         // yet — the child is only now mounting — so Decision 6's first step
         // is vacuously done. The report has no surface until step 13; what
         // it says is logged by the scan.
-        if (next != null) _scanInBackground(next);
+        if (next != null) _scanInBackground(next, ScanTrigger.open);
       } else {
         // Switched away mid-open: the session we just opened belongs to an
         // engram nobody is looking at, so close it rather than leaking it.
@@ -126,9 +126,12 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
   /// Runs a scan without waiting for it. The scan collects per-note failures
   /// itself; what can still throw is the catalog being unreadable, which is
   /// logged rather than left as an unhandled error from a fire-and-forget.
-  void _scanInBackground(CrdtSession session) {
+  void _scanInBackground(CrdtSession session, ScanTrigger trigger) {
     unawaited(
-      session.reconciler.scan().catchError((Object error, StackTrace stack) {
+      session.reconciler.scan(trigger: trigger).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
         developer.log(
           'scan failed',
           name: 'brainframe.engram.drift',
@@ -158,7 +161,7 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
     if (session == null) return;
     await _pendingSaves.flushAll();
     if (!mounted || !identical(_session, session)) return;
-    _scanInBackground(session);
+    _scanInBackground(session, ScanTrigger.resume);
   }
 
   @override

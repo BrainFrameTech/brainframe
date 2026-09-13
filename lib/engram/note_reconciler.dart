@@ -142,6 +142,7 @@ class NoteLedger {
     required this.adopted,
     required this.unclaimed,
     required this.tombstoned,
+    this.lastScanAt,
   });
 
   /// Devices that have written to this engram's shared map, this one
@@ -163,6 +164,33 @@ class NoteLedger {
   /// Notes this device remembers as deleted: the tombstones, kept so a later
   /// file at the same path is a new note and not the dead one resurrected.
   final int tombstoned;
+
+  /// When the last scan finished — clean or not — or null if none has run on
+  /// this device. Clean scans leave only this behind.
+  final DateTime? lastScanAt;
+}
+
+/// What started a scan. Recorded with it, so a notice can say whether the
+/// change was found at launch, on coming back to the window, or by a watcher.
+enum ScanTrigger {
+  /// The session opened: app start, or an engram switch.
+  open,
+
+  /// The app came back to the foreground.
+  resume,
+
+  /// The filesystem watcher (**#70**), once it exists.
+  watcher,
+
+  /// Anything else — a test, a future button.
+  manual;
+
+  /// Parses the stored spelling, the enum's own name; throws
+  /// [FormatException] for anything else.
+  static ScanTrigger parse(String value) => values.firstWhere(
+    (trigger) => trigger.name == value,
+    orElse: () => throw FormatException('unknown scan trigger: "$value"'),
+  );
 }
 
 /// One scan that changed something or failed, kept for the session so the
@@ -170,12 +198,24 @@ class NoteLedger {
 /// deletion and a creation in one scan, which is a rename past recognition
 /// and a history that stayed with the tombstone.
 class ScanNotice {
-  const ScanNotice({required this.at, required this.report});
+  const ScanNotice({
+    required this.at,
+    required this.report,
+    this.id,
+    this.trigger = ScanTrigger.manual,
+  });
 
   /// When the scan finished, local time.
   final DateTime at;
 
   final DriftScanReport report;
+
+  /// The record's id in the scan history, which [NoteReconciler.dismissScan]
+  /// takes, or null for a notice that was never recorded.
+  final int? id;
+
+  /// What started the scan.
+  final ScanTrigger trigger;
 
   /// Whether this scan tombstoned and created in one pass: the case Decision
   /// 7 requires to be surfaced rather than silent.
@@ -216,7 +256,10 @@ abstract class NoteReconciler {
   /// which on the slowest target is minutes, and the engram is usable
   /// throughout because [reconcile] brings in whichever note the editor opens
   /// before the scan gets there. Its progress is on [adoption].
-  Future<DriftScanReport> scan();
+  ///
+  /// [trigger] says what started it, and is recorded with the scan when the
+  /// scan did anything worth recording.
+  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual});
 
   /// The scan's progress through files the catalog has never seen, or null
   /// while no scan is doing that. Broadcast, with [currentAdoption] for a
@@ -229,9 +272,15 @@ abstract class NoteReconciler {
   /// What this device knows about the engram's notes, counted now.
   Future<NoteLedger> ledger();
 
-  /// This session's scans that changed something or failed, newest first
-  /// and bounded, so the panel can show what the log otherwise swallows.
-  List<ScanNotice> get recentScans;
+  /// Scans that changed something or failed and have not been dismissed,
+  /// newest first, from this device's scan history — across sessions and
+  /// launches, so a notice that a note's history stayed with a tombstone is
+  /// still there the next time Settings is opened.
+  Future<List<ScanNotice>> recentScans({int limit = 20});
+
+  /// Dismisses the recorded scan [id]: it leaves [recentScans] and stays in
+  /// the history.
+  Future<void> dismissScan(int id);
 
   /// Reconciles the one note at engram-relative [path], if it has drifted —
   /// or brings it into the catalog if it is not there yet, by minting or by

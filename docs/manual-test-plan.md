@@ -725,24 +725,30 @@ folder**, is the forget list.
    reopen Housekeeping.
 4. On a second install (or after copying the engram folder, with its
    `.brainframe/shared/`, to another machine): open it and read the ledger.
-5. Ensure at least one **registry-backed** engram exists (adopt a folder such as
+5. **Persistence (step 13.5):** with the step 3 card showing, quit the app
+   fully, relaunch, and reopen Housekeeping. Then tap that card's
+   **Dismiss**; leave and reopen Housekeeping; quit and relaunch once more.
+6. Ensure at least one **registry-backed** engram exists (adopt a folder such as
    the Field Notebook fixture via Open folder…).
-6. Confirm the forget list shows forgettable engrams with their on-disk path;
+7. Confirm the forget list shows forgettable engrams with their on-disk path;
    built-in and container engrams do **not** appear.
-7. Tap **Forget** on one; read the confirm dialog; **Cancel** — nothing changes.
-8. Tap **Forget** again; confirm. The row disappears, the engram leaves the
+8. Tap **Forget** on one; read the confirm dialog; **Cancel** — nothing changes.
+9. Tap **Forget** again; confirm. The row disappears, the engram leaves the
    switcher too, and **its files on disk are untouched**.
-9. If an engram's folder is missing on disk, confirm a **MISSING** badge and that
-   it can still be forgotten. With nothing forgettable, confirm the empty state.
+10. If an engram's folder is missing on disk, confirm a **MISSING** badge and
+    that it can still be forgotten. With nothing forgettable, confirm the
+    empty state.
 
 **Expected:**
 
-- Step 1: four sentences — devices that have written to the engram (one, and
+- Step 1: five sentences — devices that have written to the engram (one, and
   it says "this one"), notes minted on this device, notes adopted from
-  another device (none), deleted notes remembered — every count a whole
-  sentence with correct singular and plural. Under **Recent scans**, either
-  "No scan has changed anything" or one card per scan that did, newest
-  first, each with a time and a summary such as "32 created".
+  another device (none), deleted notes remembered, and when the last scan
+  ran — every count a whole sentence with correct singular and plural. Under
+  **Recent scans**, either "Nothing to show" or one card per scan that
+  changed something, newest first, each headed by its time and what started
+  it ("at open", "on resume"), a summary such as "32 created", and a
+  **Dismiss** button.
 - Step 2: the ledger card says the engram has no note catalog; no Recent
   scans list; the forget list is unaffected.
 - Step 3: the newest scan card reads "1 created, 1 deleted" and carries a
@@ -752,7 +758,12 @@ folder**, is the forget list.
 - Step 4: the ledger says **two** devices have written, the notes minted on
   the first device show as **adopted, waiting for their history**, and after
   one scan Recent scans shows them as "adopted".
-- Steps 5–9: forgetting drops the engram from BrainFrame's registry (and the
+- Step 5: the history-loss card is **still there after the relaunch** — it is
+  recorded in the engram's local database, not in memory. After Dismiss it
+  is gone from the list at once, still gone when Housekeeping is reopened,
+  and still gone after the relaunch; the ledger's deleted count is
+  unchanged (dismissing hides the notice, it does not undo anything).
+- Steps 6–10: forgetting drops the engram from BrainFrame's registry (and the
   switcher) without deleting files; a confirmation is required; missing
   entries are badged and clearable; an empty state shows when nothing is
   forgettable.
@@ -764,8 +775,13 @@ folder**, is the forget list.
 - **A11y:** the Forget button is labeled with the engram name; the confirm dialog
   is adaptive. The ledger is plain text and reads in order.
 - **Declarative-trap probe:** after a confirmed forget, the list actually
-  re-loads (the row is gone), not just visually dimmed. The ledger's counts
-  are taken when the pane opens — leave and reopen Settings to refresh them.
+  re-loads (the row is gone), not just visually dimmed; after a Dismiss, the
+  list re-loads from the database. The ledger's counts are taken when the
+  pane opens — leave and reopen Settings to refresh them.
+- **Retention:** ordinary scan records older than a year are pruned when the
+  engram opens; a record that lost history or failed is never pruned
+  automatically. Not reproducible by hand without editing `metadata.db`'s
+  timestamps — an inspection point, covered by the automated tests.
 - **Inspection point:** a note the editor opened before the start-up scan
   reached it is minted by the open, not the scan, so "minted on this device"
   can exceed the scan card's "created" by the notes opened that way. That is

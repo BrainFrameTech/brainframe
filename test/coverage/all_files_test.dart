@@ -42,6 +42,7 @@ import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_stub.dart';
 import 'package:brainframe/engram/crdt/note_document_io.dart';
 import 'package:brainframe/engram/crdt/note_document_lock.dart';
+import 'package:brainframe/engram/crdt/scan_history_io.dart';
 import 'package:brainframe/engram/crdt/schema.dart';
 import 'package:brainframe/engram/crdt/sketch.dart';
 import 'package:brainframe/engram/crdt/store_exceptions.dart';

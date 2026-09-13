@@ -223,7 +223,7 @@ void main() {
       ).switchTo(engramNamed('b'));
       await tester.pumpAndSettle();
 
-      expect(log, ['open a', 'scan', 'close a', 'open b', 'scan']);
+      expect(log, ['open a', 'scan open', 'close a', 'open b', 'scan open']);
     });
   });
 
@@ -259,7 +259,7 @@ void main() {
 
       flushed.complete();
       await tester.pumpAndSettle();
-      expect(log, ['flush', 'scan']);
+      expect(log, ['flush', 'scan resume'], reason: 'the trigger is recorded');
     });
 
     testWidgets('other lifecycle states do not scan', (tester) async {
@@ -364,9 +364,9 @@ class _RecordingReconciler implements NoteReconciler {
   bool failScans = false;
 
   @override
-  Future<DriftScanReport> scan() async {
+  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async {
     scans++;
-    log.add('scan');
+    log.add('scan ${trigger.name}');
     if (gate != null) await gate!.future;
     if (failScans) throw StateError('catalog unreadable');
     return DriftScanReport.clean;
@@ -400,7 +400,10 @@ class _RecordingReconciler implements NoteReconciler {
   );
 
   @override
-  List<ScanNotice> get recentScans => const [];
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async => const [];
+
+  @override
+  Future<void> dismissScan(int id) async {}
 
   @override
   Stream<String> get reconciled => const Stream<String>.empty();

@@ -152,7 +152,7 @@ class _Reconciler implements NoteReconciler {
   AdoptionProgress? get currentAdoption => current;
 
   @override
-  Future<DriftScanReport> scan() async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async => false;
@@ -176,7 +176,10 @@ class _Reconciler implements NoteReconciler {
   );
 
   @override
-  List<ScanNotice> get recentScans => const [];
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async => const [];
+
+  @override
+  Future<void> dismissScan(int id) async {}
 
   @override
   Stream<String> get reconciled => const Stream<String>.empty();

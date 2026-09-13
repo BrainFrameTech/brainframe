@@ -79,7 +79,7 @@ class _FakeReconciler implements NoteReconciler {
   final StreamController<String> _events = StreamController<String>.broadcast();
 
   @override
-  Future<DriftScanReport> scan() async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async {
@@ -124,7 +124,10 @@ class _FakeReconciler implements NoteReconciler {
   );
 
   @override
-  List<ScanNotice> get recentScans => const [];
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async => const [];
+
+  @override
+  Future<void> dismissScan(int id) async {}
 
   @override
   Stream<String> get reconciled => _events.stream;

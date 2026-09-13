@@ -5,10 +5,12 @@ import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
 import 'package:brainframe/engram/crdt/crdt_session_io.dart';
 import 'package:brainframe/engram/crdt/drift_reconciler_io.dart';
 import 'package:brainframe/engram/crdt/identity_map_io.dart';
+import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
+import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -130,6 +132,30 @@ void main() {
       peerId: PeerId.generate(),
     ).readEveryDevicesRows();
     expect(rows.single.path, 'b.md');
+  });
+
+  test('opening a session prunes old scan records', () async {
+    final engram = engramWith(readOnly: false);
+    final first = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    // A record from two years ago, planted through the store the session
+    // opened — then the session is closed and reopened, which is when the
+    // prune runs.
+    final store = await MetadataDatabase.open(engram.id, resolveRoot: resolveRoot);
+    store.scans.record(
+      const DriftScanReport(created: ['old.md']),
+      startedAt: DateTime.now().subtract(const Duration(days: 730)),
+      finishedAt: DateTime.now().subtract(const Duration(days: 730)),
+      trigger: ScanTrigger.open,
+      ulidOf: (_, _) => null,
+    );
+    expect(store.scans.count(), 1);
+    store.close();
+    await first!.close();
+
+    final second = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    addTearDown(() => second!.close());
+
+    expect(await second!.reconciler.recentScans(), isEmpty);
   });
 
   test('close ends the reconciled stream', () async {

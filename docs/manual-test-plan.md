@@ -1097,6 +1097,17 @@ built-in engrams are read-only here.
   and reopen the pane. It shows a "Could not read this engram's details" line
   and still shows the identifier it knows — a diagnostic surface that hides the
   fault would be worse than none.
+- **Raised-ceiling probe (step 16):** with the engram open, add
+  `"noteSizeCeilingBytes": 1000000` to its `engram.json` (a value only a newer
+  build could honour) and open the pane. The error line says the engram
+  allows notes larger than this version of BrainFrame can open and to
+  **update BrainFrame on this device** — the one place the reason is shown.
+  Now relaunch: the engram is refused the way a broken marker is, which today
+  means the switcher lists it as unavailable (a registry engram) or the
+  generic startup message appears (`--engram`), with the reason in the log
+  only. Remove the field and relaunch; the engram is back, and `engram.json`
+  has **not** gained a ceiling field of its own — opening never writes one.
+  Restore the fixture afterwards with `git checkout -- test/fixtures/engram`.
 - **A11y:** the name field exposes its label and enabled state; each detail row
   exposes label and value; the section headings are headers.
 - **State survival:** the rename persists across an app restart, and the engram

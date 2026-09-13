@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/id.dart';
 import 'package:brainframe/engram/metadata.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -238,4 +239,130 @@ void main() {
     });
   });
 
+  group('the note size ceiling (design Decision 7)', () {
+    // The fixture engram's marker, as every engram created before the field
+    // existed looks: no ceiling recorded.
+    final legacy = EngramMetadata(
+      schemaVersion: 1,
+      id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+      displayName: 'Field Notebook',
+      createdUtc: DateTime.utc(2026, 5, 1, 9),
+    );
+
+    test('absent means 128 KiB, and stays absent', () {
+      final json = legacy.toJson();
+      expect(json.containsKey('noteSizeCeilingBytes'), isFalse);
+
+      final parsed = EngramMetadata.fromJson(json);
+      expect(parsed.recordedNoteSizeCeilingBytes, isNull);
+      expect(parsed.noteSizeCeilingBytes, 131072);
+      expect(parsed.noteSizeCeilingBytes, defaultNoteSizeCeilingBytes);
+      // Encoding it back does not invent the field: opening never writes it.
+      expect(parsed.toJson().containsKey('noteSizeCeilingBytes'), isFalse);
+      expect(parsed.toString(), contains('(default)'));
+    });
+
+    test('the default is a literal, not the capability', () {
+      // Both 128 KiB today. If the capability ever rises, engrams with no
+      // recorded value must keep the number that was implicitly true of
+      // them, so the two are pinned separately.
+      expect(defaultNoteSizeCeilingBytes, 131072);
+    });
+
+    test('a new engram records the creating build\'s capability', () {
+      final created = EngramMetadata.create(id: sampleId, displayName: 'X');
+      expect(created.recordedNoteSizeCeilingBytes, noteSizeCapabilityBytes);
+      expect(created.toJson()['noteSizeCeilingBytes'], noteSizeCapabilityBytes);
+      expect(EngramMetadata.decode(created.encode()), created);
+    });
+
+    test('a recorded ceiling below the capability is enforced as recorded', () {
+      final json = legacy.toJson()..['noteSizeCeilingBytes'] = 64 * 1024;
+      final parsed = EngramMetadata.fromJson(json);
+      expect(parsed.noteSizeCeilingBytes, 65536);
+      expect(parsed.recordedNoteSizeCeilingBytes, 65536);
+      expect(parsed.toJson()['noteSizeCeilingBytes'], 65536);
+    });
+
+    test('a ceiling above the capability is refused, naming the fix', () {
+      // The engram was raised by a newer build. This build cannot hold a note
+      // the engram allows, so it must not open it and treat such notes
+      // differently from its peers — the same refusal as a newer schema.
+      final json = legacy.toJson()
+        ..['noteSizeCeilingBytes'] = noteSizeCapabilityBytes + 1;
+      expect(
+        () => EngramMetadata.fromJson(json),
+        throwsA(
+          isA<EngramMetadataException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('${noteSizeCapabilityBytes + 1} bytes'),
+              contains('update BrainFrame'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('exactly the capability is allowed', () {
+      final json = legacy.toJson()
+        ..['noteSizeCeilingBytes'] = noteSizeCapabilityBytes;
+      expect(
+        EngramMetadata.fromJson(json).noteSizeCeilingBytes,
+        noteSizeCapabilityBytes,
+      );
+    });
+
+    test('a malformed ceiling is refused', () {
+      for (final bad in [0, -1, '131072', 1.5, true]) {
+        final json = legacy.toJson()..['noteSizeCeilingBytes'] = bad;
+        expect(
+          () => EngramMetadata.fromJson(json),
+          throwsA(isA<EngramMetadataException>()),
+          reason: '$bad',
+        );
+      }
+    });
+
+    test('a rename keeps the ceiling exactly as it was, recorded or not', () {
+      expect(
+        legacy.withDisplayName('Renamed').recordedNoteSizeCeilingBytes,
+        isNull,
+      );
+      final recorded = legacy.withNoteSizeCeilingBytes(65536);
+      expect(
+        recorded.withDisplayName('Renamed').recordedNoteSizeCeilingBytes,
+        65536,
+      );
+    });
+
+    test('withNoteSizeCeilingBytes records the value, within bounds', () {
+      final changed = legacy.withNoteSizeCeilingBytes(65536);
+      expect(changed.noteSizeCeilingBytes, 65536);
+      expect(changed.id, legacy.id);
+      expect(changed.displayName, legacy.displayName);
+      expect(changed.schemaVersion, legacy.schemaVersion);
+      expect(EngramMetadata.decode(changed.encode()), changed);
+
+      expect(() => legacy.withNoteSizeCeilingBytes(0), throwsArgumentError);
+      expect(
+        () => legacy.withNoteSizeCeilingBytes(noteSizeCapabilityBytes + 1),
+        throwsArgumentError,
+        reason: 'never raised past what the raising device can open',
+      );
+    });
+
+    test('the ceiling takes part in equality', () {
+      expect(legacy.withNoteSizeCeilingBytes(65536), isNot(legacy));
+      expect(
+        legacy.withNoteSizeCeilingBytes(65536),
+        legacy.withNoteSizeCeilingBytes(65536),
+      );
+      expect(
+        legacy.withNoteSizeCeilingBytes(65536).hashCode,
+        legacy.withNoteSizeCeilingBytes(65536).hashCode,
+      );
+    });
+  });
 }

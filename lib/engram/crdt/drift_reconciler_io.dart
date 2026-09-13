@@ -506,6 +506,12 @@ class DriftReconciler implements NoteReconciler {
             path: path,
             content: policy == MergePolicy.fugueText ? utf8.decode(bytes) : '',
           );
+          // Just written by mint, under this same lock; a missing row here
+          // is a bug, and a named exception says so rather than a bare
+          // null-check failure.
+          final minted = database.catalog.byUlid(note.ulid);
+          if (minted == null) throw UnknownNoteException(note.ulid);
+          final CatalogRow committed;
           try {
             if (policy == MergePolicy.fugueText) {
               // Materialized, which is where Decision 10 lands on disk: a
@@ -518,7 +524,7 @@ class DriftReconciler implements NoteReconciler {
               // one warned, one-time change is something they can commit
               // on its own. The confirmation states the count first. A
               // file already LF is left untouched, mtime and all.
-              await materializeNote(
+              committed = await materializeNote(
                 store: database,
                 engram: engram,
                 note: note,
@@ -527,17 +533,17 @@ class DriftReconciler implements NoteReconciler {
             } else {
               // A blob's bytes are never normalized and never rewritten;
               // it is recorded as found so a later move can be matched.
-              await recordFileState(
+              committed = await recordFileState(
                 store: database,
                 engram: engram,
-                row: database.catalog.byUlid(note.ulid)!,
+                row: minted,
                 bytes: bytes,
               );
             }
           } finally {
             note.dispose();
           }
-          map.record(database.catalog.byUlid(note.ulid)!, deleted: false);
+          map.record(committed, deleted: false);
           return _Arrival.minted;
 
         case NoteDisposition.adoptPending:

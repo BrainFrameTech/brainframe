@@ -192,6 +192,12 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         for (final path in report.converted) {
           event(ScanEventKind.converted, path);
         }
+        for (final path in report.awaitingDecision) {
+          event(ScanEventKind.awaitingDecision, path);
+        }
+        for (final entry in report.reconstructed.entries) {
+          event(ScanEventKind.reconstructed, entry.key, newPath: entry.value);
+        }
         for (final entry in report.convertedElsewhere.entries) {
           // The count of unreachable history rides in the error column: a
           // number, spelled as text, in a column no other kind uses.
@@ -307,6 +313,8 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
     final oversized = <String>[];
     final converted = <String>[];
     final convertedElsewhere = <String, int>{};
+    final awaitingDecision = <String>[];
+    final reconstructed = <String, String>{};
     final adopted = <String>[];
     final moved = <String, String>{};
     final tombstoned = <String>[];
@@ -326,6 +334,10 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         case ScanEventKind.convertedElsewhere:
           convertedElsewhere[path] =
               int.tryParse(event['error'] as String? ?? '') ?? 0;
+        case ScanEventKind.awaitingDecision:
+          awaitingDecision.add(path);
+        case ScanEventKind.reconstructed:
+          reconstructed[path] = event['new_path'] as String;
         case ScanEventKind.adopted:
           adopted.add(path);
         case ScanEventKind.moved:
@@ -357,6 +369,8 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         oversized: oversized,
         converted: converted,
         convertedElsewhere: convertedElsewhere,
+        awaitingDecision: awaitingDecision,
+        reconstructed: reconstructed,
         adopted: adopted,
         moved: moved,
         tombstoned: tombstoned,
@@ -387,6 +401,14 @@ enum ScanEventKind {
   /// Made a plain file on another device; followed here. The count of local
   /// history changes now unreachable rides in the event's error column.
   convertedElsewhere,
+
+  /// A tracked text note found grown past the ceiling outside the app, now
+  /// awaiting the user's decision.
+  awaitingDecision,
+
+  /// Reconstructed at the user's request; the oversized version was kept at
+  /// the event's new path.
+  reconstructed,
   adopted,
   moved,
   tombstoned,

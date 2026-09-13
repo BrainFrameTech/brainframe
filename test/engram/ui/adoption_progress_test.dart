@@ -185,5 +185,11 @@ class _Reconciler implements NoteReconciler {
   Future<void> convertToPlainFile(String path) async {}
 
   @override
+  Future<List<PendingNote>> awaitingDecision() async => const [];
+
+  @override
+  Future<String> reconstruct(String path) async => path;
+
+  @override
   Stream<String> get reconciled => const Stream<String>.empty();
 }

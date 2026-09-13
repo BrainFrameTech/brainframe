@@ -829,6 +829,205 @@ void main() {
     });
   });
 
+  group('the external-edit door (step 20)', () {
+    // A tracked text note that grew past the ceiling outside the app. It
+    // has a history and is too large to open as one, so it waits for the
+    // user (the note size ceiling design, Decision 4). A 4 KiB ceiling
+    // keeps the files small.
+    const ceiling = 4096;
+    String filler(int bytes) => 'a' * bytes;
+
+    Future<_Device> grown({EngramStore? over}) async {
+      final d = await device(ceiling: ceiling, over: over);
+      await d.writer.write('journal.md', 'kept\n');
+      await engram.writeString('journal.md', 'kept\n${filler(ceiling)}');
+      return d;
+    }
+
+    test('is put in the awaiting-decision state, file untouched', () async {
+      final d = await grown();
+
+      final report = await d.reconciler.scan();
+
+      expect(report.awaitingDecision, ['journal.md']);
+      expect(report.reconciled, isEmpty);
+      expect(report.isClean, isFalse);
+      final row = d.store.catalog.byPath('journal.md')!;
+      expect(row.state, NoteState.oversized);
+      expect(row.mergePolicy, MergePolicy.fugueText, reason: 'not converted');
+      expect(await engram.readString('journal.md'), 'kept\n${filler(ceiling)}');
+      expect(d.valueOf('journal.md'), 'kept\n', reason: 'the history is intact');
+      expect(await d.reconciler.awaitingDecision(), [
+        PendingNote(path: 'journal.md', sizeBytes: 5 + ceiling),
+      ]);
+    });
+
+    test('is decided from a stat, never a read', () async {
+      final guarded = _NoWholeBlobStore(engram, alsoRefuse: {'journal.md'});
+      final d = await grown(over: guarded);
+
+      final report = await d.reconciler.scan();
+
+      expect(report.awaitingDecision, ['journal.md']);
+      expect(report.failed, isEmpty);
+    });
+
+    test('is found by the before-open path too, and recorded', () async {
+      final d = await grown();
+
+      expect(await d.reconciler.reconcile('journal.md'), isFalse);
+
+      expect(await d.reconciler.awaitingDecision(), hasLength(1));
+      final notice = (await d.reconciler.recentScans()).single;
+      expect(notice.report.awaitingDecision, ['journal.md']);
+      expect(notice.trigger, ScanTrigger.manual);
+    });
+
+    test('later scans leave it alone, and do not report it again', () async {
+      final d = await grown();
+      await d.reconciler.scan();
+
+      expect((await d.reconciler.scan()).isClean, isTrue);
+      expect(d.store.catalog.byPath('journal.md')!.state, NoteState.oversized);
+      expect(await d.reconciler.awaitingDecision(), hasLength(1));
+    });
+
+    test('the state survives a session close and reopen', () async {
+      final id = newUlid();
+      final d = await device(engramId: id, ceiling: ceiling);
+      await d.writer.write('journal.md', 'kept\n');
+      await engram.writeString('journal.md', 'kept\n${filler(ceiling)}');
+      await d.reconciler.scan();
+      await d.close();
+
+      final again = await device(engramId: id, ceiling: ceiling);
+
+      expect(await again.reconciler.awaitingDecision(), hasLength(1));
+      expect((await again.reconciler.scan()).isClean, isTrue);
+    });
+
+    test('a save is refused while it waits', () async {
+      final d = await grown();
+      await d.reconciler.scan();
+
+      await expectLater(
+        () => d.writer.write('journal.md', 'anything'),
+        throwsStateError,
+      );
+      expect(await engram.readString('journal.md'), 'kept\n${filler(ceiling)}');
+    });
+
+    test('trimmed back under the line outside the app, it comes back as drift',
+        () async {
+      final d = await grown();
+      await d.reconciler.scan();
+      await engram.writeString('journal.md', 'kept\ntrimmed\n');
+
+      final report = await d.reconciler.scan();
+
+      expect(report.reconciled, ['journal.md']);
+      expect(report.awaitingDecision, isEmpty);
+      expect(d.store.catalog.byPath('journal.md')!.state, NoteState.live);
+      expect(d.valueOf('journal.md'), 'kept\ntrimmed\n');
+      expect(await d.reconciler.awaitingDecision(), isEmpty);
+    });
+
+    group('reconstruct', () {
+      test('restores the last saved version and keeps the file beside it',
+          () async {
+        final d = await grown();
+        await d.reconciler.scan();
+        final external = await engram.readBytes('journal.md');
+
+        final kept = await d.reconciler.reconstruct('journal.md');
+
+        expect(kept, 'journal (oversized).md');
+        expect(await engram.readString('journal.md'), 'kept\n');
+        expect(await engram.readBytes(kept), external, reason: 'byte-identical');
+        final row = d.store.catalog.byPath('journal.md')!;
+        expect(row.state, NoteState.live);
+        expect(row.mergePolicy, MergePolicy.fugueText);
+        expect(row.materializedHash, contentHashOfString('kept\n'));
+        expect(await d.reconciler.awaitingDecision(), isEmpty);
+        final notice = (await d.reconciler.recentScans()).first;
+        expect(notice.report.reconstructed, {'journal.md': kept});
+        expect(notice.trigger, ScanTrigger.manual);
+      });
+
+      test('the kept copy is tracked as a plain file on the next scan',
+          () async {
+        final d = await grown();
+        await d.reconciler.scan();
+        final kept = await d.reconciler.reconstruct('journal.md');
+
+        final report = await d.reconciler.scan();
+
+        expect(report.oversized, [kept]);
+        expect(report.reconciled, isEmpty, reason: 'the note itself is clean');
+        expect(d.store.catalog.byPath(kept)!.mergePolicy, MergePolicy.blobLww);
+        expect((await d.reconciler.ledger()).plainFiles, 1);
+      });
+
+      test('never overwrites an existing aside file', () async {
+        final d = await grown();
+        await d.reconciler.scan();
+        await engram.writeString('journal (oversized).md', 'already here\n');
+
+        final kept = await d.reconciler.reconstruct('journal.md');
+
+        expect(kept, 'journal (oversized 2).md');
+        expect(
+          await engram.readString('journal (oversized).md'),
+          'already here\n',
+        );
+      });
+
+      test('the note is editable again, on its history', () async {
+        final d = await grown();
+        await d.reconciler.scan();
+        await d.reconciler.reconstruct('journal.md');
+
+        await d.writer.write('journal.md', 'kept\nand more\n');
+
+        expect(d.valueOf('journal.md'), 'kept\nand more\n');
+        expect(await engram.readString('journal.md'), 'kept\nand more\n');
+      });
+
+      test('refuses a note that is not waiting', () async {
+        final d = await device(ceiling: ceiling);
+        await d.writer.write('a.md', 'fine\n');
+        expect(() => d.reconciler.reconstruct('a.md'), throwsStateError);
+        expect(() => d.reconciler.reconstruct('nope.md'), throwsStateError);
+      });
+    });
+
+    test('convert leaves the file as found, and the note is live again',
+        () async {
+      final d = await grown();
+      await d.reconciler.scan();
+      final external = await engram.readBytes('journal.md');
+
+      await d.reconciler.convertToPlainFile('journal.md');
+
+      expect(await engram.readBytes('journal.md'), external);
+      final row = d.store.catalog.byPath('journal.md')!;
+      expect(row.state, NoteState.live);
+      expect(row.mergePolicy, MergePolicy.blobLww);
+      expect(await d.reconciler.awaitingDecision(), isEmpty);
+      expect((await d.reconciler.scan()).isClean, isTrue);
+      expect(await engram.statFile('journal (oversized).md'), isNull);
+    });
+
+    test('asidePathFor spells the kept name', () {
+      expect(asidePathFor('journal.md'), 'journal (oversized).md');
+      expect(asidePathFor('a/b/journal.md'), 'a/b/journal (oversized).md');
+      expect(asidePathFor('journal.md', ordinal: 3), 'journal (oversized 3).md');
+      expect(asidePathFor('LICENSE'), 'LICENSE (oversized)');
+      expect(asidePathFor('notes/.hidden'), 'notes/.hidden (oversized)');
+      expect(asidePathFor('a.tar.gz'), 'a.tar (oversized).gz');
+    });
+  });
+
   group('conversion to a plain file (step 19)', () {
     test('drops the history, keeps the file, and claims it whole', () async {
       // Decision 3. The user has been told and has agreed; this is what

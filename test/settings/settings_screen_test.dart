@@ -312,6 +312,12 @@ class _CountingReconciler implements NoteReconciler {
   Future<void> convertToPlainFile(String path) async {}
 
   @override
+  Future<List<PendingNote>> awaitingDecision() async => const [];
+
+  @override
+  Future<String> reconstruct(String path) async => path;
+
+  @override
   Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
 
   @override

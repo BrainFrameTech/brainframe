@@ -1467,6 +1467,88 @@ edit that grows it) are later steps and are not testable yet.
   decision is a `stat`. Not observable by hand; covered by the automated
   tests with a store that refuses to read the file.
 
+### F32 — The note size ceiling: a note that grows too large outside the app
+
+As of ceiling step 20, a note BrainFrame already tracks — one with a history
+— that is edited *outside* the app past the 128 KiB limit is not converted
+behind the user's back and not read into memory. It waits: the file is left
+exactly as found, the note opens read-only, and Settings › Housekeeping
+offers two ways out — **Reconstruct** the last version BrainFrame saved
+(keeping the larger file beside it) or **Convert** it to a plain file. This
+case drives both. Use the fixture engram and any editor that can write to
+its folder; the appended text can be anything, as long as the file ends up
+over 131,072 bytes.
+
+**Steps:**
+
+1. Open `about.md` in BrainFrame and make a small edit; let it save. Quit.
+2. In another editor, append enough text to `about.md` to take it past
+   131,072 bytes (paste a long paragraph fifty times). Relaunch BrainFrame.
+3. Select `about.md` in the tree. Try to type in it.
+4. Open **Settings › Housekeeping** and read the section above *Recent
+   scans*, then the newest scan card.
+5. Tap **Reconstruct**. Read the pane, then go back and look at the tree
+   and at the folder in the file manager.
+6. Select `about.md`; then select `about (oversized).md`.
+7. **Convert:** repeat steps 1–2 with `gear/checklist.md`; in Housekeeping,
+   tap **Convert to a plain file**. Then open `gear/checklist.md`, edit it,
+   and let it save; check the file in the other editor.
+8. **Trimmed outside:** repeat steps 1–2 with `daily/2026-05-09.md`, then —
+   before opening Housekeeping — trim the appended text away in the other
+   editor and switch back to BrainFrame (resume).
+9. **Restart:** repeat steps 1–2 with `maps/overview.md` and quit BrainFrame
+   *without* opening Housekeeping. Relaunch and open Housekeeping.
+
+**Expected:**
+
+- Step 3: the note shows in the reader, not the editor, under a banner:
+  *This note grew past the size limit outside BrainFrame and is read-only
+  until you decide what to do with it in Settings › Housekeeping.* No
+  Edit/Preview toggle, no save chip; typing does nothing. The file on disk
+  is untouched.
+- Step 4: an **Awaiting your decision** section with one card: *about.md is
+  now N bytes; the limit is 131,072.* — N being the size the other editor
+  shows — then a line explaining both choices, naming `about (oversized).md`,
+  and two buttons. The newest scan card reads "1 awaiting a decision" with
+  an emphasised line naming the path.
+- Step 5: the section disappears at once (not greyed, gone); a new card
+  "*time* · by request — 1 reconstructed" says `about.md` was restored and
+  the larger file is kept as `about (oversized).md`. The tree and the folder
+  both show `about (oversized).md` beside `about.md`; the folder's
+  `about.md` is the version from step 1, and `about (oversized).md` is
+  byte-for-byte the file from step 2.
+- Step 6: `about.md` opens in the **editor** again with the step 1 content,
+  and edits save. `about (oversized).md` opens in the editor too — it is a
+  plain file now (F31), and the ledger's plain-file count went up by one
+  after the scan that found it (resume or relaunch).
+- Step 7: the card goes; a "by request — 1 made a plain file" card appears;
+  the file is byte-for-byte the step 2 version; it opens in the editor and
+  saves; the other editor sees the edit; the ledger's plain-file count is
+  one higher. No `(oversized)` copy is made.
+- Step 8: no card ever appears for it, and Housekeeping's newest card says
+  "1 note updated from disk": trimmed back under the limit, it is ordinary
+  drift, and the trim is now part of its history.
+- Step 9: the section is there after the relaunch, exactly as in step 4 —
+  the state is kept in the engram's database, not in memory.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app; otherwise **N/A** | as Android | as Android | ✓ with the file edited over SSH; step 8's resume **N/A** — relaunch instead |
+
+- **Never automatic:** nothing here happens without a tap on one of the two
+  buttons, except step 8's return to normal — which loses nothing. Report a
+  conversion or a reconstruction that happened on its own.
+- **Nothing destroyed:** Reconstruct keeps the larger file; Convert keeps it
+  in place. A test that ends with the appended text gone from every file is
+  a defect.
+- **A11y:** the banner is a live region; each button is labeled with the
+  note's path ("Reconstruct about.md", "Convert about.md to a plain file").
+- **Declarative-trap probe:** after either button the section re-reads from
+  the catalog — a card that stays until the pane is reopened is a bug.
+- **Inspection point:** the oversized file is never read whole at any point
+  — the decision is a `stat` and Reconstruct is a rename. Not observable by
+  hand; the automated tests use a store that refuses to read it.
+
 ---
 
 ## Bug-class deep-dives

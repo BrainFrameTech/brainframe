@@ -577,6 +577,120 @@ void main() {
       );
     });
 
+    testWidgets('a note awaiting a decision is listed with its two verbs', (
+      tester,
+    ) async {
+      // Step 20. The card is the asking: what happened, what each choice
+      // keeps and loses, and a button for each.
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 2,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        pending: [const PendingNote(path: 'journal/2025.md', sizeBytes: 140206)],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Awaiting your decision'), findsOneWidget);
+      expect(
+        find.text('journal/2025.md is now 140,206 bytes; the limit is 131,072.'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('keeps this larger file beside it as '
+            '“2025 (oversized).md”'),
+        findsOneWidget,
+      );
+      final reconstruct = find.widgetWithText(FilledButton, 'Reconstruct');
+      expect(
+        tester.getSemantics(reconstruct).label,
+        contains('Reconstruct journal/2025.md'),
+      );
+      final convert = find.widgetWithText(TextButton, 'Convert to a plain file');
+      expect(
+        tester.getSemantics(convert).label,
+        contains('Convert journal/2025.md to a plain file'),
+      );
+    });
+
+    testWidgets('Reconstruct and Convert act at once and reload', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 2,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        pending: [
+          const PendingNote(path: 'a.md', sizeBytes: 140000),
+          const PendingNote(path: 'b.md', sizeBytes: 150000),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+      expect(find.byType(FilledButton), findsNWidgets(2));
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Reconstruct').first);
+      await tester.pumpAndSettle();
+
+      expect(notes.reconstructed, ['a.md']);
+      expect(find.byType(FilledButton), findsOneWidget, reason: 're-read');
+
+      await tester.tap(find.widgetWithText(TextButton, 'Convert to a plain file'));
+      await tester.pumpAndSettle();
+
+      expect(notes.converted, ['b.md']);
+      expect(find.text('Awaiting your decision'), findsNothing);
+    });
+
+    testWidgets('a scan card says a note is waiting, and one was rebuilt', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 2,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(awaitingDecision: ['journal/2025.md']),
+          ),
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 9, 5),
+            trigger: ScanTrigger.manual,
+            report: const DriftScanReport(
+              reconstructed: {'journal/2025.md': 'journal/2025 (oversized).md'},
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 awaiting a decision'), findsOneWidget);
+      expect(
+        find.textContaining('read-only until you decide, above: journal/2025.md.'),
+        findsOneWidget,
+      );
+      expect(find.text('1 reconstructed'), findsOneWidget);
+      expect(
+        find.text('journal/2025.md was restored to the last version BrainFrame '
+            'saved; the larger file is kept as journal/2025 (oversized).md.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the ledger line states the engram\'s own ceiling', (
       tester,
     ) async {
@@ -673,12 +787,19 @@ class _InertStore extends EngramStore {
 
 /// A reconciler that only answers the two questions the pane asks.
 class _Notes implements NoteReconciler {
-  _Notes.named({required this.ledgerValue, List<ScanNotice> scans = const []})
-    : scans = List.of(scans);
+  _Notes.named({
+    required this.ledgerValue,
+    List<ScanNotice> scans = const [],
+    List<PendingNote> pending = const [],
+  }) : scans = List.of(scans),
+       pending = List.of(pending);
 
   final NoteLedger ledgerValue;
   final List<ScanNotice> scans;
+  final List<PendingNote> pending;
   final List<int> dismissed = [];
+  final List<String> reconstructed = [];
+  final List<String> converted = [];
 
   @override
   Future<NoteLedger> ledger() async => ledgerValue;
@@ -694,7 +815,20 @@ class _Notes implements NoteReconciler {
   }
 
   @override
-  Future<void> convertToPlainFile(String path) async {}
+  Future<void> convertToPlainFile(String path) async {
+    converted.add(path);
+    pending.removeWhere((note) => note.path == path);
+  }
+
+  @override
+  Future<List<PendingNote>> awaitingDecision() async => List.of(pending);
+
+  @override
+  Future<String> reconstruct(String path) async {
+    reconstructed.add(path);
+    pending.removeWhere((note) => note.path == path);
+    return asidePathFor(path);
+  }
 
   @override
   Future<DriftScanReport> scan({

@@ -104,6 +104,11 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   String? _loadedPath;
   Object? _loadError;
 
+  /// The note grew past the size limit outside the app and is awaiting the
+  /// user's decision in Housekeeping (the note size ceiling design,
+  /// Decision 4): shown read-only, with no editor and nothing to save.
+  bool _awaitingDecision = false;
+
   StreamSubscription<String>? _reconciled;
 
   @override
@@ -152,10 +157,18 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       // file is a different path (or this one, already open, which openFile
       // ignores), so there is no buffer over this note to flush first.
       await widget.reconciler?.reconcile(path);
-      final text = await widget.store.readString(path);
-      await _controller.openFile(path, text);
+      // The reconciliation just ran may have found the note over the
+      // ceiling, or it may have been waiting since an earlier scan; either
+      // way it is read-only until the user decides, and the controller
+      // never sees it — there must be no buffer a save could reach.
+      final awaiting = await _isAwaitingDecision(path);
+      if (!awaiting) {
+        final text = await widget.store.readString(path);
+        await _controller.openFile(path, text);
+      }
       if (!mounted || widget.path != path) return;
       setState(() {
+        _awaitingDecision = awaiting;
         _loadedPath = path;
         _loadError = null;
         _mode = _Mode.edit; // a freshly opened file starts in Edit
@@ -168,6 +181,15 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
     }
   }
 
+  Future<bool> _isAwaitingDecision(String path) async {
+    final reconciler = widget.reconciler;
+    if (reconciler == null) return false;
+    for (final note in await reconciler.awaitingDecision()) {
+      if (note.path == path) return true;
+    }
+    return false;
+  }
+
   void _onControllerChanged() {
     if (mounted) setState(() {}); // refresh the save-status chip
   }
@@ -178,6 +200,13 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
     // Only a note that has finished loading: one mid-open reads the
     // reconciled file anyway, and one that has moved on is not ours.
     if (path != widget.path || _loadedPath != path) return;
+    // A note that was awaiting a decision has just been reconstructed: it
+    // is editable again, and the controller never loaded it, so this is an
+    // open rather than a reload.
+    if (_awaitingDecision) {
+      unawaited(_open(path));
+      return;
+    }
     unawaited(_reload(path));
   }
 
@@ -310,8 +339,10 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
     final l10n = AppLocalizations.of(context);
     if (_loadError != null) {
       return Center(
-        child: Text(l10n.readerOpenError(widget.path),
-            textAlign: TextAlign.center),
+        child: Text(
+          l10n.readerOpenError(widget.path),
+          textAlign: TextAlign.center,
+        ),
       );
     }
     if (_loadedPath != widget.path) {
@@ -320,6 +351,39 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
           label: l10n.readerLoading,
           child: const CircularProgressIndicator.adaptive(),
         ),
+      );
+    }
+    if (_awaitingDecision) {
+      // Read-only, and plainly so: the reader over the file, under a line
+      // that says why and where the decision is made. No header — there is
+      // no mode to toggle and nothing to save. Step 22 puts the decision's
+      // two verbs on the status bar; until then, Housekeeping has them.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              color: Theme.of(context).colorScheme.tertiaryContainer,
+              child: Text(
+                l10n.editorAwaitingDecision,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: MarkdownReader(
+              store: widget.store,
+              path: widget.path,
+              availablePaths: widget.availablePaths,
+              onNavigateToFile: widget.onNavigateToFile,
+            ),
+          ),
+        ],
       );
     }
     // Ctrl/Cmd+S flushes now — the keyboard equivalent of the save-status chip.
@@ -504,8 +568,10 @@ class _SaveStatusChip extends StatelessWidget {
               children: [
                 Icon(icon, size: 16, color: color),
                 const SizedBox(width: 4),
-                Text(label,
-                    style: theme.textTheme.labelMedium?.copyWith(color: color)),
+                Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(color: color),
+                ),
               ],
             ),
           ),

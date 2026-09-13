@@ -253,6 +253,60 @@ class DriftReconciler implements NoteReconciler {
   }
 
   @override
+  Future<List<PendingNote>> awaitingDecision() async => [
+    for (final row in database.catalog.findable())
+      if (row.state == NoteState.oversized)
+        PendingNote(
+          path: row.path,
+          sizeBytes: (await engram.statFile(row.path))?.size ?? 0,
+        ),
+  ];
+
+  @override
+  Future<String> reconstruct(String path) async {
+    final started = DateTime.now();
+    final kept = await lock.run(() async {
+      final row = database.catalog.byPath(path);
+      if (row == null || row.state != NoteState.oversized) {
+        throw StateError('$path is not awaiting a decision');
+      }
+      // The oversized file is moved aside, not copied: a rename never reads
+      // it, and it may be larger than memory. It is then an ordinary file in
+      // the folder, and the next scan tracks it as any oversized arrival.
+      final aside = await _asidePathFor(path);
+      await engram.move(path, aside);
+      // Live again first, so the materializer commits a live row.
+      database.catalog.upsert(_withState(row, NoteState.live));
+      final note = NoteDocument.open(store: database, ulid: row.ulid);
+      try {
+        // The CRDT's last state: the last version BrainFrame saved, under
+        // the ceiling by construction, written back to the note's path.
+        await materializeNote(store: database, engram: engram, note: note);
+      } finally {
+        note.dispose();
+      }
+      return aside;
+    });
+    _recordScan(
+      DriftScanReport(reconstructed: {path: kept}),
+      trigger: ScanTrigger.manual,
+      startedAt: started,
+      stampLastScan: false,
+    );
+    _reconciled.add(path);
+    return kept;
+  }
+
+  /// The first of [asidePathFor]'s names beside [path] that nothing is at —
+  /// never overwriting anything.
+  Future<String> _asidePathFor(String path) async {
+    for (var n = 1; ; n++) {
+      final candidate = asidePathFor(path, ordinal: n);
+      if (await engram.statFile(candidate) == null) return candidate;
+    }
+  }
+
+  @override
   Future<NoteLedger> ledger() async {
     final map = identity;
     final ours = database.peerId;
@@ -310,6 +364,7 @@ class DriftReconciler implements NoteReconciler {
     final tombstoned = <String>[];
     final retired = <String>[];
     final convertedElsewhere = <String, int>{};
+    final awaitingDecision = <String>[];
 
     // The listing, and whether it can be trusted to be the whole folder.
     // Both halves are required before anything is called absent: a folder
@@ -371,7 +426,14 @@ class DriftReconciler implements NoteReconciler {
           continue;
         }
         if (!complete || onDisk.contains(row.path)) {
-          if (await _reconcileRow(row)) reconciled.add(row.path);
+          switch (await _reconcileRow(row)) {
+            case _Drift.reconciled:
+              reconciled.add(row.path);
+            case _Drift.awaitingDecision:
+              awaitingDecision.add(row.path);
+            case _Drift.none:
+              break;
+          }
           continue;
         }
         // Listed as absent. Confirm it with a stat of its own, so a listing
@@ -411,8 +473,13 @@ class DriftReconciler implements NoteReconciler {
           if (match != null) {
             missing.remove(match);
             moved[match.path] = path;
-            if (await _reconcileRow(database.catalog.byPath(path)!)) {
-              reconciled.add(path);
+            switch (await _reconcileRow(database.catalog.byPath(path)!)) {
+              case _Drift.reconciled:
+                reconciled.add(path);
+              case _Drift.awaitingDecision:
+                awaitingDecision.add(path);
+              case _Drift.none:
+                break;
             }
             continue;
           }
@@ -471,6 +538,7 @@ class DriftReconciler implements NoteReconciler {
       tombstoned: tombstoned,
       retired: retired,
       convertedElsewhere: convertedElsewhere,
+      awaitingDecision: awaitingDecision,
       listingFailure: listingFailure,
     );
   }
@@ -502,7 +570,25 @@ class DriftReconciler implements NoteReconciler {
     // be a mistake, and reconciling it would keep the mistake alive.
     if (isHiddenEngramPath(path)) return false;
     final row = database.catalog.byPath(path);
-    if (row != null) return _reconcileRow(row);
+    if (row != null) {
+      final started = DateTime.now();
+      switch (await _reconcileRow(row)) {
+        case _Drift.reconciled:
+          return true;
+        case _Drift.awaitingDecision:
+          // Found before an open rather than by a scan: recorded as one so
+          // Housekeeping has the same card either way.
+          _recordScan(
+            DriftScanReport(awaitingDecision: [path]),
+            trigger: ScanTrigger.manual,
+            startedAt: started,
+            stampLastScan: false,
+          );
+          return false;
+        case _Drift.none:
+          return false;
+      }
+    }
     final map = identity;
     if (map == null) return false;
     if (await engram.statFile(path) == null) return false;
@@ -555,20 +641,45 @@ class DriftReconciler implements NoteReconciler {
   ///
   /// The lock is taken per note and released before the next, so a save
   /// waiting on it waits for one reconciliation, not a whole scan.
-  Future<bool> _reconcileRow(CatalogRow row) async {
-    if (row.state != NoteState.live) return false;
+  Future<_Drift> _reconcileRow(CatalogRow row) async {
+    if (row.state != NoteState.live && row.state != NoteState.oversized) {
+      return _Drift.none;
+    }
 
     return lock.run(() async {
       // Re-read under the lock: a save that was ahead of us in the queue has
       // just committed a new hash, and the row we were handed describes the
       // file before it.
-      final current = database.catalog.byUlid(row.ulid);
-      if (current == null || current.state != NoteState.live) return false;
+      var current = database.catalog.byUlid(row.ulid);
+      if (current == null) return _Drift.none;
+      if (current.state != NoteState.live &&
+          current.state != NoteState.oversized) {
+        return _Drift.none;
+      }
 
       final stat = await engram.statFile(current.path);
-      if (stat == null) return false; // gone: the scan's question, not this
+      if (stat == null) return _Drift.none; // gone: the scan's question
       if (current.mergePolicy != MergePolicy.fugueText) {
-        return _reconcileBlob(current, stat);
+        return await _reconcileBlob(current, stat)
+            ? _Drift.reconciled
+            : _Drift.none;
+      }
+
+      // The ceiling, from the stat and before any read, and whether or not
+      // the file looks changed — a lowered ceiling changes nothing on disk.
+      // A text note over it has a history and is too large to open as one:
+      // it waits for the user (the note size ceiling design, Decision 4).
+      // The file is left exactly as found; nothing below runs for it. A
+      // note that was waiting and is now back under the line has been
+      // trimmed outside the app, and comes back as ordinary drift.
+      if (stat.size > noteSizeCeilingBytes) {
+        if (current.state == NoteState.oversized) return _Drift.none;
+        database.catalog.upsert(_withState(current, NoteState.oversized));
+        return _Drift.awaitingDecision;
+      }
+      if (current.state == NoteState.oversized) {
+        current = _withState(current, NoteState.live);
+        database.catalog.upsert(current);
       }
 
       // Decision 5's two-stage test, with the file's bytes kept: the hash the
@@ -577,7 +688,7 @@ class DriftReconciler implements NoteReconciler {
       // one that predates the sketch — reads the file regardless, so the
       // sketch can be built from it.
       if (current.sketch != null && !mayHaveDrifted(current, stat)) {
-        return false;
+        return _Drift.none;
       }
       final bytes = await engram.readBytes(current.path);
       final onDiskHash = contentHash(bytes);
@@ -591,7 +702,7 @@ class DriftReconciler implements NoteReconciler {
             text: utf8.decode(bytes),
           );
         }
-        return false;
+        return _Drift.none;
       }
 
       final NoteDocument note;
@@ -601,7 +712,7 @@ class DriftReconciler implements NoteReconciler {
         // A live row whose log has not arrived: nothing to diff into. The
         // file stays as the user left it, which is what Decision 4's bounded
         // exception promises, and the eventual log reconciles it then.
-        return false;
+        return _Drift.none;
       }
       try {
         // Steps 3 and 4: a minimal script — never replace-all — applied in
@@ -623,9 +734,22 @@ class DriftReconciler implements NoteReconciler {
         note.dispose();
       }
       _reconciled.add(current.path);
-      return true;
+      return _Drift.reconciled;
     });
   }
+
+  /// [row] in [state], everything else as it was.
+  CatalogRow _withState(CatalogRow row, NoteState state) => CatalogRow(
+    ulid: row.ulid,
+    path: row.path,
+    mergePolicy: row.mergePolicy,
+    state: state,
+    materializedHash: row.materializedHash,
+    size: row.size,
+    mtimeUtc: row.mtimeUtc,
+    sketch: row.sketch,
+    seedClaim: row.seedClaim,
+  );
 
   /// Decision 6 for a blob, under the lock already: the same two-stage drift
   /// test, and then — instead of a diff, which a blob never enters — one
@@ -1007,4 +1131,16 @@ class _NewFile {
 
   /// A text path the ceiling made a blob of.
   final bool overCeiling;
+}
+
+/// What reconciling one note came to.
+enum _Drift {
+  /// Nothing to do, or nothing that could be done.
+  none,
+
+  /// The file had changed and its changes are now history.
+  reconciled,
+
+  /// The file is over the ceiling; the note now waits for the user.
+  awaitingDecision,
 }

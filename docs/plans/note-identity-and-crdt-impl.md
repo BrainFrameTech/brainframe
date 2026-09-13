@@ -688,8 +688,10 @@ boundary above, and the step that carries bytes is the one to decide what
 the file does meanwhile.
 
 **A blob is never read whole** (**#151**, landed after review of the first
-cut). A video dropped into the folder is a blob like any other, and the
-targets this app runs on cannot hold one in memory. `EngramStore.openRead`
+cut). A video dropped into the folder is a blob like any other; a desktop
+or a Pi 5 can usually hold one, but the smallest target — a Pi Zero 2 W
+with 512 MB — cannot be expected to, and one design serves every target.
+`EngramStore.openRead`
 streams a file in chunks — a real `File.openRead` on the filesystem store,
 `readBytes` as one chunk everywhere else, which is honest because no other
 backend can hold a file larger than memory — and `digestStream` folds the

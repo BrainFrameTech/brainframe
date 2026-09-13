@@ -607,8 +607,9 @@ void main() {
     });
 
     test('a blob is never read whole, at any step', () async {
-      // #151: a video is a blob like any other, and a Pi cannot hold one in
-      // memory. Every path that needs a blob's hash — bringing it in,
+      // #151: a video is a blob like any other, and the smallest target, a
+      // Pi Zero 2 W with 512 MB, cannot be expected to hold one in memory.
+      // Every path that needs a blob's hash — bringing it in,
       // matching it after a move, noticing it changed — streams it. The
       // store here refuses to hand over a whole blob, so any regression is
       // a thrown error, not a quiet allocation.

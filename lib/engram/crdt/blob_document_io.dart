@@ -11,9 +11,9 @@
 ///
 /// **Nothing here sees the bytes.** [mint] and [record] take the digest, and
 /// the caller computes it over a stream ([digestFile]) — a video dropped into
-/// the folder is a blob like any other, and the targets this app runs on
-/// cannot hold one in memory. The one thing this file knows about a blob's
-/// content is forty bytes long.
+/// the folder is a blob like any other, and the smallest target, a Pi Zero
+/// 2 W with 512 MB, cannot be expected to hold one. The one thing this file
+/// knows about a blob's content is forty bytes long.
 ///
 /// **A blob never enters the diff path.** Not by a check at the door but by
 /// construction: there is no text handler on this document to diff into, and

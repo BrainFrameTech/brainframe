@@ -46,13 +46,15 @@ void main() {
     );
   });
 
-  test('a read-only engram is refused before any database is touched',
-      () async {
-    // No resolver at all: if openFor reached the database this would try the
-    // real app-data directory, so passing proves the read-only check comes
-    // first.
-    expect(await CrdtSession.openFor(engramWith(readOnly: true)), isNull);
-  });
+  test(
+    'a read-only engram is refused before any database is touched',
+    () async {
+      // No resolver at all: if openFor reached the database this would try the
+      // real app-data directory, so passing proves the read-only check comes
+      // first.
+      expect(await CrdtSession.openFor(engramWith(readOnly: true)), isNull);
+    },
+  );
 
   test('a writable engram gets a CRDT writer', () async {
     final session = await CrdtSession.openFor(
@@ -100,10 +102,7 @@ void main() {
     // One file per device, inside the engram: what a second machine reads
     // to adopt this one's ULIDs rather than minting its own.
     final engram = engramWith(readOnly: false);
-    final session = await CrdtSession.openFor(
-      engram,
-      resolveRoot: resolveRoot,
-    );
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
 
     await session!.writer.write('inbox/today.md', '# Today\n');
     await session.close();
@@ -118,10 +117,7 @@ void main() {
     // A rename recorded seconds before the engram was switched away from
     // must reach the folder, or every other device keeps the old path.
     final engram = engramWith(readOnly: false);
-    final session = await CrdtSession.openFor(
-      engram,
-      resolveRoot: resolveRoot,
-    );
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
     await session!.writer.write('a.md', 'content\n');
     await engram.store.move('a.md', 'b.md');
     await session.reconciler.noteMoved('a.md', 'b.md');
@@ -132,7 +128,7 @@ void main() {
     final rows = await IdentityMap(
       engramRoot: '${root.path}/engram',
       peerId: PeerId.generate(),
-    ).readAll();
+    ).readEveryDevicesRows();
     expect(rows.single.path, 'b.md');
   });
 
@@ -150,10 +146,7 @@ void main() {
 
   test('the session writes through to the engram', () async {
     final engram = engramWith(readOnly: false);
-    final session = await CrdtSession.openFor(
-      engram,
-      resolveRoot: resolveRoot,
-    );
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
     addTearDown(() => session?.close());
 
     await session!.writer.write('inbox/today.md', '# Today\n');

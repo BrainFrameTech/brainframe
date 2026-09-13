@@ -643,7 +643,9 @@ rather than an edge case, and four properties are required of it:
   is durable would break it.
 - **Non-blocking and visible.** A large vault takes long enough to notice, so
   adoption runs behind the UI with progress, and the engram is usable while it
-  proceeds. Notes not yet reached behave as history-pending.
+  proceeds. A note the user opens before adoption reaches it is brought in
+  then and there, by the same reconciliation that runs before any note opens,
+  and adoption finds it present when it gets there.
 - **Ungated by the network.** Adoption never waits for a peer. The adopting
   device mints and holds the seed claim for everything it creates, which is
   exactly what makes this safe with no transport in existence.

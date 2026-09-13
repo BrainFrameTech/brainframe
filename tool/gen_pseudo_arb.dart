@@ -26,8 +26,13 @@ const Map<String, String> _accents = {
   'Y': 'Ý', 'Z': 'Ž',
 };
 
-/// Matches an ICU placeholder such as `{name}` — copied through verbatim.
-final RegExp _placeholder = RegExp(r'\{[^}]*\}');
+/// The head of an ICU plural or select block: `{count, plural, ` up to and
+/// including the second comma. What follows is a run of `key{text}` cases.
+final RegExp _pluralHead = RegExp(r'^\s*\w+\s*,\s*(plural|select)\s*,');
+
+/// One case inside a plural or select block: its key (`=0`, `one`, `other`,
+/// or a select value) up to the brace that opens its text.
+final RegExp _caseKey = RegExp(r'\s*(=\d+|\w+)\s*\{');
 
 String _accent(String text) {
   final buffer = StringBuffer();
@@ -40,25 +45,82 @@ String _accent(String text) {
 
 /// Pseudo-localizes one message: accents letters (outside `{placeholders}`),
 /// pads ~40% to expose overflow, and brackets the whole so truncation shows.
+///
+/// ICU plural and select blocks keep their structure — the argument, the
+/// keyword, and every case key stay verbatim, since the ICU parser needs them
+/// — and only the text inside each case is accented. Anything else in braces
+/// is a placeholder and is copied through.
 String pseudoLocalize(String message) {
   final buffer = StringBuffer('[');
-  var index = 0;
-  var visibleLetters = 0;
-  for (final match in _placeholder.allMatches(message)) {
-    final segment = message.substring(index, match.start);
-    buffer.write(_accent(segment));
-    visibleLetters += segment.replaceAll(RegExp(r'\s'), '').length;
-    buffer.write(match.group(0)); // placeholder, untouched
-    index = match.end;
-  }
-  final tail = message.substring(index);
-  buffer.write(_accent(tail));
-  visibleLetters += tail.replaceAll(RegExp(r'\s'), '').length;
-
+  final visibleLetters = _localize(message, buffer);
   buffer.write('~' * ((visibleLetters * 0.4).round()));
   buffer.write(']');
   return buffer.toString();
 }
+
+/// Writes the pseudo-localized [message] to [out] and returns how many
+/// non-whitespace letters were accented, which sizes the padding.
+int _localize(String message, StringBuffer out) {
+  var visibleLetters = 0;
+  var index = 0;
+  while (index < message.length) {
+    final open = message.indexOf('{', index);
+    if (open == -1) break;
+    final close = _matchingBrace(message, open);
+    final segment = message.substring(index, open);
+    out.write(_accent(segment));
+    visibleLetters += _letters(segment);
+    final inner = message.substring(open + 1, close);
+    final head = _pluralHead.firstMatch(inner);
+    if (head == null) {
+      out.write(message.substring(open, close + 1)); // a placeholder
+    } else {
+      out.write('{${inner.substring(0, head.end)}');
+      visibleLetters += _localizeCases(inner.substring(head.end), out);
+      out.write('}');
+    }
+    index = close + 1;
+  }
+  final tail = message.substring(index);
+  out.write(_accent(tail));
+  return visibleLetters + _letters(tail);
+}
+
+/// Writes the cases of a plural or select block, keys verbatim and texts
+/// localized, and returns the letters accented.
+int _localizeCases(String cases, StringBuffer out) {
+  var visibleLetters = 0;
+  var index = 0;
+  while (index < cases.length) {
+    final key = _caseKey.matchAsPrefix(cases, index);
+    if (key == null) {
+      out.write(cases.substring(index)); // trailing whitespace, or malformed
+      break;
+    }
+    final open = key.end - 1;
+    final close = _matchingBrace(cases, open);
+    out.write(cases.substring(index, key.end));
+    visibleLetters += _localize(cases.substring(open + 1, close), out);
+    out.write('}');
+    index = close + 1;
+  }
+  return visibleLetters;
+}
+
+/// The index of the `}` that closes the `{` at [open], allowing for nesting.
+/// A message that never closes it is malformed, and the whole rest of the
+/// message is taken as the block so the error surfaces in gen-l10n's output
+/// rather than being silently mangled here.
+int _matchingBrace(String text, int open) {
+  var depth = 0;
+  for (var i = open; i < text.length; i++) {
+    if (text[i] == '{') depth++;
+    if (text[i] == '}' && --depth == 0) return i;
+  }
+  return text.length - 1;
+}
+
+int _letters(String text) => text.replaceAll(RegExp(r'\s'), '').length;
 
 /// Builds the pseudo-locale ARB JSON from the template ARB [templateJson].
 /// Keeps `@@locale` (rewritten to `en_XA`) and every message, drops the

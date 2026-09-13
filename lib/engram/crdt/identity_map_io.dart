@@ -172,7 +172,12 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
     }
   }
 
-  /// Every row from every device's file, including this one's.
+  /// Every row from every device's map file, including this one's.
+  ///
+  /// **Map files only** — the few-kilobyte `<peerId>.db` files under
+  /// `.brainframe/shared/`, never a note. Named to say so, because a reader
+  /// meeting a bare `readAll` beside the scan's per-note loop reasonably
+  /// wondered whether it read the engram.
   ///
   /// A device reads the whole directory and unions it: peers appear as files,
   /// so nothing has to be discovered and no device list is kept anywhere.
@@ -188,7 +193,7 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
   /// already handled — an unseen row can let this device mint a second ULID
   /// for a path, which is precisely the collision Decision 9's lowest-ULID
   /// election resolves.
-  Future<List<IdentityRow>> readAll() async {
+  Future<List<IdentityRow>> readEveryDevicesRows() async {
     final directory = Directory(directoryPath);
     if (!await directory.exists()) return const [];
 

@@ -7,6 +7,7 @@ import '../desktop_folder_adoption.dart';
 import '../engram.dart';
 import '../engram_repository.dart';
 import '../engram_scope.dart';
+import '../fs/fs_store.dart';
 
 /// The sidebar-footer engram switcher (Decision 8's "travel there" entry point).
 ///
@@ -24,6 +25,7 @@ class EngramSwitcher extends StatelessWidget {
     required this.repository,
     required this.current,
     this.allowCreateEngram = !kIsWeb,
+    this.folderPicker,
   });
 
   final EngramRepository repository;
@@ -32,6 +34,10 @@ class EngramSwitcher extends StatelessWidget {
   /// Whether creating a new engram is offered. False on web, where the
   /// filesystem store is unsupported. Injectable so both branches are testable.
   final bool allowCreateEngram;
+
+  /// The directory chooser behind **Open folder…**, or the native dialog when
+  /// null. Injected so the adoption confirmation can be driven in a test.
+  final DirectoryPicker? folderPicker;
 
   @override
   Widget build(BuildContext context) {
@@ -101,12 +107,56 @@ class EngramSwitcher extends StatelessWidget {
         onOpenFolder: isDesktopFolderAdoptionSupported
             ? () async {
                 Navigator.of(sheetContext).pop();
-                final engram = await pickAndAdoptFolder(repository);
+                final engram = await pickAndAdoptFolder(
+                  repository,
+                  picker: folderPicker,
+                  confirm: (preview) => _confirmAdoption(context, preview),
+                );
                 if (engram != null) await scope.switchTo(engram);
               }
             : null,
       ),
     );
+  }
+
+  /// The adoption confirmation: what will be written into the folder, how
+  /// many of its files become notes, and — when any will be — how many are
+  /// rewritten from Windows line endings to LF. That rewrite is Decision 10's
+  /// one-time cost, made in one sweep at adoption rather than dripped out as
+  /// notes are first edited, and it is the change a folder under version control
+  /// notices most, so it is stated with its count before it happens.
+  Future<bool> _confirmAdoption(
+    BuildContext context,
+    FolderAdoptionPreview preview,
+  ) async {
+    if (!context.mounted) return false;
+    final l10n = AppLocalizations.of(context);
+    final body = StringBuffer(
+      l10n.adoptFolderBody(preview.name, preview.fileCount),
+    );
+    if (preview.crlfCount > 0) {
+      body
+        ..write(' ')
+        ..write(l10n.adoptFolderLineEndings(preview.crlfCount));
+    }
+    final adopt = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog.adaptive(
+        title: Text(l10n.adoptFolderTitle),
+        content: Text(body.toString()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.adopt),
+          ),
+        ],
+      ),
+    );
+    return adopt ?? false;
   }
 
   Future<void> _createEngram(BuildContext context, EngramScopeData scope) async {

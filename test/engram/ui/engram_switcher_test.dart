@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:brainframe/engram/built_in_engrams.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
@@ -47,6 +49,18 @@ class _FakeRepo extends EngramRepository {
   @override
   Future<Engram> create(String displayName) async =>
       _engram('created-$displayName', displayName);
+
+  /// Folders adopted through the desktop flow, by path.
+  final List<String> adopted = [];
+
+  @override
+  Future<Engram> adoptFolder(
+    EngramLocation location, {
+    String? displayName,
+  }) async {
+    adopted.add(location.path);
+    return _engram('adopted-${location.path}', displayName ?? 'Adopted');
+  }
 }
 
 void main() {
@@ -67,6 +81,7 @@ void main() {
     EngramRepository repository,
     Engram initial, {
     bool allowCreateEngram = true,
+    Future<String?> Function()? folderPicker,
   }) =>
       localizedApp(
         home: EngramScope(
@@ -82,6 +97,7 @@ void main() {
                     repository: repository,
                     current: active,
                     allowCreateEngram: allowCreateEngram,
+                    folderPicker: folderPicker,
                   ),
                 ],
               );
@@ -190,5 +206,126 @@ void main() {
     // Reset before the body ends: testWidgets checks foundation debug vars are
     // unset before group tearDown runs.
     debugDefaultTargetPlatformOverride = null;
+  });
+
+  group('adopting a folder', () {
+    // The picker returns a real temporary folder, so the preview counts real
+    // files; the repository is faked so no marker is written by the test.
+    late Directory folder;
+
+    setUp(() async {
+      folder = await Directory.systemTemp.createTemp('switcher_adopt');
+      await File('${folder.path}/one.md').writeAsString('1\r\n');
+      await File('${folder.path}/two.md').writeAsString('2\n');
+      await Directory('${folder.path}/.obsidian').create();
+      await File('${folder.path}/.obsidian/app.json').writeAsString('{}');
+    });
+
+    tearDown(() {
+      if (folder.existsSync()) folder.deleteSync(recursive: true);
+    });
+
+    Future<void> openFolder(WidgetTester tester) async {
+      await tester.tap(find.text('Tutorial'));
+      await tester.pumpAndSettle();
+      // The preview lists the folder for real, so the tap and the I/O it
+      // starts run under real time rather than the test's fake clock.
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Open folder…'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks first, naming the folder and counting its notes', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final repo = _FakeRepo(discovery: discovery());
+      await tester.pumpWidget(
+        harness(repo, tutorial, folderPicker: () async => folder.path),
+      );
+
+      await openFolder(tester);
+
+      expect(find.text('Adopt this folder?'), findsOneWidget);
+      final name = folder.path.split('/').last;
+      expect(
+        find.textContaining('“$name” will become an engram'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('2 files become notes'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'One of them uses Windows line endings and will be converted to LF '
+          'now.',
+        ),
+        findsOneWidget,
+        reason: 'the one-time rewrite, with its count, before it happens',
+      );
+      expect(repo.adopted, isEmpty, reason: 'nothing until confirmed');
+
+      // The rest of the flow was started under real time, so its
+      // continuation runs there too.
+      await tester.runAsync(() async {
+        await tester.tap(find.widgetWithText(TextButton, 'Adopt'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      expect(repo.adopted, [folder.path]);
+      expect(find.text('active:adopted-${folder.path}'), findsOneWidget);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('a folder with no CRLF files says nothing about line endings',
+        (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      // Synchronous: real async I/O started in the test zone never completes.
+      File('${folder.path}/one.md').writeAsStringSync('1\n');
+      final repo = _FakeRepo(discovery: discovery());
+      await tester.pumpWidget(
+        harness(repo, tutorial, folderPicker: () async => folder.path),
+      );
+
+      await openFolder(tester);
+
+      expect(find.text('Adopt this folder?'), findsOneWidget);
+      expect(find.textContaining('line endings'), findsNothing);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('Cancel adopts nothing and stays put', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final repo = _FakeRepo(discovery: discovery());
+      await tester.pumpWidget(
+        harness(repo, tutorial, folderPicker: () async => folder.path),
+      );
+
+      await openFolder(tester);
+      await tester.runAsync(() async {
+        await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      expect(repo.adopted, isEmpty);
+      expect(find.text('active:$builtinTutorialId'), findsOneWidget);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('a cancelled picker asks nothing', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final repo = _FakeRepo(discovery: discovery());
+      await tester.pumpWidget(
+        harness(repo, tutorial, folderPicker: () async => null),
+      );
+
+      await openFolder(tester);
+
+      expect(find.text('Adopt this folder?'), findsNothing);
+      expect(repo.adopted, isEmpty);
+      debugDefaultTargetPlatformOverride = null;
+    });
   });
 }

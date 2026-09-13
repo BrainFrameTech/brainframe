@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/widgets.dart';
 
@@ -26,6 +27,15 @@ import '../note_writer.dart';
 /// engram switch gets one too — and the scan on app resume. The third, before
 /// a file is opened for editing, belongs to the editor pane, which is the one
 /// that knows a file is about to open.
+///
+/// **Neither scan is waited for.** The session is published the moment it
+/// opens and the scan runs behind the UI. A first scan over a folder that
+/// predates the catalog mints every note in it — adoption at scale, which on
+/// the slowest target is minutes — and the engram is usable throughout: the
+/// editor's before-open reconciliation brings in whichever note the user
+/// reaches first, and the scan finds it already present when it gets there.
+/// What the scan is doing is on the reconciler's progress stream, for the
+/// browser to show.
 ///
 /// Absent by design in widget tests: nothing installs this host, so
 /// [maybeOf] returns null and the editor writes directly, exactly as it did
@@ -63,9 +73,8 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
   /// mounted before the writer exists would save straight to disk, and that
   /// write would come back as drift on the next scan — a real edit, correctly
   /// recovered, but recorded as though it had arrived from outside the app.
-  /// The start-up scan runs inside this window for the same reason, the other
-  /// way round: the editor that mounts afterwards opens a file whose history
-  /// already includes whatever changed while the app was closed.
+  /// Opening the session is quick; the scan that follows is not, and is not
+  /// inside this window.
   bool _resolving = true;
 
   PendingSaves get _pendingSaves =>
@@ -95,22 +104,40 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
     CrdtSession? next;
     try {
       next = await widget.openSession(engram);
-      // The scan on start. Nothing is registered to flush yet — the child is
-      // withheld — so Decision 6's first step is vacuously done. The report
-      // has no surface until step 13; what it says is logged by the scan.
-      await next?.reconciler.scan();
     } finally {
       if (mounted && _engramId == engram.id) {
         setState(() {
           _session = next;
           _resolving = false;
         });
+        // The scan on start, behind the UI. Nothing is registered to flush
+        // yet — the child is only now mounting — so Decision 6's first step
+        // is vacuously done. The report has no surface until step 13; what
+        // it says is logged by the scan.
+        if (next != null) _scanInBackground(next);
       } else {
         // Switched away mid-open: the session we just opened belongs to an
         // engram nobody is looking at, so close it rather than leaking it.
         unawaited(next?.close());
       }
     }
+  }
+
+  /// Runs a scan without waiting for it. The scan collects per-note failures
+  /// itself; what can still throw is the catalog being unreadable, which is
+  /// logged rather than left as an unhandled error from a fire-and-forget.
+  void _scanInBackground(CrdtSession session) {
+    unawaited(
+      session.reconciler.scan().catchError((Object error, StackTrace stack) {
+        developer.log(
+          'scan failed',
+          name: 'brainframe.engram.drift',
+          error: error,
+          stackTrace: stack,
+        );
+        return const DriftScanReport();
+      }),
+    );
   }
 
   @override
@@ -131,7 +158,7 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
     if (session == null) return;
     await _pendingSaves.flushAll();
     if (!mounted || !identical(_session, session)) return;
-    await session.reconciler.scan();
+    _scanInBackground(session);
   }
 
   @override

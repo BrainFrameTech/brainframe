@@ -27,6 +27,13 @@ void main() {
     expect(() => applicationEngramContainerPath(), throwsUnsupportedError);
   });
 
+  test('previewFolderAdoption is unsupported on the web stub', () {
+    expect(
+      () => previewFolderAdoption(const EngramLocation('/x')),
+      throwsUnsupportedError,
+    );
+  });
+
   test('ephemeralEngramContainerPath is unsupported on the web stub', () {
     expect(() => ephemeralEngramContainerPath(), throwsUnsupportedError);
   });

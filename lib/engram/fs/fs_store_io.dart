@@ -5,11 +5,14 @@ import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../crdt/catalog.dart';
 import '../engram.dart';
+import '../engram_paths.dart';
 import '../engram_store.dart';
 import '../id.dart';
 import '../metadata.dart';
 import 'engram_location.dart';
+import 'folder_preview.dart';
 
 /// The app-owned marker directory that identifies a folder as an engram.
 const String markerDirectoryName = '.brainframe';
@@ -313,6 +316,49 @@ Future<Engram> openOrCreateFileSystemEngram(
     return openFileSystemEngram(location);
   }
   return createFileSystemEngram(location: location, displayName: displayName);
+}
+
+/// What adopting the folder at [location] would do: its name, whether it is
+/// an engram already, how many of its files the scan would turn into notes,
+/// and how many of those it would rewrite — the counts the adoption
+/// confirmation shows.
+///
+/// Counts through the store's own listing with the scan's own filter, so the
+/// number the user is told is the number the scan will mint: nothing hidden,
+/// nothing under the marker. The rewrite count reads every text note once,
+/// which adoption is about to do anyway. A folder that does not exist counts
+/// as empty.
+Future<FolderAdoptionPreview> previewFolderAdoption(
+  EngramLocation location,
+) async {
+  final store = FileSystemEngramStore(location);
+  final files = [
+    for (final path in await store.list())
+      if (!isHiddenEngramPath(path)) path,
+  ];
+  var crlf = 0;
+  for (final path in files) {
+    if (mergePolicyForPath(path) != MergePolicy.fugueText) continue;
+    if ((await store.readBytes(path)).contains(_carriageReturn)) crlf++;
+  }
+  return FolderAdoptionPreview(
+    path: location.path,
+    name: _folderName(location.path),
+    fileCount: files.length,
+    crlfCount: crlf,
+    isEngram: await File(
+      '${location.path}/$markerDirectoryName/$_metadataFileName',
+    ).exists(),
+  );
+}
+
+const int _carriageReturn = 0x0d;
+
+/// The last segment of [path], with a trailing separator ignored.
+String _folderName(String path) {
+  final trimmed = path.replaceAll(r'\', '/').replaceAll(RegExp(r'/+$'), '');
+  final slash = trimmed.lastIndexOf('/');
+  return slash == -1 ? trimmed : trimmed.substring(slash + 1);
 }
 
 /// Opens an existing engram at [location] by reading its marker.

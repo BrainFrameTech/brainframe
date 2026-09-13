@@ -141,7 +141,7 @@ void main() {
       File('${stale.path}/map.db').writeAsStringSync('debris');
 
       await expectLater(map.write([row()]), completes);
-      expect((await map.readAll()).length, 1);
+      expect((await map.readEveryDevicesRows()).length, 1);
     });
 
     test('the staging directory is not mistaken for a peer', () async {
@@ -153,7 +153,9 @@ void main() {
       addTearDown(() => stale.deleteSync(recursive: true));
       File('${stale.path}/map.db').writeAsStringSync('debris');
 
-      expect((await map.readAll()).map((r) => r.path), ['ours.md']);
+      expect((await map.readEveryDevicesRows()).map((r) => r.path), [
+        'ours.md',
+      ]);
     });
 
     test('rewriting replaces the previous contents wholly', () async {
@@ -162,7 +164,7 @@ void main() {
       final second = row(path: 'second.md');
       await map.write([second]);
 
-      final rows = await map.readAll();
+      final rows = await map.readEveryDevicesRows();
       expect(rows.map((r) => r.path), ['second.md']);
       expect(rows.map((r) => r.ulid), isNot(contains(first.ulid)));
     });
@@ -180,21 +182,21 @@ void main() {
 
       await map.write([written]);
 
-      expect(await map.readAll(), [written]);
+      expect(await map.readEveryDevicesRows(), [written]);
     });
 
     test('an unclaimed seed reads back as no claim', () async {
       final written = row();
       await map.write([written]);
 
-      expect((await map.readAll()).single.seedClaim, isNull);
-      expect((await map.readAll()).single.seededBy, isNull);
+      expect((await map.readEveryDevicesRows()).single.seedClaim, isNull);
+      expect((await map.readEveryDevicesRows()).single.seededBy, isNull);
     });
 
     test('a live row is not deleted', () async {
       await map.write([row()]);
 
-      expect((await map.readAll()).single.deleted, isFalse);
+      expect((await map.readEveryDevicesRows()).single.deleted, isFalse);
     });
 
     test('many rows survive one write', () async {
@@ -202,14 +204,14 @@ void main() {
 
       await map.write(rows);
 
-      expect((await map.readAll()).toSet(), rows.toSet());
+      expect((await map.readEveryDevicesRows()).toSet(), rows.toSet());
     });
 
     test('writing no rows produces an empty map, not a missing one', () async {
       await map.write([]);
 
       expect(File(map.filePath).existsSync(), isTrue);
-      expect(await map.readAll(), isEmpty);
+      expect(await map.readEveryDevicesRows(), isEmpty);
     });
   });
 
@@ -220,7 +222,7 @@ void main() {
       await map.write([ours]);
       await IdentityMap(engramRoot: engram.path, peerId: peerB).write([theirs]);
 
-      expect((await map.readAll()).toSet(), {ours, theirs});
+      expect((await map.readEveryDevicesRows()).toSet(), {ours, theirs});
     });
 
     test('contradictions are returned, not resolved', () async {
@@ -235,7 +237,7 @@ void main() {
         row(ulid: ulid, path: 'new/path.md', recordedAt: stamp(peerB, 200)),
       ]);
 
-      final rows = await map.readAll();
+      final rows = await map.readEveryDevicesRows();
 
       expect(rows.length, 2);
       expect(rows.map((r) => r.path).toSet(), {'old/path.md', 'new/path.md'});
@@ -244,7 +246,9 @@ void main() {
     test('our own rows are included, not excluded', () async {
       await map.write([row(path: 'ours.md')]);
 
-      expect((await map.readAll()).map((r) => r.path), ['ours.md']);
+      expect((await map.readEveryDevicesRows()).map((r) => r.path), [
+        'ours.md',
+      ]);
     });
 
     test('readOurs sees only this device\'s file', () async {
@@ -258,7 +262,7 @@ void main() {
     });
 
     test('an engram nobody has written to reads empty', () async {
-      expect(await map.readAll(), isEmpty);
+      expect(await map.readEveryDevicesRows(), isEmpty);
       expect(await map.readOurs(), isEmpty);
     });
 
@@ -266,7 +270,7 @@ void main() {
       await map.write([row()]);
       File('${map.directoryPath}/.DS_Store').writeAsStringSync('junk');
 
-      expect((await map.readAll()).length, 1);
+      expect((await map.readEveryDevicesRows()).length, 1);
     });
 
     test('a half-arrived peer file is skipped, not fatal', () async {
@@ -277,7 +281,9 @@ void main() {
       await map.write([row(path: 'ours.md')]);
       File('${map.directoryPath}/$peerB.db').writeAsStringSync('not sqlite');
 
-      expect((await map.readAll()).map((r) => r.path), ['ours.md']);
+      expect((await map.readEveryDevicesRows()).map((r) => r.path), [
+        'ours.md',
+      ]);
     });
 
     test('a readable file with an unreadable row is surfaced', () async {
@@ -290,7 +296,7 @@ void main() {
         ..close();
 
       await expectLater(
-        map.readAll(),
+        map.readEveryDevicesRows(),
         throwsA(isA<MetadataDatabaseException>()),
       );
     });
@@ -480,7 +486,9 @@ void main() {
       writer.schedule([row(path: 'landed.md')]);
       await writer.flush();
 
-      expect((await map.readAll()).map((r) => r.path), ['landed.md']);
+      expect((await map.readEveryDevicesRows()).map((r) => r.path), [
+        'landed.md',
+      ]);
     });
   });
 }

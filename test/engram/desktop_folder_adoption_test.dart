@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:brainframe/engram/desktop_folder_adoption.dart';
 import 'package:brainframe/engram/engram_repository.dart';
+import 'package:brainframe/engram/fs/fs_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -88,6 +89,79 @@ void main() {
       final discovery = await repository.discover();
       // Only the two built-ins; nothing was adopted.
       expect(discovery.available.every((e) => e.readOnly), isTrue);
+    });
+
+    test('asks before adopting a folder that is not an engram', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final picked = '${tempRoot.path}/Notes';
+      await Directory('$picked/sub').create(recursive: true);
+      await Directory('$picked/.obsidian').create(recursive: true);
+      await File('$picked/a.md').writeAsString('a\r\n');
+      await File('$picked/sub/b.md').writeAsString('b\n');
+      await File('$picked/.obsidian/app.json').writeAsString('{}');
+      FolderAdoptionPreview? asked;
+
+      final engram = await pickAndAdoptFolder(
+        repository,
+        picker: () async => picked,
+        confirm: (preview) async {
+          asked = preview;
+          expect(
+            File('$picked/.brainframe/engram.json').existsSync(),
+            isFalse,
+            reason: 'asked before anything is written',
+          );
+          return true;
+        },
+      );
+
+      expect(engram, isNotNull);
+      expect(asked!.name, 'Notes');
+      expect(asked!.fileCount, 2, reason: 'the hidden file is not a note');
+      expect(asked!.crlfCount, 1);
+      expect(asked!.isEngram, isFalse);
+      expect(File('$picked/.brainframe/engram.json').existsSync(), isTrue);
+    });
+
+    test('declining leaves the folder untouched and registers nothing',
+        () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final picked = '${tempRoot.path}/Notes';
+      await Directory(picked).create(recursive: true);
+      await File('$picked/a.md').writeAsString('a');
+
+      final engram = await pickAndAdoptFolder(
+        repository,
+        picker: () async => picked,
+        confirm: (_) async => false,
+      );
+
+      expect(engram, isNull);
+      expect(Directory('$picked/.brainframe').existsSync(), isFalse);
+      final discovery = await repository.discover();
+      expect(discovery.available.every((e) => e.readOnly), isTrue);
+    });
+
+    test('an existing engram is opened without asking', () async {
+      // Nothing new is written into a folder that already carries a marker,
+      // so there is nothing to confirm.
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final picked = '${tempRoot.path}/Existing';
+      await Directory(picked).create(recursive: true);
+      final created = await repository.adoptFolder(EngramLocation(picked));
+      var asked = false;
+
+      final engram = await pickAndAdoptFolder(
+        repository,
+        picker: () async => picked,
+        confirm: (_) async {
+          asked = true;
+          return false;
+        },
+      );
+
+      expect(asked, isFalse);
+      expect(engram!.id, created.id);
     });
 
     test('throws off the desktop targets before invoking the picker', () async {

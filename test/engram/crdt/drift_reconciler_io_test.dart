@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,6 +16,7 @@ import 'package:brainframe/engram/crdt/note_document_lock.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
+import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hlc_dart/hlc_dart.dart';
@@ -517,8 +519,8 @@ void main() {
       expect(d.valueOf('new.md'), 'nobody minted me\n', reason: 'seeded LF');
       expect(
         await engram.readString('new.md'),
-        'nobody minted me\r\n',
-        reason: 'found, not rewritten: the first save normalizes',
+        'nobody minted me\n',
+        reason: 'rewritten LF in the sweep (Decision 10)',
       );
       expect((await d.reconciler.scan()).isClean, isTrue);
 
@@ -545,7 +547,7 @@ void main() {
 
     test('a first save on a minted-by-scan note applies on top', () async {
       final d = await device();
-      await engram.writeString('new.md', 'one\r\ntwo\r\n');
+      await engram.writeString('new.md', 'one\ntwo\n');
       await d.reconciler.scan();
 
       await d.writer.write('new.md', 'one\ntwo\nthree\n');
@@ -1161,6 +1163,170 @@ void main() {
       expect((await d.reconciler.scan()).isClean, isTrue);
       await d.publish();
       expect(d.identity.rows[ulid]!.deleted, isTrue);
+    });
+  });
+
+  group('adoption (step 12)', () {
+    test('progress is reported per file, then cleared', () async {
+      final d = await device();
+      for (final name in ['a', 'b', 'c']) {
+        await engram.writeString('$name.md', 'note $name\n');
+      }
+      final seen = <AdoptionProgress?>[];
+      final subscription = d.reconciler.adoption.listen(seen.add);
+      addTearDown(subscription.cancel);
+      expect(d.reconciler.currentAdoption, isNull);
+
+      await d.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [
+        const AdoptionProgress(done: 0, total: 3),
+        const AdoptionProgress(done: 1, total: 3),
+        const AdoptionProgress(done: 2, total: 3),
+        const AdoptionProgress(done: 3, total: 3),
+        null,
+      ]);
+      expect(d.reconciler.currentAdoption, isNull);
+    });
+
+    test('a scan with nothing to adopt reports nothing', () async {
+      // A bar that flashed on every resume would be noise, and on e-ink a
+      // repaint for nothing.
+      final d = await device();
+      await d.writer.write('a.md', 'note\n');
+      final seen = <AdoptionProgress?>[];
+      final subscription = d.reconciler.adoption.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await engram.writeString('a.md', 'note, edited\n');
+      await d.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+    });
+
+    test('a late subscriber can read the current progress', () async {
+      final d = await device();
+      await engram.writeString('a.md', 'note\n');
+      final gate = Completer<void>();
+      // Hold the lock so the scan parks on its first mint with progress
+      // already published.
+      final held = d.reconciler.lock.run(() => gate.future);
+      final scanning = d.reconciler.scan();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        d.reconciler.currentAdoption,
+        const AdoptionProgress(done: 0, total: 1),
+      );
+
+      gate.complete();
+      await held;
+      await scanning;
+      expect(d.reconciler.currentAdoption, isNull);
+    });
+
+    test('a note the editor opens mid-scan is brought in exactly once',
+        () async {
+      // The scan runs behind the UI, so the user can reach a note the scan
+      // has listed but not yet minted. Both go through the lock; whichever
+      // gets there first mints, and the other finds the note present and
+      // says so — never a second seed.
+      final d = await device();
+      await engram.writeString('a.md', 'note a\n');
+      await engram.writeString('b.md', 'note b\n');
+      final gate = Completer<void>();
+      final held = d.reconciler.lock.run(() => gate.future);
+      final scanning = d.reconciler.scan();
+      final opened = d.reconciler.reconcile('a.md');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      gate.complete();
+      await held;
+
+      final openedIt = await opened;
+      final report = await scanning;
+
+      expect(report.created, contains('b.md'));
+      expect(report.created.contains('a.md'), !openedIt,
+          reason: 'exactly one of them brought a.md in');
+      expect(report.failed, isEmpty);
+      expect(changesOf(d, 'a.md'), 1, reason: 'seeded exactly once');
+      expect((await d.reconciler.scan()).isClean, isTrue);
+    });
+
+    test('closing the session stops the scan, and the next one resumes',
+        () async {
+      // Adoption is resumable by construction: a path with no catalog row is
+      // simply a new note next time. An engram switch mid-adoption is the
+      // ordinary way a scan is cut short.
+      final d = await device();
+      for (var i = 0; i < 6; i++) {
+        await engram.writeString('n$i.md', 'note $i\n');
+      }
+      final gate = Completer<void>();
+      final held = d.reconciler.lock.run(() => gate.future);
+      final scanning = d.reconciler.scan();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // Close while the scan is parked before its first mint. The lock is
+      // released after, so the scan wakes to find itself closed.
+      final closing = d.reconciler.close();
+      gate.complete();
+      await held;
+      await closing;
+      final cut = await scanning;
+
+      expect(cut.created.length, lessThan(6));
+      expect(cut.tombstoned, isEmpty, reason: 'never after a cut-short pass');
+      expect(d.reconciler.currentAdoption, isNull);
+
+      // The same database, a fresh reconciler: what was minted stays minted,
+      // the rest is minted now, nothing twice.
+      final resumed = DriftReconciler(
+        database: d.store,
+        engram: engram,
+        lock: NoteDocumentLock(),
+        identity: d.identity,
+      );
+      addTearDown(resumed.close);
+      final rest = await resumed.scan();
+      expect(rest.created.length + cut.created.length, 6);
+      expect(rest.failed, isEmpty);
+      for (var i = 0; i < 6; i++) {
+        expect(changesOf(d, 'n$i.md'), 1, reason: 'n$i seeded once');
+      }
+      expect((await resumed.scan()).isClean, isTrue);
+    });
+
+    test('adopting rewrites CRLF text files LF in the one sweep', () async {
+      // Decision 10 lands on disk here, once, for the whole folder — not as a
+      // drip of terminator changes as each note is first edited, which for a
+      // folder under version control would never end. An LF file is left
+      // untouched, mtime and all; a blob's bytes are never normalized.
+      final d = await device();
+      await engram.writeString('win.md', 'one\r\ntwo\r\n');
+      await engram.writeString('unix.md', 'one\ntwo\n');
+      await engram.writeBytes('pic.png', Uint8List.fromList([0x0d, 0x0a, 0x0d]));
+      final unixBefore = (await engram.statFile('unix.md'))!.mtimeUtc;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await d.reconciler.scan();
+
+      expect(d.valueOf('win.md'), 'one\ntwo\n', reason: 'LF sequence');
+      expect(await engram.readString('win.md'), 'one\ntwo\n', reason: 'LF file');
+      expect(await engram.readString('unix.md'), 'one\ntwo\n');
+      expect(
+        (await engram.statFile('unix.md'))!.mtimeUtc,
+        unixBefore,
+        reason: 'an LF file is not rewritten',
+      );
+      expect(
+        await engram.readBytes('pic.png'),
+        [0x0d, 0x0a, 0x0d],
+        reason: 'a blob is never normalized',
+      );
+      expect((await d.reconciler.scan()).isClean, isTrue);
     });
   });
 

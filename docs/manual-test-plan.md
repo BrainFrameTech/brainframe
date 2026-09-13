@@ -393,9 +393,11 @@ snapshot.
   content you typed, byte for byte. **Any difference you can see is a defect**,
   including a changed byte count, a stray blank line, or reordered frontmatter.
 - **Step 10 — line endings are normalized to LF.** A note that was CRLF on disk
-  will come back LF after its first save through the editor. This one *is*
-  expected (Decision 10): confirm it once, then do not report it. On Windows,
-  check with an editor that shows line endings rather than by eye.
+  will come back LF after its first save through the editor — and, since the
+  scan adopted it (F30), was most likely LF already, because adoption
+  converts the whole folder in one sweep. Either way it *is* expected
+  (Decision 10): confirm it once, then do not report it. On Windows, check
+  with an editor that shows line endings rather than by eye.
 - **Step 10 — a second engram must not be affected.** Switch engrams, edit a
   note there, switch back. Both notes keep their own content: each engram has
   its own op-log, and switching closes one before opening the other.
@@ -529,12 +531,14 @@ file if it lived inside.
    rows with an "unavailable" subtitle.
 3. Tap another engram → it becomes active and the browser rebuilds.
 4. Tap **New engram**; name it; confirm it is created and switched to.
-5. Tap **Open folder…** (desktop) and adopt an existing folder.
+5. Tap **Open folder…** (desktop) and pick a folder that is **already** an
+   engram (has a `.brainframe/`). For a plain folder, see F30.
 
 **Expected:** switching swaps the whole browser to the new engram (tree, reader,
 title) while the app root does **not** rebuild; the switch persists across
-relaunch; New engram creates and opens a writable engram; Open folder adopts a
-directory as an engram.
+relaunch; New engram creates and opens a writable engram; Open folder opens an
+existing engram directly — **no** confirmation dialog, because nothing new is
+written into a folder that is one already.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1197,6 +1201,73 @@ folder.
   so a note renamed inside BrainFrame keeps its history exactly as one renamed
   outside does — there is no visible difference to check, only the absence of
   one.
+
+### F30 — Adopt a folder: confirmation, progress, usable while it runs
+
+As of CRDT step 12, turning a plain folder into an engram asks first, and the
+scan that brings its files into the note catalog runs behind the UI with a
+progress bar rather than in front of it. The same scan runs on the **first
+launch of an engram that predates the catalog**, so this case is also how an
+existing engram's first open after the upgrade should look. Use a folder with
+a few dozen files, including a dot-directory (`.obsidian/` or a `.git/`) and
+at least one CRLF file; on the Pi, a few hundred files makes the progress
+bar easy to watch.
+
+**Steps:**
+
+1. Engram switcher → **Open folder…** → pick a plain folder (no
+   `.brainframe/`). Read the dialog before touching it.
+2. **Cancel.** Look inside the folder.
+3. Repeat step 1 and choose **Adopt**. Watch the sidebar.
+4. While the bar is still moving, select a note that is low in the tree —
+   one the bar has plainly not reached — and type a character; let it save.
+5. Let the bar finish. Look inside the folder's `.brainframe/`.
+6. **Interrupt:** quit the app (or switch engrams) while the bar is still
+   moving on a fresh adoption of a larger folder. Relaunch / switch back.
+7. Once the bar has finished, check the CRLF file in another editor before
+   opening it in BrainFrame; then open it, save an edit, and check again.
+8. Open a file inside the dot-directory in another editor and look for it in
+   BrainFrame.
+
+**Expected:**
+
+- Step 1: a dialog titled **Adopt this folder?** naming the folder, saying a
+  `.brainframe` folder is added inside it, giving the count of files that
+  become notes (**not** counting anything under a dot-directory), and — only
+  when there are any — how many of them use Windows line endings and will be
+  converted to LF **now**. A folder with no CRLF text files says nothing
+  about line endings. A CRLF `.png` or other blob is not counted.
+- Step 2: nothing written — no `.brainframe/`, the switcher unchanged.
+- Step 3: the browser switches to the folder at once; a thin progress bar
+  with "Adopting notes… *n* of *N*" appears at the top of the sidebar and
+  advances; the tree, reader, and editor all work meanwhile.
+- Step 4: the note opens and saves normally. It does not open empty, and it
+  is not duplicated when the bar reaches it.
+- Step 5: the bar disappears entirely (no empty strip left behind);
+  `.brainframe/` holds `engram.json` and `shared/<peerId>.db`.
+- Step 6: the app comes back with no complaint, the bar resumes with the
+  remaining count, and no note appears twice. Nothing is tombstoned by the
+  interrupted pass.
+- Step 7: the CRLF file is LF on disk as soon as the bar has passed it —
+  before it is ever opened in BrainFrame. Check it in the other editor, then
+  open and save it: no further change. An LF file's modification time is
+  untouched by adoption; a blob's bytes are byte-identical.
+- Step 8: the dot-directory's contents never appear in the tree and never
+  gain a note.
+- On every later launch of the same engram there is **no** progress bar: the
+  steady-state scan has nothing to adopt and shows nothing.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | steps 1–2 **N/A** — no folder dialog (F15); steps 3–8 apply to the first launch of an existing engram | as Android | as Android | steps 1–2 **N/A** — no native dialog; steps 3–8 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder |
+
+- **Progress on e-ink:** the bar advances one note at a time and stops moving
+  when done — discrete steps, no animation. Report it if the bar is redrawn
+  while nothing is being adopted.
+- **A11y:** the bar's caption is its accessible label and is a live region, so
+  a screen reader hears the count change and the finish without polling.
+- **Inspection point:** the count in the dialog is the number the scan mints;
+  a mismatch between the two is a bug in one filter or the other.
 
 ---
 

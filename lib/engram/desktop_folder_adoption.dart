@@ -28,6 +28,16 @@ import 'fs/fs_store.dart';
 /// cancels. Injected so tests can drive adoption without a native dialog.
 typedef DirectoryPicker = Future<String?> Function();
 
+/// Asks whether to go ahead with adopting the folder [preview] describes.
+/// Returns false to leave the folder untouched.
+///
+/// Called only for a folder that is not an engram yet: adoption writes into a
+/// folder the user already owns — the marker now, the identity map once the
+/// scan runs — and turns every content file into a note, and that is asked
+/// before it is done. An existing engram is opened as it is, with nothing
+/// new written, so nothing needs asking.
+typedef AdoptionConfirmer = Future<bool> Function(FolderAdoptionPreview preview);
+
 /// Whether the pick-any-folder flow is available on this platform in v1.
 ///
 /// True only on the desktop targets, whose native dialog returns a plain
@@ -47,9 +57,13 @@ bool get isDesktopFolderAdoptionSupported =>
 /// Throws [UnsupportedError] off the desktop targets — callers should only wire
 /// this in where [isDesktopFolderAdoptionSupported] is true. Pass [picker] to
 /// supply a directory chooser (tests do); it defaults to the native dialog.
+/// [confirm] is asked before a folder that is not yet an engram is adopted;
+/// with none, adoption proceeds unasked, which is right for a caller that has
+/// already asked in its own way and wrong for a UI.
 Future<Engram?> pickAndAdoptFolder(
   EngramRepository repository, {
   DirectoryPicker? picker,
+  AdoptionConfirmer? confirm,
 }) async {
   if (!isDesktopFolderAdoptionSupported) {
     throw UnsupportedError(
@@ -58,7 +72,12 @@ Future<Engram?> pickAndAdoptFolder(
   }
   final path = await (picker ?? _pickDirectoryPath)();
   if (path == null) return null; // the user dismissed the dialog
-  return repository.adoptFolder(EngramLocation(path));
+  final location = EngramLocation(path);
+  if (confirm != null) {
+    final preview = await previewFolderAdoption(location);
+    if (!preview.isEngram && !await confirm(preview)) return null;
+  }
+  return repository.adoptFolder(location);
 }
 
 /// The real native directory dialog. Isolated so it is the sole line the unit

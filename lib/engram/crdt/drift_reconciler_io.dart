@@ -154,9 +154,12 @@ class DriftReconciler implements NoteReconciler {
         startedAt: startedAt,
         finishedAt: finished,
         trigger: trigger,
-        // A note the scan tombstoned or retired is no longer findable by
-        // path; its identity is the whole point of recording it, so it is
-        // looked up among the tombstones instead.
+        // The identity is the whole point of recording the event, and for
+        // these two kinds byPath cannot supply it. A tombstoned note has no
+        // live row at its path at all. A retired note does — but it is the
+        // election winner's, adopted in the same pass; the note this device
+        // gave up is the loser's, which _retire tombstoned. Both are found
+        // among the tombstones.
         ulidOf: (kind, path) => switch (kind) {
           ScanEventKind.tombstoned ||
           ScanEventKind.retired => database.catalog.lastTombstoneAt(path)?.ulid,

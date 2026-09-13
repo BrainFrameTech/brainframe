@@ -4,10 +4,20 @@
 ///
 /// `dart:io`-only because SQLite is. Two tables over the connection
 /// [MetadataDatabase] owns, so a scan's record commits with everything else
-/// in one transaction boundary. Device-local like the rest of the file:
-/// nothing here reaches the shared map, and nothing needs to — the facts the
-/// records describe are already durable in the catalog; this is the narrative
-/// of how they got there.
+/// in one transaction boundary.
+///
+/// **In `metadata.db`, not this device's file in `.brainframe/shared/`.** An
+/// engram has two stores, and this belongs in the device-local one for the
+/// same reason the op-log does: it is a narrative of what *this install* did
+/// — its trigger, its clock, the listing failure on its filesystem, the ULIDs
+/// its catalog tombstoned. Another device scanning the same folder holds a
+/// different catalog and writes a different story. The shared map is the
+/// other kind of thing: identity claims only, kilobytes, written whole, read
+/// in full by every device on every scan — a growing event log there would
+/// ride every sync for nothing, because the facts the records describe are
+/// already durable in the catalog and the map. This is how they got there,
+/// and the one affordance it exists to serve — reattaching a tombstone's
+/// history to a new note — acts on this device's op-log alone.
 ///
 /// **Only a scan that changed something or failed gets a row.** Clean scans
 /// are the overwhelming majority — every resume where nothing moved — and

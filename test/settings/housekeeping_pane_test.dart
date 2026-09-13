@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:brainframe/engram/engram.dart';
@@ -23,10 +24,14 @@ RegisteredEngram _engram(
 );
 
 void main() {
-  /// A fake repository surface: [load] serves the current list; [forget] records
-  /// the id and drops it, so a reload reflects the change — no filesystem.
+  /// A fake repository surface: [load] serves the current list; [forget] and
+  /// [cleanUp] record the id and drop it, so a reload reflects the change — no
+  /// filesystem. [cleanUpError], when set, makes [cleanUp] fail instead, the
+  /// way a refused delete would, leaving the entry in place.
   late List<RegisteredEngram> engrams;
   late List<String> forgotten;
+  late List<String> cleanedUp;
+  Object? cleanUpError;
 
   Future<List<RegisteredEngram>> load() async => List.of(engrams);
   Future<void> forget(String id) async {
@@ -34,9 +39,17 @@ void main() {
     engrams.removeWhere((e) => e.id == id);
   }
 
+  Future<void> cleanUp(String id) async {
+    if (cleanUpError != null) throw cleanUpError!;
+    cleanedUp.add(id);
+    engrams.removeWhere((e) => e.id == id);
+  }
+
   setUp(() {
     engrams = [];
     forgotten = [];
+    cleanedUp = [];
+    cleanUpError = null;
   });
 
   Widget host({Engram? engram, NoteReconciler? notes}) => localizedApp(
@@ -44,6 +57,7 @@ void main() {
       body: HousekeepingPane(
         load: load,
         forget: forget,
+        cleanUp: cleanUp,
         engram: engram,
         notes: notes,
       ),
@@ -124,6 +138,126 @@ void main() {
 
     expect(forgotten, isEmpty);
     expect(find.text('Field Notebook'), findsOneWidget);
+  });
+
+  group('Clean up', () {
+    Finder button() => find.widgetWithText(OutlinedButton, 'Clean up');
+
+    testWidgets('sits beside Forget on every row', (tester) async {
+      engrams = [_engram('a'), _engram('b', name: 'Second')];
+
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      expect(button(), findsNWidgets(2));
+      expect(find.widgetWithText(OutlinedButton, 'Forget'), findsNWidgets(2));
+      expect(find.textContaining('switch to another engram'), findsNothing);
+    });
+
+    testWidgets('confirming calls cleanUp and drops the row', (tester) async {
+      engrams = [_engram('a', name: 'Field Notebook', path: '/home/u/notes')];
+
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      await tester.tap(button());
+      await tester.pumpAndSettle();
+
+      // The dialog says what goes and what stays, naming the folder.
+      expect(find.text('Clean up “Field Notebook”?'), findsOneWidget);
+      expect(
+        find.textContaining('.brainframe folder inside /home/u/notes'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Your notes are not touched'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Clean up'));
+      await tester.pumpAndSettle();
+
+      expect(cleanedUp, ['a']);
+      expect(forgotten, isEmpty);
+      expect(find.text('Field Notebook'), findsNothing);
+      expect(
+        find.textContaining('Nothing to forget or clean up'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('cancelling leaves it untouched', (tester) async {
+      engrams = [_engram('a', name: 'Field Notebook')];
+
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      await tester.tap(button());
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(cleanedUp, isEmpty);
+      expect(find.text('Field Notebook'), findsOneWidget);
+    });
+
+    testWidgets('is disabled for the open engram, with a hint; Forget is not', (
+      tester,
+    ) async {
+      engrams = [_engram(field.id, name: 'Field Notebook'), _engram('b')];
+
+      await tester.pumpWidget(host(engram: field));
+      await tester.pumpAndSettle();
+
+      final buttons = tester.widgetList<OutlinedButton>(button()).toList();
+      expect(buttons, hasLength(2));
+      expect(buttons.first.onPressed, isNull, reason: 'the open engram');
+      expect(buttons.last.onPressed, isNotNull, reason: 'any other engram');
+      expect(find.textContaining('switch to another engram'), findsOneWidget);
+      for (final forget in tester.widgetList<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Forget'),
+      )) {
+        expect(forget.onPressed, isNotNull);
+      }
+
+      // Tapping the disabled button opens nothing.
+      await tester.tap(button().first, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Clean up “Field Notebook”?'), findsNothing);
+    });
+
+    testWidgets('a failure is reported and the row stays for a retry', (
+      tester,
+    ) async {
+      engrams = [_engram('a', name: 'Field Notebook')];
+      cleanUpError = const FileSystemException('Permission denied', '/x');
+
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      await tester.tap(button());
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Clean up'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Could not clean up “Field Notebook”'), findsOneWidget);
+      expect(find.textContaining('Permission denied'), findsOneWidget);
+      expect(find.textContaining('try again'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(TextButton, 'OK'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Could not clean up “Field Notebook”'), findsNothing);
+      expect(find.text('Field Notebook'), findsOneWidget);
+      expect(button(), findsOneWidget);
+    });
+
+    testWidgets('the intro names both actions and what each deletes', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Cleaning up also deletes'), findsOneWidget);
+      expect(find.textContaining('leaving only your notes'), findsOneWidget);
+    });
   });
 
   group('the ledger', () {
@@ -399,7 +533,7 @@ class _InertStore extends EngramStore {
 /// A reconciler that only answers the two questions the pane asks.
 class _Notes implements NoteReconciler {
   _Notes.named({required this.ledgerValue, List<ScanNotice> scans = const []})
-      : scans = List.of(scans);
+    : scans = List.of(scans);
 
   final NoteLedger ledgerValue;
   final List<ScanNotice> scans;
@@ -419,7 +553,9 @@ class _Notes implements NoteReconciler {
   }
 
   @override
-  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({
+    ScanTrigger trigger = ScanTrigger.manual,
+  }) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async => false;

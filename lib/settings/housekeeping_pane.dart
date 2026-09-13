@@ -11,6 +11,11 @@ typedef ForgettableEngramsLoader = Future<List<RegisteredEngram>> Function();
 /// Forgets the engram with the given id (registry-only, never touches disk).
 typedef EngramForgetter = Future<void> Function(String id);
 
+/// Deletes BrainFrame's files for the engram with the given id — its
+/// `.brainframe/` tree and this device's store — and forgets it. Throws when
+/// a step fails; the entry is then still listed for a retry.
+typedef EngramCleaner = Future<void> Function(String id);
+
 /// The Housekeeping settings pane: what this device knows about the active
 /// engram's notes, and maintenance jobs on engrams.
 ///
@@ -30,6 +35,13 @@ typedef EngramForgetter = Future<void> Function(String id);
 /// with BrainFrame. Only registry-backed engrams appear; built-in and container
 /// engrams aren't forgettable (see [EngramRepository.forget]).
 ///
+/// **Cleaning up** goes further: it deletes everything BrainFrame made for the
+/// engram — the `.brainframe/` tree in the folder and this device's store —
+/// and then forgets it, so the folder is a plain folder of notes again (see
+/// [EngramRepository.cleanUp]). It is refused for the engram that is open,
+/// whose store is a live database and whose identity map is rewritten on a
+/// timer: the button is disabled with a hint to switch away first.
+///
 /// A custom [SettingsCategory] detail pane (like About), because it renders a
 /// live list with actions rather than a fixed set of control rows. It depends on
 /// capabilities rather than the whole repository, so it stays trivially
@@ -39,6 +51,7 @@ class HousekeepingPane extends StatefulWidget {
     super.key,
     required this.load,
     required this.forget,
+    required this.cleanUp,
     this.engram,
     this.notes,
   });
@@ -54,12 +67,14 @@ class HousekeepingPane extends StatefulWidget {
          key: key,
          load: repository.registeredEngrams,
          forget: repository.forget,
+         cleanUp: repository.cleanUp,
          engram: engram,
          notes: notes,
        );
 
   final ForgettableEngramsLoader load;
   final EngramForgetter forget;
+  final EngramCleaner cleanUp;
 
   /// The active engram, or null when no engram is open — in which case the
   /// ledger section is not shown at all.
@@ -129,6 +144,51 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
     if (mounted) _reload();
   }
 
+  Future<void> _cleanUp(RegisteredEngram engram) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showAdaptiveDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.housekeepingCleanUpConfirmTitle(engram.displayName)),
+        content: Text(l10n.housekeepingCleanUpConfirmBody(engram.path)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.housekeepingCleanUp),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.cleanUp(engram.id);
+    } catch (error) {
+      if (!mounted) return;
+      // Reload first: a failure part-way may have removed the marker, which
+      // the row now shows as missing — and the entry is still there to retry.
+      _reload();
+      await showAdaptiveDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog.adaptive(
+          title: Text(l10n.housekeepingCleanUpFailedTitle(engram.displayName)),
+          content: Text(l10n.housekeepingCleanUpFailedBody(error.toString())),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(l10n.ok),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (mounted) _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -190,7 +250,9 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _EngramRow(
                         engram: engram,
+                        active: engram.id == widget.engram?.id,
                         onForget: () => _forget(engram),
+                        onCleanUp: () => _cleanUp(engram),
                       ),
                     ),
               ],
@@ -472,16 +534,43 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// One engram added from a folder: its name, path, and the two actions.
+///
+/// Clean up is disabled while [active] — the engram is open, so its store is
+/// a live database and its identity map is rewritten on a timer — and a hint
+/// under the path says to switch away first. Forget stays available: it only
+/// touches the registry, and the open engram survives it for the session.
 class _EngramRow extends StatelessWidget {
-  const _EngramRow({required this.engram, required this.onForget});
+  const _EngramRow({
+    required this.engram,
+    required this.active,
+    required this.onForget,
+    required this.onCleanUp,
+  });
 
   final RegisteredEngram engram;
+  final bool active;
   final VoidCallback onForget;
+  final VoidCallback onCleanUp;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    // The error outline only while enabled: a disabled Clean up falls
+    // through (null) to the theme's disabled outline, so it reads as
+    // disabled rather than as a red button that does not respond.
+    final destructive =
+        OutlinedButton.styleFrom(
+          foregroundColor: scheme.error,
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        ).copyWith(
+          side: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? null
+                : BorderSide(color: scheme.error),
+          ),
+        );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -526,6 +615,17 @@ class _EngramRow extends StatelessWidget {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                if (active) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.housekeepingCleanUpActive,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -536,15 +636,21 @@ class _EngramRow extends StatelessWidget {
             child: ExcludeSemantics(
               child: OutlinedButton(
                 onPressed: onForget,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: scheme.error,
-                  side: BorderSide(color: scheme.error),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 13,
-                    vertical: 8,
-                  ),
-                ),
+                style: destructive,
                 child: Text(l10n.housekeepingForget),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Semantics(
+            button: true,
+            enabled: !active,
+            label: '${l10n.housekeepingCleanUp} ${engram.displayName}',
+            child: ExcludeSemantics(
+              child: OutlinedButton(
+                onPressed: active ? null : onCleanUp,
+                style: destructive,
+                child: Text(l10n.housekeepingCleanUp),
               ),
             ),
           ),

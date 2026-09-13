@@ -152,14 +152,19 @@ class DriftReconciler implements NoteReconciler {
     DriftScanReport report, {
     required ScanTrigger trigger,
     required DateTime startedAt,
+    bool stampLastScan = true,
   }) {
     if (_closed) return;
     final finished = DateTime.now();
     try {
-      database.writeMeta(
-        lastScanKey,
-        '${finished.toUtc().millisecondsSinceEpoch}',
-      );
+      // A conversion is recorded here so Housekeeping lists it, but it is
+      // not a scan, and the ledger's "last scan" must not say it was.
+      if (stampLastScan) {
+        database.writeMeta(
+          lastScanKey,
+          '${finished.toUtc().millisecondsSinceEpoch}',
+        );
+      }
       database.scans.record(
         report,
         startedAt: startedAt,
@@ -198,6 +203,54 @@ class DriftReconciler implements NoteReconciler {
 
   @override
   Future<void> dismissScan(int id) async => database.scans.acknowledge(id);
+
+  @override
+  Future<void> convertToPlainFile(String path) async {
+    final started = DateTime.now();
+    final converted = await lock.run(() async {
+      final row = database.catalog.byPath(path);
+      if (row == null) throw StateError('no note at $path');
+      if (row.mergePolicy == MergePolicy.blobLww) return false;
+      // The file as it is on disk is what the register will describe: the
+      // caller has either just written it (the in-app door) or is keeping
+      // it as found (the external one). Streamed — it is over the ceiling,
+      // which is why it is being converted.
+      final digest = await digestFile(engram, path);
+      // The history goes first, and all of it: the user was told. With
+      // nothing left to replay, "never back to a text note" costs nothing
+      // to enforce — there is no epoch to keep the old sequence out of.
+      database.crdt.deleteDocumentData(row.ulid);
+      final blob = BlobDocument.convert(
+        store: database,
+        ulid: row.ulid,
+        digest: digest,
+      );
+      try {
+        final committed = await recordFileState(
+          store: database,
+          engram: engram,
+          row: database.catalog.byUlid(row.ulid)!,
+          digest: digest,
+        );
+        // Published with the new policy and the new seed claim, so every
+        // other device follows (phase 1 of its next scan) rather than
+        // keeping a character history for a note this one has made whole.
+        identity?.record(committed, deleted: false);
+      } finally {
+        blob.dispose();
+      }
+      return true;
+    });
+    if (!converted) return;
+    // A scan of its own, so Housekeeping lists the conversion beside the
+    // scans — it is a change to the engram the user will want to find.
+    _recordScan(
+      DriftScanReport(converted: [path]),
+      trigger: ScanTrigger.manual,
+      startedAt: started,
+      stampLastScan: false,
+    );
+  }
 
   @override
   Future<NoteLedger> ledger() async {
@@ -256,6 +309,7 @@ class DriftReconciler implements NoteReconciler {
     final moved = <String, String>{};
     final tombstoned = <String>[];
     final retired = <String>[];
+    final convertedElsewhere = <String, int>{};
 
     // The listing, and whether it can be trusted to be the whole folder.
     // Both halves are required before anything is called absent: a folder
@@ -304,6 +358,10 @@ class DriftReconciler implements NoteReconciler {
           await _retire(row, merged);
           retired.add(row.path);
           continue;
+        }
+        if (merged != null) {
+          final abandoned = await _followConversion(row, merged);
+          if (abandoned != null) convertedElsewhere[row.path] = abandoned;
         }
         if (complete && isHiddenEngramPath(row.path)) {
           // A note living where no note may. The listing never admits the
@@ -412,6 +470,7 @@ class DriftReconciler implements NoteReconciler {
       moved: moved,
       tombstoned: tombstoned,
       retired: retired,
+      convertedElsewhere: convertedElsewhere,
       listingFailure: listingFailure,
     );
   }
@@ -789,6 +848,55 @@ class DriftReconciler implements NoteReconciler {
   /// Not a re-key. Both documents were independently seeded, so pointing this
   /// one at the winner's id would put two disjoint element universes under
   /// one document — the duplication the frozen suite pins.
+  /// Applies a conversion another device made (Decision 4): when the map's
+  /// row for a text note says `blobLww`, this device's row follows, without
+  /// asking — consent was given once, by whoever converted it, and one
+  /// device keeping a character history for a note another has made whole
+  /// is the split-brain one ceiling everywhere exists to prevent. The local
+  /// log is left where it is (nothing here destroys history the user did
+  /// not consent to losing) but nothing reads it as a text sequence again;
+  /// the count of changes in it is what the user is told is unreachable.
+  ///
+  /// Never the other way. A map row saying `fugueText` for a note this
+  /// device holds as a blob is an older row that lost to the conversion, or
+  /// a build that predates it, and is ignored: promotion does not exist.
+  ///
+  /// Returns the number of local changes made unreachable, or null when
+  /// nothing was followed.
+  Future<int?> _followConversion(CatalogRow row, MergedIdentity merged) async {
+    final theirs = merged.byUlid[row.ulid];
+    if (theirs == null ||
+        theirs.mergePolicy != MergePolicy.blobLww ||
+        row.mergePolicy != MergePolicy.fugueText) {
+      return null;
+    }
+    return lock.run(() async {
+      final current = database.catalog.byUlid(row.ulid);
+      if (current == null || current.mergePolicy != MergePolicy.fugueText) {
+        return null;
+      }
+      final abandoned = database.crdt
+          .changeStorageForDocument(row.ulid)
+          .getChanges()
+          .length;
+      database.catalog.upsert(
+        CatalogRow(
+          ulid: current.ulid,
+          path: current.path,
+          mergePolicy: MergePolicy.blobLww,
+          state: current.state,
+          materializedHash: current.materializedHash,
+          size: current.size,
+          mtimeUtc: current.mtimeUtc,
+          // The converter's claim: the seeder of the new epoch, so this
+          // device's own map row, when next written, agrees with theirs.
+          seedClaim: theirs.seedClaim ?? current.seedClaim,
+        ),
+      );
+      return abandoned;
+    });
+  }
+
   Future<void> _retire(CatalogRow row, MergedIdentity merged) =>
       lock.run(() async {
         final winner = merged.forPath(row.path);

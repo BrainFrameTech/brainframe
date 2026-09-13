@@ -414,6 +414,12 @@ class _ScanCard extends StatelessWidget {
         l10n.housekeepingScanCreated(report.created.length),
       if (report.oversized.isNotEmpty)
         l10n.housekeepingScanOversized(report.oversized.length),
+      if (report.converted.isNotEmpty)
+        l10n.housekeepingScanConverted(report.converted.length),
+      if (report.convertedElsewhere.isNotEmpty)
+        l10n.housekeepingScanConvertedElsewhere(
+          report.convertedElsewhere.length,
+        ),
       if (report.adopted.isNotEmpty)
         l10n.housekeepingScanAdopted(report.adopted.length),
       if (report.moved.isNotEmpty)
@@ -475,6 +481,15 @@ class _ScanCard extends StatelessWidget {
                 _bytes(context, ceilingBytes),
                 report.oversized.join(', '),
               ),
+              emphasis: true,
+            ),
+          if (report.converted.isNotEmpty)
+            _Line(
+              l10n.housekeepingConvertedDetail(report.converted.join(', ')),
+            ),
+          for (final entry in report.convertedElsewhere.entries)
+            _Line(
+              l10n.housekeepingConvertedElsewhereDetail(entry.key, entry.value),
               emphasis: true,
             ),
           if (!report.complete) _Line(l10n.housekeepingScanIncomplete),

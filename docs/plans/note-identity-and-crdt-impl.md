@@ -798,14 +798,29 @@ notes. The fixture gains a note just over 128 KiB.
 
 ### Step 19 — Conversion, here and from elsewhere
 
-Converting a text note: clear the ULID's op-log, write one register claim,
-flip the catalog row's policy and drop its sketch, publish the policy in the
-identity map — event kind *converted* (Decision 3). And following a
-conversion another device made: a `merge_policy` change from the map is
-applied to a **known** catalog row (today only unknown paths take one from
-the map), with event kind *converted elsewhere* carrying the count of
-unsynced local edits now unreachable (Decision 4). No UI yet; the doors that
-call this are steps 20 and 22.
+Converting a text note — `NoteReconciler.convertToPlainFile`: clear the
+ULID's op-log, write one register claim describing the file as it is on
+disk, flip the catalog row's policy and drop its sketch, publish the policy
+in the identity map — event kind *converted*, recorded as a scan of its own
+("by request") so Housekeeping lists it, without stamping the ledger's last
+scan (Decision 3). The conversion takes a **new seed claim**, held by the
+converting device: a note adopted from another device has a foreign seed,
+and with its log cleared the register would otherwise open as history
+pending. Seed claims resolve to the newest, so every device converges on
+the same seeder for the epoch. `BlobDocument.convert` is that epoch, the
+counterpart of `mint` over an existing ULID; there is no `convert` on
+`NoteDocument`, because promotion does not exist.
+
+And following a conversion another device made: in phase 1 of the scan, a
+map row saying `blobLww` for a note this device holds as text flips the
+**known** catalog row (before this, only unknown paths took a policy from
+the map) and adopts the converter's seed claim, with event kind *converted
+elsewhere* carrying the count of changes in the local log now unreachable
+(Decision 4). The local log is left where it is — nothing destroys history
+the user did not consent to losing — but nothing reads it as a text
+sequence again. Never the other way: a text row in the map for a note held
+as a blob is an older row, or an older build, and is ignored. No UI door
+yet; the doors that call this are steps 20 and 22.
 
 - **Tests that matter:** after conversion the log holds one claim and
   `NoteDocument.open` refuses the note; two devices — one converts, the

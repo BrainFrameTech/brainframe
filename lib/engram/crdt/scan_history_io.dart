@@ -189,6 +189,18 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         for (final path in report.oversized) {
           event(ScanEventKind.oversized, path);
         }
+        for (final path in report.converted) {
+          event(ScanEventKind.converted, path);
+        }
+        for (final entry in report.convertedElsewhere.entries) {
+          // The count of unreachable history rides in the error column: a
+          // number, spelled as text, in a column no other kind uses.
+          event(
+            ScanEventKind.convertedElsewhere,
+            entry.key,
+            error: '${entry.value}',
+          );
+        }
         for (final path in report.adopted) {
           event(ScanEventKind.adopted, path);
         }
@@ -293,6 +305,8 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
     final reconciled = <String>[];
     final created = <String>[];
     final oversized = <String>[];
+    final converted = <String>[];
+    final convertedElsewhere = <String, int>{};
     final adopted = <String>[];
     final moved = <String, String>{};
     final tombstoned = <String>[];
@@ -307,6 +321,11 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
           created.add(path);
         case ScanEventKind.oversized:
           oversized.add(path);
+        case ScanEventKind.converted:
+          converted.add(path);
+        case ScanEventKind.convertedElsewhere:
+          convertedElsewhere[path] =
+              int.tryParse(event['error'] as String? ?? '') ?? 0;
         case ScanEventKind.adopted:
           adopted.add(path);
         case ScanEventKind.moved:
@@ -336,6 +355,8 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         reconciled: reconciled,
         created: created,
         oversized: oversized,
+        converted: converted,
+        convertedElsewhere: convertedElsewhere,
         adopted: adopted,
         moved: moved,
         tombstoned: tombstoned,
@@ -359,6 +380,13 @@ enum ScanEventKind {
 
   /// Minted as a plain file because it arrived over the note size ceiling.
   oversized,
+
+  /// Made a plain file here, at the user's request, history dropped.
+  converted,
+
+  /// Made a plain file on another device; followed here. The count of local
+  /// history changes now unreachable rides in the event's error column.
+  convertedElsewhere,
   adopted,
   moved,
   tombstoned,

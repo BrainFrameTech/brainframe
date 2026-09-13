@@ -74,6 +74,8 @@ void main() {
         reconciled: const ['a.md', 'b.md'],
         created: const ['c.md'],
         oversized: const ['huge.md'],
+        converted: const ['long.md'],
+        convertedElsewhere: const {'theirs.md': 12, 'none.md': 0},
         adopted: const ['d.md'],
         moved: const {'old.md': 'new.md'},
         tombstoned: const ['gone.md'],
@@ -99,6 +101,8 @@ void main() {
       expect(back.report.reconciled, ['a.md', 'b.md']);
       expect(back.report.created, ['c.md']);
       expect(back.report.oversized, ['huge.md']);
+      expect(back.report.converted, ['long.md']);
+      expect(back.report.convertedElsewhere, {'theirs.md': 12, 'none.md': 0});
       expect(back.report.adopted, ['d.md']);
       expect(back.report.moved, {'old.md': 'new.md'});
       expect(back.report.tombstoned, ['gone.md']);

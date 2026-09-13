@@ -525,6 +525,58 @@ void main() {
       );
     });
 
+    testWidgets('conversions here and elsewhere are each their own line', (
+      tester,
+    ) async {
+      // Step 19. A conversion here is by request, so the line is plain; one
+      // made elsewhere cost this device history, so that line is emphasised
+      // and says how much.
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 2,
+          minted: 3,
+          adopted: 1,
+          unclaimed: 0,
+          tombstoned: 0,
+          plainFiles: 2,
+        ),
+        scans: [
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 14, 30),
+            trigger: ScanTrigger.manual,
+            report: const DriftScanReport(converted: ['journal/2025.md']),
+          ),
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 9, 5),
+            trigger: ScanTrigger.open,
+            report: const DriftScanReport(
+              convertedElsewhere: {'shared/big.md': 12, 'shared/other.md': 0},
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 made a plain file'), findsOneWidget);
+      expect(
+        find.text('Made a plain file at your request, history dropped: '
+            'journal/2025.md.'),
+        findsOneWidget,
+      );
+      expect(find.text('2 made plain files on another device'), findsOneWidget);
+      expect(
+        find.text('shared/big.md: made a plain file on another device, so 12 '
+            'edits of its history on this device are no longer reachable.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('shared/other.md: made a plain file on another device, so '
+            'it keeps no history here either.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the ledger line states the engram\'s own ceiling', (
       tester,
     ) async {
@@ -640,6 +692,9 @@ class _Notes implements NoteReconciler {
     dismissed.add(id);
     scans.removeWhere((scan) => scan.id == id);
   }
+
+  @override
+  Future<void> convertToPlainFile(String path) async {}
 
   @override
   Future<DriftScanReport> scan({

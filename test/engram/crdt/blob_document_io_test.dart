@@ -361,6 +361,76 @@ void main() {
     });
   });
 
+  group('convert', () {
+    // The epoch over an existing ULID (step 19). The reconciler clears the
+    // log and holds the consent; this is what it then calls.
+    test('a new register, a new seed claim, the same identity', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final note = NoteDocument.mint(store: store, path: 'a.md', content: 'x');
+      final ulid = note.ulid;
+      final before = store.catalog.byUlid(ulid)!;
+      note.dispose();
+      store.crdt.deleteDocumentData(ulid);
+
+      final blob = BlobDocument.convert(
+        store: store,
+        ulid: ulid,
+        digest: ContentDigest.of(png),
+      );
+      addTearDown(blob.dispose);
+
+      expect(blob.ulid, ulid);
+      expect(blob.state, ContentDigest.of(png));
+      final row = store.catalog.byUlid(ulid)!;
+      expect(row.mergePolicy, MergePolicy.blobLww);
+      expect(row.path, 'a.md');
+      expect(row.sketch, isNull);
+      expect(row.seedClaim, isNot(before.seedClaim));
+      expect(row.seededBy, store.peerId);
+      expect(
+        store.crdt.changeStorageForDocument(ulid).getChanges(),
+        hasLength(1),
+      );
+      // Reopens as a blob of this device's own.
+      final again = BlobDocument.open(store: store, ulid: ulid);
+      addTearDown(again.dispose);
+      expect(again.state, ContentDigest.of(png));
+    });
+
+    test('refuses an unknown note, a blob, and an uncleared history', () async {
+      final store = await openStore();
+      addTearDown(store.close);
+      final digest = ContentDigest.of(png);
+      expect(
+        () =>
+            BlobDocument.convert(store: store, ulid: newUlid(), digest: digest),
+        throwsA(isA<UnknownNoteException>()),
+      );
+      final blob = BlobDocument.mint(
+        store: store,
+        path: 'pic.png',
+        digest: digest,
+      );
+      addTearDown(blob.dispose);
+      expect(
+        () =>
+            BlobDocument.convert(store: store, ulid: blob.ulid, digest: digest),
+        throwsStateError,
+        reason: 'already a plain file',
+      );
+      final note = NoteDocument.mint(store: store, path: 'a.md', content: 'x');
+      addTearDown(note.dispose);
+      expect(
+        () =>
+            BlobDocument.convert(store: store, ulid: note.ulid, digest: digest),
+        throwsStateError,
+        reason:
+            'the history must be cleared first; the consent is the caller\'s',
+      );
+    });
+  });
+
   group('open', () {
     test('a claim survives a restart', () async {
       final ulid = await () async {

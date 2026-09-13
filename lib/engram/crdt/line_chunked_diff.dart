@@ -230,9 +230,10 @@ void _refine(List<TextEdit> edits, String before, String after, int base) {
 /// note, deliberately, since that is what lets it be tested against bare
 /// replicas with no store behind them; there is no merge policy in scope here
 /// to consult. What keeps a `blobLww` note safe is Decision 3: its op-log
-/// carries a hash and a stamp, never the bytes, so its sequence is empty and
-/// nothing calls this for one. That is a property of the caller, not a guard
-/// here.
+/// carries a hash and a stamp, never the bytes, and since step 14 its
+/// document has no text sequence at all — `BlobDocument` holds a register,
+/// and `NoteDocument` refuses to open a blob — so there is nothing to hand
+/// this function. That is a property of the caller, not a guard here.
 void applyExternalText(
   CRDTDocument document,
   CRDTFugueTextHandler text,

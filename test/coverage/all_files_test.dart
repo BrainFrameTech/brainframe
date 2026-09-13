@@ -22,6 +22,7 @@ import 'package:brainframe/engram/crdt/app_data_resolver.dart';
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/app_data_resolver_stub.dart';
 import 'package:brainframe/engram/crdt/app_data_source.dart';
+import 'package:brainframe/engram/crdt/blob_document_io.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/crdt/catalog_io.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';

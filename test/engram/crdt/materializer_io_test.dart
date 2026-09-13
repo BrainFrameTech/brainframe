@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
+import 'package:brainframe/engram/crdt/blob_document_io.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/crdt/drift.dart';
 import 'package:brainframe/engram/crdt/line_chunked_diff.dart';
@@ -505,9 +506,9 @@ void main() {
     test('a blob gets a hash and no sketch', () async {
       final store = await openStore();
       addTearDown(store.close);
-      final note = NoteDocument.mint(store: store, path: 'pic.png');
-      addTearDown(note.dispose);
       final bytes = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47]);
+      final note = BlobDocument.mint(store: store, path: 'pic.png', bytes: bytes);
+      addTearDown(note.dispose);
       await engram.writeBytes('pic.png', bytes);
 
       final row = await recordFileState(

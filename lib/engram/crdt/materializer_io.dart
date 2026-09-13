@@ -126,12 +126,11 @@ Future<bool> noteFileHasDrifted(EngramStore engram, CatalogRow row) async {
 ///
 /// For the two cases where the file is the authority rather than the
 /// projection: a `blobLww` note, whose bytes the op-log does not carry and
-/// which nothing materializes until step 14, and a row that predates the
-/// sketch and needs one built. What goes into `materializedHash` is then the
-/// bytes this device last *observed*, which is the statement Decision 5 needs
-/// — the next scan compares against it to decide whether the file changed —
-/// and becomes literally true again the moment a materializer for that policy
-/// writes them.
+/// which nothing materializes — the file is the only copy, and the register
+/// describes it (Decision 3) — and a row that predates the sketch and needs
+/// one built. What goes into `materializedHash` is then the bytes this device
+/// last *observed*, which is the statement Decision 5 needs: the next scan
+/// compares against it to decide whether the file changed.
 ///
 /// Returns the committed row.
 Future<CatalogRow> recordFileState({

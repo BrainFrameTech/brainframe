@@ -3,8 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
+import 'package:brainframe/engram/crdt/blob_document_io.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
+import 'package:brainframe/engram/crdt/drift.dart';
 import 'package:brainframe/engram/crdt/drift_reconciler_io.dart';
 import 'package:brainframe/engram/crdt/identity_authorship_io.dart';
 import 'package:brainframe/engram/crdt/identity_map.dart';
@@ -224,24 +226,45 @@ void main() {
       expect(d.store.catalog.byPath('a.md')!.state, NoteState.live);
     });
 
-    test('a blob is not diffed, but its hash is kept current', () async {
-      // Step 14's policy: nothing to diff, and a file that must not be
-      // character-merged. What a blob does need is a hash that describes the
-      // file as it is now, or a moved blob could never be found again.
+    test('a blob is not diffed; a change to it is one LWW claim', () async {
+      // Step 14: nothing to diff, and a file that must not be
+      // character-merged. What a blob does get is a register claim that the
+      // file is now these bytes, and a hash that describes it as it is now,
+      // or a moved blob could never be found again.
       final d = await device();
       await engram.writeString('pic.png', 'not really a png');
       await d.reconciler.scan();
       final before = d.store.catalog.byPath('pic.png')!;
       expect(before.mergePolicy, MergePolicy.blobLww);
-      expect(changesOf(d, 'pic.png'), 0, reason: 'no seed for a blob');
+      expect(changesOf(d, 'pic.png'), 1, reason: 'the first claim');
 
       await engram.writeString('pic.png', 'still not a png, but longer');
-      expect(await d.reconciler.reconcile('pic.png'), isFalse);
+      expect(await d.reconciler.reconcile('pic.png'), isTrue);
 
       final after = d.store.catalog.byPath('pic.png')!;
       expect(after.materializedHash, isNot(before.materializedHash));
-      expect(changesOf(d, 'pic.png'), 0);
+      expect(changesOf(d, 'pic.png'), 2, reason: 'and the second');
       expect(await engram.readString('pic.png'), 'still not a png, but longer');
+      final blob = BlobDocument.open(store: d.store, ulid: after.ulid);
+      addTearDown(blob.dispose);
+      expect(blob.state, BlobState.of(await engram.readBytes('pic.png')));
+      expect(
+        blob.document.exportChanges().every(
+          (change) => change.payloadBytes().length < 128,
+        ),
+        isTrue,
+        reason: 'the log carries a hash and a size, never the bytes',
+      );
+    });
+
+    test('a blob whose bytes did not change is left alone', () async {
+      final d = await device();
+      await engram.writeString('pic.png', 'not really a png');
+      await d.reconciler.scan();
+
+      expect(await d.reconciler.reconcile('pic.png'), isFalse);
+      expect((await d.reconciler.scan()).isClean, isTrue);
+      expect(changesOf(d, 'pic.png'), 1);
     });
 
     test('a history-pending note', () async {
@@ -289,6 +312,31 @@ void main() {
         expect((await d.reconciler.scan()).isClean, isTrue);
       },
     );
+
+    test('a blob in the same state gets its hash, and no claim', () async {
+      // No register to write to until the log arrives; the catalog still
+      // learns the file's hash, so the blob can be found if it moves.
+      final d = await device();
+      final ulid = newUlid();
+      d.store.catalog.upsert(
+        CatalogRow(
+          ulid: ulid,
+          path: 'theirs.png',
+          mergePolicy: MergePolicy.blobLww,
+          state: NoteState.live,
+          seedClaim: OperationId(peerB, HybridLogicalClock.now()),
+        ),
+      );
+      final bytes = Uint8List.fromList([1, 2, 3]);
+      await engram.writeBytes('theirs.png', bytes);
+
+      expect(await d.reconciler.reconcile('theirs.png'), isFalse);
+      expect(
+        d.store.catalog.byUlid(ulid)!.materializedHash,
+        contentHash(bytes),
+      );
+      expect(changesOf(d, 'theirs.png'), 0);
+    });
   });
 
   group('the scan', () {
@@ -556,19 +604,29 @@ void main() {
       expect(changesOf(d, 'new.md'), 2, reason: 'the seed and one edit');
     });
 
-    test('a blob is minted with an empty sequence', () async {
+    test('a blob is minted with a register, not a sequence', () async {
       final d = await device();
-      await engram.writeBytes('pic.png', Uint8List.fromList([0x89, 0x50, 0]));
+      final bytes = Uint8List.fromList([0x89, 0x50, 0]);
+      await engram.writeBytes('pic.png', bytes);
 
       final report = await d.reconciler.scan();
 
       expect(report.created, ['pic.png']);
       final row = d.store.catalog.byPath('pic.png')!;
       expect(row.mergePolicy, MergePolicy.blobLww);
-      expect(row.materializedHash, isNotNull);
+      expect(row.materializedHash, contentHash(bytes));
       expect(row.sketch, isNull);
-      expect(changesOf(d, 'pic.png'), 0);
+      expect(changesOf(d, 'pic.png'), 1, reason: 'the first claim');
       expect(await engram.readBytes('pic.png'), [0x89, 0x50, 0]);
+      // The claim is the file's hash and size; the document has no text.
+      final blob = BlobDocument.open(store: d.store, ulid: row.ulid);
+      addTearDown(blob.dispose);
+      expect(blob.state, BlobState.of(bytes));
+      expect(
+        () => NoteDocument.open(store: d.store, ulid: row.ulid),
+        throwsArgumentError,
+        reason: 'no text sequence to open',
+      );
     });
 
     test('a file that cannot be brought in fails alone', () async {

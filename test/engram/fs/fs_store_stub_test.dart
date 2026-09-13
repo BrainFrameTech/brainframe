@@ -34,6 +34,10 @@ void main() {
     );
   });
 
+  test('removeFileSystemEngramMarker is unsupported on the web stub', () {
+    expect(() => removeFileSystemEngramMarker(loc), throwsUnsupportedError);
+  });
+
   test('ephemeralEngramContainerPath is unsupported on the web stub', () {
     expect(() => ephemeralEngramContainerPath(), throwsUnsupportedError);
   });

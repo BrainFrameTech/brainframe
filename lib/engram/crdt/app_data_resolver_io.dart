@@ -73,3 +73,28 @@ Future<String> engramStorePath(
   final root = await (resolveRoot ?? appDataRootResolver())();
   return '$root/$engramsDirectoryName/$engramId';
 }
+
+/// Deletes the engram [engramId]'s device-local store directory — `metadata.db`
+/// and anything beside it — and returns whether there was one to delete.
+///
+/// Absence is success, not failure: a store that was never opened on this
+/// device, or one already removed by an earlier attempt, both leave nothing
+/// to do. The other half of a clean-up, the marker directory inside the
+/// folder, lives behind the filesystem store seam.
+///
+/// The directory is resolved through [engramStorePath], so the same ULID check
+/// guards it: nothing but a canonical engram ULID can name what is deleted
+/// here. **Never call this for an open engram:** its `metadata.db` is a live
+/// SQLite connection, which on Windows refuses the delete and everywhere else
+/// leaves the session writing into an unlinked file.
+Future<bool> deleteEngramStore(
+  String engramId, {
+  AppDataRootResolver? resolveRoot,
+}) async {
+  final directory = Directory(
+    await engramStorePath(engramId, resolveRoot: resolveRoot),
+  );
+  if (!await directory.exists()) return false;
+  await directory.delete(recursive: true);
+  return true;
+}

@@ -435,6 +435,45 @@ void main() {
     });
   });
 
+  group('removeFileSystemEngramMarker', () {
+    test('removes the whole .brainframe tree and nothing else', () async {
+      final loc = locFor('Adopted');
+      await createFileSystemEngram(location: loc, displayName: 'Adopted');
+      final store = FileSystemEngramStore(loc);
+      await store.writeSettings({'theme': 'dark'});
+      // Every peer's shared file goes too, not only this device's.
+      final shared = Directory('${loc.path}/.brainframe/shared');
+      await shared.create(recursive: true);
+      await File('${shared.path}/peer-a.db').writeAsString('a');
+      await File('${shared.path}/peer-b.db').writeAsString('b');
+      await store.writeBytes('notes/hello.md', Uint8List.fromList([104, 105]));
+
+      expect(await removeFileSystemEngramMarker(loc), isTrue);
+
+      expect(Directory('${loc.path}/.brainframe').existsSync(), isFalse);
+      expect(File('${loc.path}/notes/hello.md').readAsStringSync(), 'hi');
+      // A plain folder again: opening it as an engram fails, adopting it
+      // would mint a fresh identity.
+      expect(() => openFileSystemEngram(loc), throwsStateError);
+    });
+
+    test('a folder that is already plain is left alone', () async {
+      final loc = locFor('Plain');
+      await File('${loc.path}/note.md').create(recursive: true);
+
+      expect(await removeFileSystemEngramMarker(loc), isFalse);
+
+      expect(File('${loc.path}/note.md').existsSync(), isTrue);
+    });
+
+    test('a folder that no longer exists is not an error', () async {
+      // A dangling registry entry: the clean-up still has the device-local
+      // store to remove, so this half must not stop it.
+      expect(await removeFileSystemEngramMarker(locFor('gone')), isFalse);
+      expect(Directory(locFor('gone').path).existsSync(), isFalse);
+    });
+  });
+
   group('applicationEngramContainerPath', () {
     const channel = MethodChannel('plugins.flutter.io/path_provider');
 

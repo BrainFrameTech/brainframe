@@ -386,6 +386,27 @@ Future<Engram> openFileSystemEngram(EngramLocation location) async {
   );
 }
 
+/// Removes everything BrainFrame put inside the folder at [location] — the
+/// whole `$markerDirectoryName/` tree: the marker, the per-engram settings,
+/// and `shared/`, every peer's identity map included — leaving the folder a
+/// plain folder of notes. Nothing outside the marker directory is touched.
+///
+/// Returns whether there was anything to remove, and succeeds quietly when
+/// there was not: a folder that is already plain, or a folder that is gone
+/// altogether (a dangling registry entry). That is what makes a clean-up
+/// retryable after a partial failure.
+///
+/// The half of a clean-up that touches the folder; the device-local store is
+/// the other half, under `app_data_resolver.dart`. **Never call this on the
+/// active engram:** its open session writes the identity map back on a timer,
+/// and the directory would reappear under the delete.
+Future<bool> removeFileSystemEngramMarker(EngramLocation location) async {
+  final marker = Directory('${location.path}/$markerDirectoryName');
+  if (!await marker.exists()) return false;
+  await marker.delete(recursive: true);
+  return true;
+}
+
 /// The app documents directory (`path_provider`) — the *default* container
 /// that holds engrams as sibling folders on desktop, iOS, and Android.
 ///

@@ -702,18 +702,22 @@ rewrite what was cleared.
   actually the defaults — verify the clear took *and* the save-on-exit didn't
   quietly rewrite it.
 
-### F21 — Housekeeping: the note ledger, and forgetting an engram
+### F21 — Housekeeping: the note ledger, forgetting and cleaning up an engram
 
-> Non-destructive (forgetting never deletes files) — but still exercise it on a
-> throwaway registry entry: adopt the **Field Notebook** fixture via
-> **Open folder…** (F15), then forget that. Don't forget a real engram you want
-> to keep listed.
+> Forgetting never deletes files; **cleaning up does** — it deletes the
+> folder's `.brainframe/` and this device's `metadata.db` for it (never the
+> notes). Run both only on a throwaway registry entry: adopt the **Field
+> Notebook** fixture via **Open folder…** (F15) and act on that. Restore the
+> fixture afterwards with the Safety command (`git clean -fd` is what brings
+> `.brainframe/` back). Never clean up a real engram you share with another
+> device — its shared map goes with it.
 
 The pane has two parts as of CRDT step 13. The top, **Notes in “…”** (named
 for the active engram), is what this device knows about that engram's notes
 — the design's answer to "is this engram from another machine?", which the
 app never asks and instead shows here. The bottom, **Engrams added from a
-folder**, is the forget list.
+folder**, is the list of registry-backed engrams, each with **Forget** and
+**Clean up**.
 
 **Steps:**
 
@@ -738,6 +742,21 @@ folder**, is the forget list.
 10. If an engram's folder is missing on disk, confirm a **MISSING** badge and
     that it can still be forgotten. With nothing forgettable, confirm the
     empty state.
+11. **Clean up, refused while open:** with the adopted Field Notebook fixture
+    **open**, reopen Housekeeping and find its row.
+12. Switch to the **Tutorial**; reopen Housekeeping. Tap **Clean up** on the
+    fixture's row; read the confirm dialog; **Cancel** — nothing changes.
+13. Tap **Clean up** again; confirm. Then check the fixture folder on disk,
+    and this device's app-data directory (`engrams/<ULID>/`, under the path in
+    the note-identity design doc's app-data table).
+14. **Clean up a dangling entry:** adopt the fixture again, open it once (so
+    a `metadata.db` exists), switch to the Tutorial, then rename or delete
+    the fixture folder outside the app. Reopen Housekeeping; **Clean up** the
+    **MISSING** row.
+15. **A failure is reported, not swallowed (Linux/macOS):** adopt the fixture
+    again, open it once, switch away, then `chmod 000` a subdirectory you
+    create inside its `engrams/<ULID>/` store. **Clean up**; read the dialog;
+    **OK**. Restore permissions and **Clean up** once more.
 
 **Expected:**
 
@@ -766,18 +785,46 @@ folder**, is the forget list.
 - Steps 6–10: forgetting drops the engram from BrainFrame's registry (and the
   switcher) without deleting files; a confirmation is required; missing
   entries are badged and clearable; an empty state shows when nothing is
-  forgettable.
+  forgettable. The intro above the list names both actions and what each
+  deletes; the empty state says "Nothing to forget or clean up".
+- Step 11: the row's **Clean up** button is **disabled** and a hint under the
+  path says the engram is open now and to switch to another one; **Forget**
+  on the same row is still enabled. Rows for other engrams are unaffected.
+- Step 12: the button is enabled. The dialog is titled "Clean up “Field
+  Notebook”?", names the folder's path, says the `.brainframe` folder inside
+  it and this device's history are deleted **permanently**, that the shared
+  map other devices rely on goes with it, and that **your notes are not
+  touched**. Cancel changes nothing.
+- Step 13: the row disappears and the engram leaves the switcher. On disk the
+  fixture folder has **no `.brainframe/`** and every note is still there,
+  untouched; the app-data `engrams/<ULID>/` directory for it is **gone**.
+  `git status` in the fixture shows only `.brainframe/` deleted. Re-adopting
+  the folder now mints a **new** identity (a fresh ULID in `engram.json`).
+- Step 14: the MISSING row can be cleaned up; the app-data store for it is
+  gone afterwards. This is the only way to reach a deleted folder's orphaned
+  `metadata.db` — Forget leaves it behind.
+- Step 15: a dialog "Could not clean up “Field Notebook”" shows the
+  filesystem error and says the entry stays listed for another try. The row
+  is still there — badged **MISSING**, because the folder's `.brainframe/`
+  went before the store refused. The retry succeeds and the row goes.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ pane renders, but with no folder-adoption on mobile (F15) there may be **no forgettable engrams** — verify the empty state | same as Android | same as Android | same as Android (no native adoption yet) |
+| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ pane renders, but with no folder-adoption on mobile (F15) there may be **no forgettable engrams** — verify the empty state | same as Android | same as Android | same as Android (no native adoption yet) |
 
-- **A11y:** the Forget button is labeled with the engram name; the confirm dialog
-  is adaptive. The ledger is plain text and reads in order.
-- **Declarative-trap probe:** after a confirmed forget, the list actually
-  re-loads (the row is gone), not just visually dimmed; after a Dismiss, the
-  list re-loads from the database. The ledger's counts are taken when the
-  pane opens — leave and reopen Settings to refresh them.
+- **A11y:** the Forget and Clean up buttons are each labeled with the engram
+  name; the disabled Clean up reports as disabled; the confirm and failure
+  dialogs are adaptive. The ledger is plain text and reads in order.
+- **Declarative-trap probe:** after a confirmed forget or clean-up, the list
+  actually re-loads (the row is gone), not just visually dimmed; after a
+  failed clean-up it re-loads too (the row's badge reflects the partial
+  state); after a Dismiss, the list re-loads from the database. The ledger's
+  counts are taken when the pane opens — leave and reopen Settings to refresh
+  them.
+- **Inspection point:** Clean up is deliberately refused for the open engram
+  rather than switching away for you — its `metadata.db` is a live connection
+  and its identity map is rewritten on a timer, so a delete underneath it
+  would be undone. Switching first is the one extra step.
 - **Retention:** ordinary scan records older than a year are pruned when the
   engram opens; a record that lost history or failed is never pruned
   automatically. Not reproducible by hand without editing `metadata.db`'s

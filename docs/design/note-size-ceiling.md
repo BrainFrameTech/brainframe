@@ -338,9 +338,15 @@ Recorded here so the steps that build it do not re-derive it.
   Open, and now less urgent: the ceiling is enforced regardless, and a leaner
   element would raise the capability, not change the policy.
 
-## What remains of #124
+## What remains, and where it is tracked
 
-The **Raspberry Pi Zero 2 W measurement**. The 128 KiB figure was measured
-on a Pi 4 and extrapolated to the Zero 2 W's 512 MB; the design's own words
-are "unmeasured and should be, once one is on the bench". If it comes back
-worse than expected, Decision 7 is how the number moves — for everyone.
+- **The Raspberry Pi Zero 2 W measurement — #156.** The 128 KiB figure was
+  measured on a Pi 4 and extrapolated to the Zero 2 W's 512 MB; the
+  companion design's own words are "unmeasured and should be, once one is
+  on the bench". If it comes back worse than expected, Decision 7 is how the
+  number moves — for everyone.
+- **The implementation — #157.** The "What this asks of the implementation"
+  list above, as checkboxes, so the plan steps have somewhere to hang before
+  they are written.
+
+**#124**, where the decisions were taken, is closed by this document.

@@ -1468,9 +1468,10 @@ installed dependency and it decides how defensive the importer must be.
   there are no export files to compact, only the local op-log.
 - **The Raspberry Pi Zero 2 W measurement.** The ceiling was measured on a
   Pi 4 and extrapolated to the Zero 2 W's 512 MB. What happens above it is
-  now decided — the [note size ceiling](note-size-ceiling.md) design — and
-  the measurement is what remains of **#124**. If it comes back worse than
-  expected, that design's Decision 7 is how the number moves, for everyone.
+  now decided — the [note size ceiling](note-size-ceiling.md) design, which
+  closed **#124** — and the measurement is tracked as **#156**. If it comes
+  back worse than expected, that design's Decision 7 is how the number
+  moves, for everyone.
 
 ### Decided during review — recorded so it is not relitigated
 

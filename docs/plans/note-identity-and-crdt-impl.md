@@ -784,12 +784,12 @@ and is not made here.
 
 ## Questions this plan does not answer
 
-- **What happens above the note-size ceiling** (**#124**) is now answered
-  — the [note size ceiling](../design/note-size-ceiling.md) design — but not
-  yet planned. Its "What this asks of the implementation" section is the
-  list of steps to add here; none of them is any of the fifteen above, and
-  the scan's mint path is still where the check lands. Until those steps
-  exist, no step here may quietly add a limit.
+- **What happens above the note-size ceiling** is now answered — the
+  [note size ceiling](../design/note-size-ceiling.md) design, which closed
+  **#124** — but not yet planned. **#157** carries its "What this asks of
+  the implementation" list as the steps to add here; none of them is any of
+  the fifteen above, and the scan's mint path is still where the check
+  lands. Until those steps exist, no step here may quietly add a limit.
 - **Snapshot and compaction policy** (**#118**). Purely local use has no
   stranded peers, so it stays deferred — but it must be settled before
   **#67**, which is the moment peers below the frontier become possible.

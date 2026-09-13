@@ -1,8 +1,7 @@
 # The note size ceiling
 
-- **Status:** proposed — the decisions were taken in the review thread of
-  **#124** (2026-09-13); this is their single coherent statement, and it is
-  accepted when this write-up is agreed to match them
+- **Status:** accepted (2026-09-13) — the decisions were taken in the review
+  thread of **#124**, and this is their single coherent statement
 - **Author:** Claude
 - **Date:** 2026-09-13
 - **Companion to:** [note-identity-and-crdt.md](note-identity-and-crdt.md),

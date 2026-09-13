@@ -101,9 +101,11 @@ class DriftReconciler implements NoteReconciler {
   /// running is the ordinary way this happens.
   Future<DriftScanReport>? _running;
 
-  /// The `bf_meta` key stamped with every scan's finish time, clean or not.
-  /// A clean scan leaves only this behind: it changed nothing, so there is
-  /// nothing else to record about it.
+  /// The one `bf_meta` key overwritten with the finish time of the latest
+  /// scan, clean or not. A clean scan writes nothing else: it changed
+  /// nothing, so the history has no row for it — this stamp is the only sign
+  /// it ran. Nothing reads it to decide whether to scan; it feeds the
+  /// ledger's "last scan" line and that is all.
   static const String lastScanKey = 'last_scan_utc';
 
   @override

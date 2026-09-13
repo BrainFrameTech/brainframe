@@ -363,6 +363,147 @@ void main() {
     });
   });
 
+  group('the size limit (ceiling step 22)', () {
+    // Over the limit the save is withheld: nothing is written until the
+    // user rolls back or the limit is lifted by a conversion.
+    test('typing past the limit withholds the save', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 10;
+        c.openFile('a.md', 'short');
+
+        c.edit('this is well over ten bytes');
+        expect(c.status, SaveStatus.overLimit);
+        expect(c.isDirty, isTrue);
+
+        async.elapse(const Duration(seconds: 60));
+        async.flushMicrotasks();
+        expect(store.writes, isEmpty, reason: 'no timer fires a save');
+
+        c.flush();
+        async.flushMicrotasks();
+        expect(store.writes, isEmpty, reason: 'and a flush writes nothing');
+        expect(c.status, SaveStatus.overLimit);
+        expect(c.text, 'this is well over ten bytes', reason: 'buffer kept');
+        c.dispose();
+      });
+    });
+
+    test('exactly the limit is allowed', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 10;
+        c.openFile('a.md', '');
+        c.edit('0123456789');
+        expect(c.status, SaveStatus.dirty);
+        c.dispose();
+      });
+    });
+
+    test('editing back under the limit saves as usual', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 10;
+        c.openFile('a.md', 'short');
+        c.edit('this is well over ten bytes');
+        expect(c.status, SaveStatus.overLimit);
+
+        c.edit('under');
+        expect(c.status, SaveStatus.dirty);
+        async.elapse(const Duration(seconds: 5));
+        async.flushMicrotasks();
+
+        expect(store.writes, ['a.md::under']);
+        expect(c.status, SaveStatus.saved);
+        c.dispose();
+      });
+    });
+
+    test('rollBack discards the buffer for the last saved text', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 10;
+        c.openFile('a.md', 'saved');
+        c.edit('this is well over ten bytes');
+        var notifications = 0;
+        c.addListener(() => notifications++);
+
+        c.rollBack();
+
+        expect(c.text, 'saved');
+        expect(c.status, SaveStatus.saved);
+        expect(c.isDirty, isFalse);
+        expect(notifications, 1);
+        async.elapse(const Duration(seconds: 60));
+        async.flushMicrotasks();
+        expect(store.writes, isEmpty);
+        c.dispose();
+      });
+    });
+
+    test('lifting the limit lets the withheld edit save', () {
+      // A conversion clears the limit; the pending edit becomes an ordinary
+      // dirty buffer and the next flush writes it.
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 10;
+        c.openFile('a.md', 'short');
+        c.edit('this is well over ten bytes');
+        expect(c.status, SaveStatus.overLimit);
+
+        c.sizeLimitBytes = null;
+        expect(c.status, SaveStatus.dirty);
+        c.flush();
+        async.flushMicrotasks();
+
+        expect(store.writes, ['a.md::this is well over ten bytes']);
+        expect(c.status, SaveStatus.saved);
+        c.dispose();
+      });
+    });
+
+    test('lowering the limit under the buffer withholds it', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', '');
+        c.edit('twenty-two characters!');
+        expect(c.status, SaveStatus.dirty);
+
+        c.sizeLimitBytes = 10;
+
+        expect(c.status, SaveStatus.overLimit);
+        async.elapse(const Duration(seconds: 60));
+        async.flushMicrotasks();
+        expect(store.writes, isEmpty);
+        c.dispose();
+      });
+    });
+
+    test('a limit set before any file is open does nothing yet', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.sizeLimitBytes = 10;
+        expect(c.status, SaveStatus.saved);
+        c.rollBack();
+        expect(c.text, '');
+        c.dispose();
+      });
+    });
+
+    test('the limit is measured in bytes on disk, not characters', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 10;
+        c.openFile('a.md', '');
+        c.edit('日本語語'); // 4 characters, 12 bytes
+        expect(c.status, SaveStatus.overLimit);
+        c.dispose();
+      });
+    });
+  });
+
   group('lifecycle observer registration', () {
     TestWidgetsFlutterBinding.ensureInitialized();
 

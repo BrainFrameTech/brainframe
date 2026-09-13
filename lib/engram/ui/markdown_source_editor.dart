@@ -95,6 +95,13 @@ class SourceEditorController {
   /// throw.
   void selectRange(TextRange range) => _state?._selectRange(range);
 
+  /// Puts [text] in the field, caret at the end, **without** reporting it as
+  /// a change — the host already knows, because it is the host's text: a
+  /// refused paste being taken back out, or a roll-back to the last saved
+  /// version (the note size ceiling design, Decision 5). A no-op when no
+  /// editor is attached.
+  void replaceText(String text) => _state?._replaceText(text);
+
   void _attach(_MarkdownSourceEditorState state) => _state = state;
 
   void _detach(_MarkdownSourceEditorState state) {
@@ -161,6 +168,14 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
 
   /// Places the caret over [range] and focuses the field, so the user carries
   /// on typing at the match they just found.
+  void _replaceText(String text) {
+    if (_controller.text == text) return;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
   void _selectRange(TextRange range) {
     final length = _controller.text.length;
     final start = range.start.clamp(0, length);

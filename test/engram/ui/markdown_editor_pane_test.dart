@@ -132,8 +132,18 @@ class _FakeReconciler implements NoteReconciler {
   @override
   Future<void> dismissScan(int id) async {}
 
+  /// Every path converted, in order.
+  final List<String> converted = [];
+
+  /// Every path reconstructed, in order.
+  final List<String> reconstructed = [];
+
   @override
-  Future<void> convertToPlainFile(String path) async {}
+  Future<void> convertToPlainFile(String path) async {
+    converted.add(path);
+    awaiting.remove(path);
+    plainFiles.add(path);
+  }
 
   @override
   Future<List<PendingNote>> awaitingDecision() async => [
@@ -141,7 +151,10 @@ class _FakeReconciler implements NoteReconciler {
   ];
 
   @override
-  Future<String> reconstruct(String path) async => path;
+  Future<String> reconstruct(String path) async {
+    reconstructed.add(path);
+    return '$path (oversized)';
+  }
 
   /// Paths the editor should call plain files (step 21).
   final Set<String> plainFiles = {};
@@ -499,6 +512,226 @@ void main() {
       expect(find.text('Approaching the size limit'), findsNothing);
     });
 
+    group('the wall (step 22)', () {
+      // A ceiling of 40 bytes handed to the pane, as the browser hands it
+      // the engram's. A reconciler is present, so the limit applies.
+      Widget walled(_RwStore store, _FakeReconciler reconciler) => localizedApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1000,
+            height: 600,
+            child: MarkdownEditorPane(
+              store: store,
+              path: 'a.md',
+              reconciler: reconciler,
+              noteSizeCeilingBytes: 40,
+            ),
+          ),
+        ),
+      );
+
+      testWidgets('typing past the limit withholds the save and says so', (
+        tester,
+      ) async {
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+
+        // One character at a time crosses the line as typing does.
+        final field = find.byType(TextField);
+        await tester.enterText(field, 'a' * 40);
+        await tester.pump();
+        await tester.enterText(field, 'a' * 41);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump();
+
+        expect(find.text('Too large to save'), findsOneWidget);
+        expect(find.text('Over the size limit'), findsOneWidget);
+        expect(find.textContaining('Bytes: 41 of 40'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 60));
+        expect(store.writes, isEmpty, reason: 'withheld');
+        expect(store.files['a.md'], 'short');
+      });
+
+      testWidgets('roll back restores the last saved version', (
+        tester,
+      ) async {
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'a' * 40);
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'a' * 41);
+        await tester.pump();
+
+        await tester.tap(find.text('Too large to save'));
+        await tester.pumpAndSettle();
+        expect(find.text('Over the size limit'), findsWidgets, reason: 'the dialog');
+        expect(find.textContaining('This note is now 41 bytes'), findsOneWidget);
+        await tester.tap(find.text('Roll back'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('short'), findsOneWidget, reason: 'the field too');
+        expect(find.text('Saved'), findsOneWidget);
+        expect(store.writes, isEmpty);
+        expect(reconciler.converted, isEmpty);
+      });
+
+      testWidgets('convert lifts the limit and lets the save through', (
+        tester,
+      ) async {
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'a' * 40);
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'a' * 41);
+        await tester.pump();
+
+        await tester.tap(find.text('Too large to save'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Convert to a plain file'));
+        await tester.pumpAndSettle();
+
+        expect(reconciler.converted, ['a.md']);
+        expect(store.files['a.md'], 'a' * 41, reason: 'saved, whole');
+        expect(find.text('Saved'), findsOneWidget);
+        expect(
+          find.text('Plain file — edits are saved whole; no history or merging.'),
+          findsOneWidget,
+        );
+        expect(find.text('Over the size limit'), findsNothing);
+      });
+
+      testWidgets('cancel leaves the wall standing', (tester) async {
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'a' * 40);
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'a' * 41);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump();
+
+        await tester.tap(find.text('Over the size limit'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Too large to save'), findsOneWidget);
+        expect(store.writes, isEmpty);
+      });
+
+      testWidgets('a paste that would cross the line is refused at the paste',
+          (tester) async {
+        // More than one character at once, crossing: taken back out of the
+        // field before it is the buffer, and the dialog asks.
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'short${'p' * 50}');
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('The pasted text would make this note 55 bytes'),
+            findsOneWidget);
+        final editable = tester.widget<EditableText>(find.byType(EditableText));
+        expect(editable.controller.text, 'short', reason: 'already taken out');
+        await tester.tap(find.text('Undo the paste'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Saved'), findsOneWidget, reason: 'never dirty');
+        expect(store.writes, isEmpty);
+        expect(reconciler.converted, isEmpty);
+      });
+
+      testWidgets('converting after a refused paste applies and saves it', (
+        tester,
+      ) async {
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'short${'p' * 50}');
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Convert to a plain file'));
+        await tester.pumpAndSettle();
+
+        expect(reconciler.converted, ['a.md']);
+        expect(store.files['a.md'], 'short${'p' * 50}');
+        final editable = tester.widget<EditableText>(find.byType(EditableText));
+        expect(editable.controller.text, 'short${'p' * 50}');
+        expect(find.text('Saved'), findsOneWidget);
+      });
+
+      testWidgets('a plain file has no wall', (tester) async {
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store)..plainFiles.add('a.md');
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'a' * 200);
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+
+        expect(store.files['a.md'], 'a' * 200);
+        expect(find.text('Over the size limit'), findsNothing);
+        expect(find.text('Too large to save'), findsNothing);
+      });
+
+      testWidgets('the external door offers reconstruct and convert on the bar',
+          (tester) async {
+        final store = _RwStore({'a.md': 'a' * 60});
+        final reconciler = _FakeReconciler(store)..awaiting.add('a.md');
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MarkdownSourceEditor), findsNothing);
+        expect(find.text('Over the size limit'), findsOneWidget);
+        expect(find.textContaining('Bytes: 60 of 40'), findsOneWidget);
+        await tester.tap(find.text('Over the size limit'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.textContaining('grew to 60 bytes outside BrainFrame'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('“a (oversized).md”'), findsOneWidget);
+        await tester.tap(find.text('Reconstruct'));
+        await tester.pumpAndSettle();
+        expect(reconciler.reconstructed, ['a.md']);
+      });
+
+      testWidgets('converting at the external door reopens it as a plain file',
+          (tester) async {
+        final store = _RwStore({'a.md': 'a' * 60});
+        final reconciler = _FakeReconciler(store)..awaiting.add('a.md');
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Over the size limit'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Convert to a plain file'));
+        await tester.pumpAndSettle();
+
+        expect(reconciler.converted, ['a.md']);
+        expect(find.byType(MarkdownSourceEditor), findsOneWidget);
+        expect(
+          find.text('Plain file — edits are saved whole; no history or merging.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('read-only'), findsNothing);
+      });
+    });
+
     testWidgets('a note awaiting a decision opens read-only, with a banner', (
       tester,
     ) async {
@@ -515,8 +748,8 @@ void main() {
       expect(find.text('Saved'), findsNothing, reason: 'nothing to save');
       expect(find.text('Edit'), findsNothing);
       expect(
-        find.textContaining('read-only until you decide what to do with it '
-            'in Settings › Housekeeping'),
+        find.textContaining('read-only until you decide what to do with it: '
+            'use “Over the size limit” below, or Settings › Housekeeping'),
         findsOneWidget,
       );
       expect(reconciler.reconciles, ['big.md'], reason: 'still reconciled first');

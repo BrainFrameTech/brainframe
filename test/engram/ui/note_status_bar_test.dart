@@ -161,6 +161,51 @@ void main() {
       expect(pressed, 1);
     });
 
+    testWidgets('over the limit, the wall replaces the warning', (
+      tester,
+    ) async {
+      // Step 22: one byte over is the wall, a button to the decision; the
+      // warning's slot is taken, and the limit is shown beside the bytes.
+      var pressed = 0;
+      await tester.pumpWidget(
+        host(
+          NoteStatusBar(
+            text: 'a' * 1001,
+            ceilingBytes: 1000,
+            onWarningPressed: () => fail('the warning must not show'),
+            onWallPressed: () => pressed++,
+          ),
+        ),
+      );
+
+      expect(find.text('Over the size limit'), findsOneWidget);
+      expect(find.text('Near the size limit'), findsNothing);
+      expect(find.text('Bytes: 1,001 of 1,000 · Words: 1 · Lines: 1'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.text('Over the size limit')).label,
+        'Over the size limit: 1,001 of 1,000 bytes. Opens the choices.',
+      );
+      await tester.tap(find.text('Over the size limit'));
+      expect(pressed, 1);
+    });
+
+    testWidgets('exactly the limit is the warning, not the wall', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          NoteStatusBar(
+            text: 'a' * 1000,
+            ceilingBytes: 1000,
+            onWarningPressed: () {},
+            onWallPressed: () {},
+          ),
+        ),
+      );
+      expect(find.text('Near the size limit'), findsOneWidget);
+      expect(find.text('Over the size limit'), findsNothing);
+    });
+
     testWidgets('a plain file gets the regime line and never a warning', (
       tester,
     ) async {

@@ -358,6 +358,36 @@ void main() {
       expect(editable.focusNode.hasFocus, isTrue);
     });
 
+    testWidgets('replaceText puts text in the field without reporting it', (
+      tester,
+    ) async {
+      // Step 22: a refused paste taken back out, or a roll-back. The host
+      // already knows the text, so onChanged must not fire.
+      final controller = SourceEditorController();
+      final changes = <String>[];
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'before',
+            controller: controller,
+            onChanged: changes.add,
+          ),
+        ),
+      );
+
+      controller.replaceText('after');
+      await tester.pumpAndSettle();
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.controller.text, 'after');
+      expect(editable.controller.selection.baseOffset, 5, reason: 'caret at end');
+      expect(changes, isEmpty);
+
+      controller.replaceText('after'); // the same text: nothing to do
+      await tester.pumpAndSettle();
+      expect(editable.controller.text, 'after');
+    });
+
     testWidgets('a range past the end of the text is clamped, not thrown', (
       tester,
     ) async {

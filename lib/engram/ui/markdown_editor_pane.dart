@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../commands/app_commands.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../crdt/catalog.dart';
 import '../metadata.dart';
 import '../engram_store.dart';
 import '../note_reconciler.dart';
@@ -120,6 +121,15 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   /// status bar says so in the slot the size warning would take.
   bool _plainFile = false;
 
+  /// The text of a note awaiting a decision, for the status bar's counts;
+  /// the controller never holds it (there must be no buffer a save could
+  /// reach), and the reader reads the file for itself.
+  String _awaitingText = '';
+
+  /// A paste that would have taken the note past the limit, taken back out
+  /// of the field and held here until the user says undo or convert.
+  String? _pendingPaste;
+
   StreamSubscription<String>? _reconciled;
 
   @override
@@ -175,13 +185,24 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       final awaiting = await _isAwaitingDecision(path);
       final plainFile =
           !awaiting && (await widget.reconciler?.isPlainFile(path) ?? false);
-      if (!awaiting) {
+      var awaitingText = '';
+      if (awaiting) {
+        awaitingText = await widget.store.readString(path);
+      } else {
         final text = await widget.store.readString(path);
+        // The limit before the text, so a file already over it (which the
+        // scan should have caught first) is withheld from the outset. No
+        // limit for a plain file, or where there is no catalog to protect.
+        _controller.sizeLimitBytes = plainFile || widget.reconciler == null
+            ? null
+            : widget.noteSizeCeilingBytes;
         await _controller.openFile(path, text);
       }
       if (!mounted || widget.path != path) return;
       setState(() {
         _awaitingDecision = awaiting;
+        _awaitingText = awaitingText;
+        _pendingPaste = null;
         _plainFile = plainFile;
         _loadedPath = path;
         _loadError = null;
@@ -267,8 +288,164 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   /// Records an edit, and keeps the find highlights honest while the user types
   /// into a document that is being searched.
   void _onEdit(String text) {
+    final limit = _controller.sizeLimitBytes;
+    if (limit != null &&
+        noteSizeInBytes(text) > limit &&
+        noteSizeInBytes(_controller.text) <= limit &&
+        text.length - _controller.text.length > 1) {
+      // More than one character arrived at once and crossed the line: a
+      // paste. Refused at the paste, before it is the buffer — the field
+      // goes back to what it was, and the dialog offers to undo (done) or
+      // convert (the paste is then applied). Typing crosses one character
+      // at a time and is let through to the withheld-save path instead.
+      _pendingPaste = text;
+      _editor.replaceText(_controller.text);
+      unawaited(_askAboutPaste());
+      return;
+    }
     _controller.edit(text);
     if (_findOpen) setState(() => _search(_findQuery.text));
+  }
+
+  Future<void> _askAboutPaste() async {
+    final pending = _pendingPaste;
+    if (pending == null) return;
+    final l10n = AppLocalizations.of(context);
+    final convert = await showAdaptiveDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.wallTitle),
+        content: Text(
+          l10n.wallBodyPaste(
+            formatDecimal(context, noteSizeInBytes(pending)),
+            formatDecimal(context, widget.noteSizeCeilingBytes),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.wallUndoPaste),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.housekeepingConvert),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    _pendingPaste = null;
+    if (convert != true) return; // undone already: the field was put back
+    await _convert();
+    if (!mounted) return;
+    _editor.replaceText(pending);
+    _controller.edit(pending);
+    await _controller.flush();
+  }
+
+  /// The wall, reached by typing: roll back to the last saved version, or
+  /// convert and let the withheld save through.
+  Future<void> _askAboutWall() async {
+    final l10n = AppLocalizations.of(context);
+    final choice = await showAdaptiveDialog<_WallChoice>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.wallTitle),
+        content: Text(
+          l10n.wallBodyTyping(
+            formatDecimal(context, noteSizeInBytes(_controller.text)),
+            formatDecimal(context, widget.noteSizeCeilingBytes),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_WallChoice.rollBack),
+            child: Text(l10n.wallRollBack),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_WallChoice.convert),
+            child: Text(l10n.housekeepingConvert),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case null:
+        return;
+      case _WallChoice.rollBack:
+        _controller.rollBack();
+        _editor.replaceText(_controller.text);
+      case _WallChoice.convert:
+        await _convert();
+        if (!mounted) return;
+        // Clearing the limit turns the withheld save back into a pending
+        // one; flushing writes it, through the plain-file writer now.
+        await _controller.flush();
+      case _WallChoice.reconstruct:
+        break; // not offered here
+    }
+  }
+
+  /// The external-edit door (step 20) on the same surface: reconstruct or
+  /// convert a note that grew past the limit outside the app.
+  Future<void> _askAboutExternal() async {
+    final l10n = AppLocalizations.of(context);
+    final choice = await showAdaptiveDialog<_WallChoice>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.wallTitle),
+        content: Text(
+          l10n.wallBodyExternal(
+            formatDecimal(context, noteSizeInBytes(_awaitingText)),
+            formatDecimal(context, widget.noteSizeCeilingBytes),
+            asidePathFor(widget.path).split('/').last,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_WallChoice.reconstruct),
+            child: Text(l10n.housekeepingReconstruct),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_WallChoice.convert),
+            child: Text(l10n.housekeepingConvert),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    final path = widget.path;
+    switch (choice) {
+      case null:
+        return;
+      case _WallChoice.reconstruct:
+        // The reconciler says so on its stream, and _onReconciled reopens.
+        await widget.reconciler?.reconstruct(path);
+      case _WallChoice.convert:
+        await widget.reconciler?.convertToPlainFile(path);
+        if (!mounted || widget.path != path) return;
+        await _open(path);
+      case _WallChoice.rollBack:
+        break; // not offered here
+    }
+  }
+
+  /// Converts the open note to a plain file (step 19) and lifts the limit:
+  /// from here its saves go through the plain-file writer.
+  Future<void> _convert() async {
+    await widget.reconciler?.convertToPlainFile(widget.path);
+    if (!mounted) return;
+    _controller.sizeLimitBytes = null;
+    setState(() => _plainFile = true);
   }
 
   Future<void> _setMode(_Mode mode) async {
@@ -419,6 +596,11 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
               onNavigateToFile: widget.onNavigateToFile,
             ),
           ),
+          NoteStatusBar(
+            text: _awaitingText,
+            ceilingBytes: widget.noteSizeCeilingBytes,
+            onWallPressed: _askAboutExternal,
+          ),
         ],
       );
     }
@@ -440,6 +622,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
             findOpen: _findOpen,
             onModeChanged: _setMode,
             onSaveNow: _saveNow,
+            onOverLimit: _askAboutWall,
             onFind: _openFind,
           ),
           if (_findOpen)
@@ -459,6 +642,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
             ceilingBytes: widget.noteSizeCeilingBytes,
             plainFile: _plainFile,
             onWarningPressed: _explainNearLimit,
+            onWallPressed: _askAboutWall,
           ),
         ],
       ),
@@ -503,6 +687,7 @@ class _Header extends StatelessWidget {
     required this.findOpen,
     required this.onModeChanged,
     required this.onSaveNow,
+    required this.onOverLimit,
     required this.onFind,
   });
 
@@ -512,6 +697,9 @@ class _Header extends StatelessWidget {
   final bool findOpen;
   final ValueChanged<_Mode> onModeChanged;
   final VoidCallback onSaveNow;
+
+  /// Opens the wall — the choices — when the buffer is over the limit.
+  final VoidCallback onOverLimit;
   final VoidCallback onFind;
 
   @override
@@ -534,7 +722,11 @@ class _Header extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          _SaveStatusChip(status: status, onSaveNow: onSaveNow),
+          _SaveStatusChip(
+            status: status,
+            onSaveNow: onSaveNow,
+            onOverLimit: onOverLimit,
+          ),
           const SizedBox(width: 12),
           _ModeToggle(mode: mode, onChanged: onModeChanged),
         ],
@@ -580,10 +772,18 @@ class _ModeToggle extends StatelessWidget {
 /// The save-status chip: shows `saved` / `saving` / `unsaved` / `error`, and is
 /// a tappable "save now" button when there is something to write.
 class _SaveStatusChip extends StatelessWidget {
-  const _SaveStatusChip({required this.status, required this.onSaveNow});
+  const _SaveStatusChip({
+    required this.status,
+    required this.onSaveNow,
+    required this.onOverLimit,
+  });
 
   final SaveStatus status;
   final VoidCallback onSaveNow;
+
+  /// Over the limit the chip is a button too, but to the decision rather
+  /// than to a save there cannot be.
+  final VoidCallback onOverLimit;
 
   @override
   Widget build(BuildContext context) {
@@ -593,15 +793,22 @@ class _SaveStatusChip extends StatelessWidget {
     // Only dirty/error are worth a manual flush; saved is nothing to do and
     // saving is already in flight.
     final canSaveNow = status == SaveStatus.dirty || status == SaveStatus.error;
-    final color = status == SaveStatus.error ? theme.colorScheme.error : null;
+    final overLimit = status == SaveStatus.overLimit;
+    final color = status == SaveStatus.error || overLimit
+        ? theme.colorScheme.error
+        : null;
 
     return Semantics(
-      button: canSaveNow,
+      button: canSaveNow || overLimit,
       label: canSaveNow ? '$label, ${l10n.saveNowTooltip}' : label,
       child: Tooltip(
         message: canSaveNow ? l10n.saveNowTooltip : label,
         child: InkWell(
-          onTap: canSaveNow ? onSaveNow : null,
+          onTap: canSaveNow
+              ? onSaveNow
+              : overLimit
+              ? onOverLimit
+              : null,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -632,6 +839,11 @@ class _SaveStatusChip extends StatelessWidget {
         return (l10n.saveStatusUnsaved, Icons.edit_note_outlined);
       case SaveStatus.error:
         return (l10n.saveStatusError, Icons.error_outline);
+      case SaveStatus.overLimit:
+        return (l10n.saveStatusOverLimit, Icons.block);
     }
   }
 }
+
+/// What the wall's dialogs come back with.
+enum _WallChoice { rollBack, convert, reconstruct }

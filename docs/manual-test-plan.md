@@ -1504,9 +1504,11 @@ over 131,072 bytes.
 
 - Step 3: the note shows in the reader, not the editor, under a banner:
   *This note grew past the size limit outside BrainFrame and is read-only
-  until you decide what to do with it in Settings › Housekeeping.* No
-  Edit/Preview toggle, no save chip; typing does nothing. The file on disk
-  is untouched.
+  until you decide what to do with it: use "Over the size limit" below, or
+  Settings › Housekeeping.* No Edit/Preview toggle, no save chip; typing
+  does nothing. The status bar at the bottom shows the file's counts with
+  the limit beside the bytes and a red **Over the size limit** button (F34
+  drives it). The file on disk is untouched.
 - Step 4: an **Awaiting your decision** section with one card: *about.md is
   now N bytes; the limit is 131,072.* — N being the size the other editor
   shows — then a line explaining both choices, naming `about (oversized).md`,
@@ -1620,6 +1622,92 @@ under the warning, `reference/point-count-tally-near-limit.md`.
 - **Inspection point:** the warning threshold is the engram's ceiling × 0.9,
   rounded up; an engram whose `engram.json` records a lower ceiling (F26's
   probe) warns at 90 % of that instead.
+
+### F34 — The wall: typing or pasting past the limit, and the external door
+
+As of ceiling step 22, a note that goes past the 128 KiB limit *in the
+editor* is never saved as it is and never converted without asking. Typing
+past it is allowed, but the save is withheld — the chip says **Too large to
+save** — until the user rolls back or converts. A paste that would cross
+the line is refused at the paste and the user is asked. And a note that
+grew past the limit outside the app (F32) offers its two choices on the
+same status bar. Use the fixture's near-limit note,
+`reference/point-count-tally-near-limit.md` (117,964 bytes; the limit is
+131,072, so there is room for ~13 KB of typing before the wall, and one
+pasted paragraph of that size crosses it).
+
+**Steps:**
+
+1. Open the near-limit note. Paste a paragraph of about 14,000 bytes at the
+   end (any text; a copy of the note's own header lines fifty times over
+   will do). Read the dialog. Choose **Undo the paste**.
+2. Paste the same paragraph again; choose **Convert to a plain file**.
+   Read the chip and the bar; check the file in another editor.
+3. Reset the fixture. Open the near-limit note again and, at the end, hold
+   a key down until the byte count passes 131,072. Wait ten seconds. Read
+   the chip and the bar; check the file in another editor.
+4. Tap the chip (or the bar's button). Read the dialog. Choose **Cancel**;
+   then open it again and choose **Roll back**.
+5. Type past the limit again; this time choose **Convert to a plain file**.
+   Check the file in another editor; open Housekeeping.
+6. Reset the fixture. Type past the limit; without choosing, select another
+   note in the tree; then come back.
+7. Grow `about.md` past the limit outside the app as in F32 step 2; relaunch;
+   select `about.md`; tap **Over the size limit** on the bar. Choose
+   **Reconstruct**. Then repeat with `gear/checklist.md` and choose
+   **Convert to a plain file** from the bar's dialog.
+
+**Expected:**
+
+- Step 1: the pasted text vanishes from the field at once and a dialog
+  **Over the size limit** says *The pasted text would make this note N
+  bytes; the limit … is 131,072. The paste has not been applied.* with
+  **Undo the paste** and **Convert to a plain file**. After Undo the note is
+  exactly as before, the chip says `Saved`, and nothing was written.
+- Step 2: the pasted text reappears at the end, the chip goes to `Saved`,
+  the bar's slot says *Plain file — edits are saved whole; no history or
+  merging*, and the other editor shows the file with the paragraph.
+- Step 3: the wall arrives one character at a time: at 131,073 bytes the
+  chip turns red — **⊘ Too large to save** — and the bar reads *Bytes:
+  131,073 of 131,072* with a red **⊘ Over the size limit**. Typing keeps
+  working. After ten seconds nothing has been written: the other editor
+  still shows 117,964 bytes.
+- Step 4: the dialog says *This note is now N bytes … It cannot be saved as
+  it is.* with **Cancel**, **Roll back**, **Convert to a plain file**.
+  Cancel leaves the wall standing. Roll back puts the field back to the last
+  saved text — the typed run is gone — the chip says `Saved`, and still
+  nothing was written.
+- Step 5: the typed text stays, the chip goes to `Saved`, the file in the
+  other editor holds the typed text, the bar shows the plain-file line, and
+  Housekeeping's newest card reads "*time* · by request — 1 made a plain
+  file".
+- Step 6: **the typed run is lost.** Switching away with the save withheld
+  drops the buffer, as any save that cannot complete would; the note
+  reopens at its last saved text. This is the documented gap (plan step 22),
+  not a defect — report it only if the file on disk changed.
+- Step 7: for `about.md` the dialog says *This note grew to N bytes outside
+  BrainFrame … Reconstruct restores … "about (oversized).md" … Convert keeps
+  this file as it is …* with **Cancel**, **Reconstruct**, **Convert to a
+  plain file**. Reconstruct: the note opens in the **editor** at its saved
+  text, and the tree shows `about (oversized).md`. Convert (checklist): the
+  note opens in the editor with the grown text, the bar shows the plain-file
+  line, and no `(oversized)` copy is made.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓; step 7 needs a second app over the folder | as Android | as Android | ✓ with the file edited over SSH for step 7; the chip and bar update on the next push |
+
+- **Paste vs typing:** a paste is "more than one character at once, crossing
+  the line". A hardware key held down crosses one character at a time and
+  reaches the wall; an IME that commits several characters at once may be
+  treated as a paste — report it if that happens for ordinary CJK input.
+- **Never fights the keyboard:** typing past the wall is never blocked, only
+  the save. Report a keystroke that is swallowed.
+- **A11y:** the chip is a button labeled *Too large to save*; the bar's
+  button reads *Over the size limit: N of M bytes. Opens the choices.* and is
+  a live region, so the moment of crossing is announced.
+- **Declarative-trap probe:** after Roll back, the field's text must actually
+  change (the typed run disappears), not just the chip.
 
 ---
 

@@ -969,6 +969,66 @@
     }
   },
 
+  "statusBytes": "Bytes: {count}",
+  "@statusBytes": {
+    "description": "Editor status bar: the note's size as it would be on disk. {count} is formatted with separators.",
+    "placeholders": { "count": { "type": "String", "example": "118,204" } }
+  },
+
+  "statusBytesOfLimit": "Bytes: {count} of {limit}",
+  "@statusBytesOfLimit": {
+    "description": "Editor status bar, when the note is near or over the size limit: its size and the limit, both formatted with separators.",
+    "placeholders": {
+      "count": { "type": "String", "example": "118,204" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "statusWords": "Words: {count}",
+  "@statusWords": {
+    "description": "Editor status bar: word count (runs of non-whitespace).",
+    "placeholders": { "count": { "type": "String", "example": "21,300" } }
+  },
+
+  "statusLines": "Lines: {count}",
+  "@statusLines": {
+    "description": "Editor status bar: line count.",
+    "placeholders": { "count": { "type": "String", "example": "1,204" } }
+  },
+
+  "statusNearLimit": "Near the size limit",
+  "@statusNearLimit": {
+    "description": "Editor status bar button, shown once a note is within 10% of the size limit. Opens an explanation."
+  },
+
+  "statusNearLimitLabel": "Near the size limit: {count} of {limit} bytes. Opens an explanation.",
+  "@statusNearLimitLabel": {
+    "description": "Accessibility label of the near-limit button.",
+    "placeholders": {
+      "count": { "type": "String", "example": "118,204" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "statusPlainFile": "Plain file — edits are saved whole; no history or merging.",
+  "@statusPlainFile": {
+    "description": "Editor status bar line for a note that is a plain file (blobLww): its saves replace the file whole, it keeps no edit history, and concurrent edits do not merge."
+  },
+
+  "nearLimitTitle": "Approaching the size limit",
+  "@nearLimitTitle": {
+    "description": "Title of the dialog opened from the status bar's near-limit button."
+  },
+
+  "nearLimitBody": "This note is {count} bytes; the limit for a note that keeps its history is {limit}. Above it, BrainFrame cannot keep the note's edit history or merge changes from other devices.\n\nTo stay under: move some of the content into another note, or trim it. If you go past the limit anyway, you will be asked whether to undo or to keep the note as a plain file without a history.",
+  "@nearLimitBody": {
+    "description": "Body of the near-limit dialog: where the note stands, what happens at the limit, and what to do.",
+    "placeholders": {
+      "count": { "type": "String", "example": "118,204" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
   "editorAwaitingDecision": "This note grew past the size limit outside BrainFrame and is read-only until you decide what to do with it in Settings › Housekeeping.",
   "@editorAwaitingDecision": {
     "description": "Banner over a read-only note that is awaiting the user's decision in Housekeeping."

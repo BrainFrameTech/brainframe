@@ -28,7 +28,8 @@ enum SaveStatus { saved, dirty, saving, error }
 /// flushes the outgoing file first ([openFile]), and a write captures the path
 /// and text it targets so a late timer or an in-flight write can never stamp
 /// content onto a file that has since been switched away.
-class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver {
+class DocumentEditController extends ChangeNotifier
+    with WidgetsBindingObserver {
   DocumentEditController({
     required this.writer,
     this.idleDebounce = const Duration(seconds: 5),
@@ -123,6 +124,7 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
   void edit(String text) {
     if (_path == null) return;
     _buffer = text;
+    final before = _status;
     if (isDirty) {
       _idleTimer?.cancel();
       _idleTimer = Timer(idleDebounce, _flushFromTimer);
@@ -132,6 +134,11 @@ class DocumentEditController extends ChangeNotifier with WidgetsBindingObserver 
       _cancelTimers();
       _setStatus(SaveStatus.saved);
     }
+    // Every edit, not only a status change: the status bar counts the
+    // buffer, and a run of typing that stays dirty throughout would
+    // otherwise never reach it. Once per edit — a transition has already
+    // notified. The bar coalesces its own counting.
+    if (_status == before) notifyListeners();
   }
 
   /// Writes the buffer through [writer] now if it is dirty, cancelling pending

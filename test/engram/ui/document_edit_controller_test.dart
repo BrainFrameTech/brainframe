@@ -244,6 +244,25 @@ void main() {
       c.dispose();
     });
 
+    test('notifies on every edit, not only a status change', () {
+      // The status bar counts the buffer (ceiling step 21); a run of typing
+      // that stays dirty throughout still has to reach it.
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'A');
+        var notifications = 0;
+        c.addListener(() => notifications++);
+
+        c.edit('A2'); // saved -> dirty: a transition
+        c.edit('A23'); // still dirty
+        c.edit('A234'); // still dirty
+
+        expect(notifications, 3);
+        c.dispose();
+      });
+    });
+
     test('notifies listeners on status transitions', () {
       fakeAsync((async) {
         final store = _RecordingStore();

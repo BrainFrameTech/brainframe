@@ -253,6 +253,14 @@ class DriftReconciler implements NoteReconciler {
   }
 
   @override
+  Future<bool> isPlainFile(String path) async {
+    final row = database.catalog.byPath(path);
+    return row != null &&
+        row.mergePolicy == MergePolicy.blobLww &&
+        mergePolicyForPath(path) == MergePolicy.fugueText;
+  }
+
+  @override
   Future<List<PendingNote>> awaitingDecision() async => [
     for (final row in database.catalog.findable())
       if (row.state == NoteState.oversized)

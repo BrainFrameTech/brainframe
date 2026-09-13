@@ -405,6 +405,13 @@ abstract class NoteReconciler {
   /// Throws [StateError] if the note is not awaiting a decision.
   Future<String> reconstruct(String path);
 
+  /// Whether the note at [path] is a plain file — `blobLww` at a text path,
+  /// keeping no history and saving whole — so the editor can say so (the
+  /// note size ceiling design, Decision 5). False for a text note, a path
+  /// the catalog does not know, and a blob at a blob's own extension, which
+  /// the editor never opens.
+  Future<bool> isPlainFile(String path);
+
   /// Reconciles the one note at engram-relative [path], if it has drifted —
   /// or brings it into the catalog if it is not there yet, by minting or by
   /// adopting from the identity map.

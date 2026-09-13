@@ -71,6 +71,11 @@ markdown edge cases the tutorial engram is too small and too pristine to show.
   (no history, whole-file saves), Housekeeping reports it, and the editor still
   opens and saves it (plan case F31). Regenerate rather than edit: it must stay
   over 131,072 bytes.
+- `reference/point-count-tally-near-limit.md` — a generated note of **exactly
+  117,964 bytes**, one byte under the editor's size warning (90 % of the
+  128 KiB limit is 117,965), so typing a single character turns the warning
+  on and deleting it turns it off (plan case F33). Regenerate rather than edit:
+  its size is the point.
 - `reading list/` — a folder *and* files whose names contain spaces, linked with
   percent-encoded destinations (`Reading%20List%20MoC.md`). Exercises intra-engram
   navigation to spaced filenames, which silently did nothing before the link

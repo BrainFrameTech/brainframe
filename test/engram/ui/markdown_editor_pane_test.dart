@@ -143,6 +143,12 @@ class _FakeReconciler implements NoteReconciler {
   @override
   Future<String> reconstruct(String path) async => path;
 
+  /// Paths the editor should call plain files (step 21).
+  final Set<String> plainFiles = {};
+
+  @override
+  Future<bool> isPlainFile(String path) async => plainFiles.contains(path);
+
   /// Housekeeping reconstructed the note: it is no longer waiting, the file
   /// is back to [text], and the reconciler says so on its stream.
   void reconstructedElsewhere(String path, String text) {
@@ -409,6 +415,88 @@ void main() {
       expect(find.text('# A, edited outside'), findsOneWidget);
       expect(find.text('Saved'), findsOneWidget);
       expect(store.writes, isEmpty, reason: 'a reload is not a save');
+    });
+
+    testWidgets('the status bar counts the buffer and follows edits', (
+      tester,
+    ) async {
+      // Step 21. Below the editor: bytes, words, lines. Edits reach it
+      // through the controller's notification, coalesced by the bar.
+      final store = _RwStore({'a.md': '# Hello world\n'});
+      await tester.pumpWidget(_host(store, 'a.md'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bytes: 14 · Words: 3 · Lines: 2'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '# Hello world again\n');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+
+      expect(find.text('Bytes: 20 · Words: 4 · Lines: 2'), findsOneWidget);
+      expect(find.text('Near the size limit'), findsNothing);
+    });
+
+    testWidgets('a plain-file note says so in the bar', (tester) async {
+      final store = _RwStore({'big.md': '# Big'});
+      final reconciler = _FakeReconciler(store)..plainFiles.add('big.md');
+      await tester.pumpWidget(_host(store, 'big.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownSourceEditor), findsOneWidget, reason: 'editable');
+      expect(
+        find.text('Plain file — edits are saved whole; no history or merging.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a text note does not', (tester) async {
+      final store = _RwStore({'a.md': '# A'});
+      final reconciler = _FakeReconciler(store);
+      await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Plain file'), findsNothing);
+    });
+
+    testWidgets('near the limit, the bar warns and explains on tap', (
+      tester,
+    ) async {
+      // A small ceiling handed to the pane, as the browser hands it the
+      // engram's: the warning is at 90 % of it.
+      final store = _RwStore({'a.md': 'x' * 950});
+      await tester.pumpWidget(
+        localizedApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 1000,
+              height: 600,
+              child: MarkdownEditorPane(
+                store: store,
+                path: 'a.md',
+                noteSizeCeilingBytes: 1000,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bytes: 950 of 1,000 · Words: 1 · Lines: 1'), findsOneWidget);
+      await tester.tap(find.text('Near the size limit'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Approaching the size limit'), findsOneWidget);
+      expect(
+        find.textContaining('This note is 950 bytes; the limit for a note that '
+            'keeps its history is 1,000.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('move some of the content into another note'),
+          findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.text('Approaching the size limit'), findsNothing);
     });
 
     testWidgets('a note awaiting a decision opens read-only, with a banner', (

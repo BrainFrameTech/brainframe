@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../engram/engram.dart';
 import '../engram/engram_repository.dart';
 import '../engram/note_reconciler.dart';
+import '../engram/ui/note_status_bar.dart';
 import '../l10n/gen/app_localizations.dart';
 
 /// Lists the registry-backed engrams that can be forgotten.
@@ -361,7 +361,7 @@ class _LedgerSection extends StatelessWidget {
                       _Line(
                         l10n.housekeepingPlainFiles(
                           counts.plainFiles,
-                          _bytes(context, engram.noteSizeCeilingBytes),
+                          formatDecimal(context, engram.noteSizeCeilingBytes),
                         ),
                       ),
                     if (counts.lastScanAt != null)
@@ -556,7 +556,7 @@ class _ScanCard extends StatelessWidget {
           if (report.oversized.isNotEmpty)
             _Line(
               l10n.housekeepingOversizedDetail(
-                _bytes(context, ceilingBytes),
+                formatDecimal(context, ceilingBytes),
                 report.oversized.join(', '),
               ),
               emphasis: true,
@@ -622,8 +622,8 @@ class _PendingCard extends StatelessWidget {
           _Line(
             l10n.housekeepingPendingNote(
               note.path,
-              _bytes(context, note.sizeBytes),
-              _bytes(context, ceilingBytes),
+              formatDecimal(context, note.sizeBytes),
+              formatDecimal(context, ceilingBytes),
             ),
             emphasis: true,
           ),
@@ -884,9 +884,3 @@ class _MissingBadge extends StatelessWidget {
     );
   }
 }
-
-/// [bytes] with the locale's thousands separators — the number the ceiling
-/// is stated in, as the user will compare it against a file manager.
-String _bytes(BuildContext context, int bytes) => NumberFormat.decimalPattern(
-  Localizations.localeOf(context).toString(),
-).format(bytes);

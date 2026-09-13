@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
+import '../metadata.dart';
 import '../engram_store.dart';
 import '../note_reconciler.dart';
 import '../note_writer.dart';
@@ -64,6 +65,7 @@ Widget buildFileViewer({
   Set<String> availablePaths = const {},
   void Function(String path)? onNavigateToFile,
   bool readOnly = true,
+  int noteSizeCeilingBytes = defaultNoteSizeCeilingBytes,
 }) {
   if (isMarkdownPath(path)) {
     if (readOnly) {
@@ -77,6 +79,7 @@ Widget buildFileViewer({
     return MarkdownEditorPane(
       store: store,
       path: path,
+      noteSizeCeilingBytes: noteSizeCeilingBytes,
       writer: writer,
       reconciler: reconciler,
       availablePaths: availablePaths,

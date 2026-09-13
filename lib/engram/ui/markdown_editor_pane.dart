@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../commands/app_commands.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../metadata.dart';
 import '../engram_store.dart';
 import '../note_reconciler.dart';
 import '../note_writer.dart';
@@ -13,6 +14,7 @@ import 'file_path_breadcrumb.dart';
 import 'find_in_page.dart';
 import 'markdown_reader.dart';
 import 'markdown_source_editor.dart';
+import 'note_status_bar.dart';
 
 /// Which face of the editable pane is showing.
 enum _Mode { edit, preview }
@@ -48,10 +50,15 @@ class MarkdownEditorPane extends StatefulWidget {
     this.reconciler,
     this.availablePaths = const {},
     this.onNavigateToFile,
+    this.noteSizeCeilingBytes = defaultNoteSizeCeilingBytes,
   });
 
   final EngramStore store;
   final String path;
+
+  /// The engram's note size ceiling, in bytes on disk, for the status bar's
+  /// warning (the note size ceiling design, Decisions 5 and 7).
+  final int noteSizeCeilingBytes;
 
   /// How a save reaches storage, or null to write straight to [store].
   ///
@@ -109,6 +116,10 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   /// Decision 4): shown read-only, with no editor and nothing to save.
   bool _awaitingDecision = false;
 
+  /// The note is a plain file — no history, whole-file saves — and the
+  /// status bar says so in the slot the size warning would take.
+  bool _plainFile = false;
+
   StreamSubscription<String>? _reconciled;
 
   @override
@@ -162,6 +173,8 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       // way it is read-only until the user decides, and the controller
       // never sees it — there must be no buffer a save could reach.
       final awaiting = await _isAwaitingDecision(path);
+      final plainFile =
+          !awaiting && (await widget.reconciler?.isPlainFile(path) ?? false);
       if (!awaiting) {
         final text = await widget.store.readString(path);
         await _controller.openFile(path, text);
@@ -169,6 +182,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       if (!mounted || widget.path != path) return;
       setState(() {
         _awaitingDecision = awaiting;
+        _plainFile = plainFile;
         _loadedPath = path;
         _loadError = null;
         _mode = _Mode.edit; // a freshly opened file starts in Edit
@@ -188,6 +202,28 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       if (note.path == path) return true;
     }
     return false;
+  }
+
+  Future<void> _explainNearLimit() async {
+    final l10n = AppLocalizations.of(context);
+    await showAdaptiveDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.nearLimitTitle),
+        content: Text(
+          l10n.nearLimitBody(
+            formatDecimal(context, NoteCounts.of(_controller.text).bytes),
+            formatDecimal(context, widget.noteSizeCeilingBytes),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.ok),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onControllerChanged() {
@@ -418,6 +454,12 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
               onClose: _closeFind,
             ),
           Expanded(child: _content()),
+          NoteStatusBar(
+            text: _controller.text,
+            ceilingBytes: widget.noteSizeCeilingBytes,
+            plainFile: _plainFile,
+            onWarningPressed: _explainNearLimit,
+          ),
         ],
       ),
     );

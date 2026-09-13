@@ -130,6 +130,9 @@ class _FakeReconciler implements NoteReconciler {
   Future<void> dismissScan(int id) async {}
 
   @override
+  Future<void> convertToPlainFile(String path) async {}
+
+  @override
   Stream<String> get reconciled => _events.stream;
 }
 

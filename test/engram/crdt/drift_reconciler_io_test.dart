@@ -829,6 +829,175 @@ void main() {
     });
   });
 
+  group('conversion to a plain file (step 19)', () {
+    test('drops the history, keeps the file, and claims it whole', () async {
+      // Decision 3. The user has been told and has agreed; this is what
+      // then happens to the note.
+      final d = await device();
+      await d.writer.write('long.md', 'one\n');
+      await d.writer.write('long.md', 'one\ntwo\n');
+      final ulid = d.store.catalog.byPath('long.md')!.ulid;
+      expect(changesOf(d, 'long.md'), greaterThan(1), reason: 'a history');
+      final before = d.store.catalog.byUlid(ulid)!;
+
+      await d.reconciler.convertToPlainFile('long.md');
+
+      expect(await engram.readString('long.md'), 'one\ntwo\n', reason: 'as is');
+      final row = d.store.catalog.byUlid(ulid)!;
+      expect(row.mergePolicy, MergePolicy.blobLww);
+      expect(row.sketch, isNull);
+      expect(row.state, NoteState.live);
+      expect(row.materializedHash, contentHashOfString('one\ntwo\n'));
+      expect(row.seedClaim, isNot(before.seedClaim), reason: 'a new epoch');
+      expect(row.seededBy, d.store.peerId);
+      expect(changesOf(d, 'long.md'), 1, reason: 'the history is gone');
+      final blob = BlobDocument.open(store: d.store, ulid: ulid);
+      addTearDown(blob.dispose);
+      expect(blob.state, ContentDigest.of(await engram.readBytes('long.md')));
+      expect(
+        () => NoteDocument.open(store: d.store, ulid: ulid),
+        throwsArgumentError,
+        reason: 'never a text note again',
+      );
+      expect(d.identity.rows[ulid]!.mergePolicy, MergePolicy.blobLww);
+      expect(d.identity.rows[ulid]!.seedClaim, row.seedClaim);
+    });
+
+    test('is recorded for Housekeeping, as a scan by request', () async {
+      final d = await device();
+      await d.writer.write('long.md', 'one\n');
+      final stampBefore = (await d.reconciler.ledger()).lastScanAt;
+
+      await d.reconciler.convertToPlainFile('long.md');
+
+      final notice = (await d.reconciler.recentScans()).single;
+      expect(notice.report.converted, ['long.md']);
+      expect(notice.trigger, ScanTrigger.manual);
+      expect(
+        (await d.reconciler.ledger()).lastScanAt,
+        stampBefore,
+        reason: 'a conversion is not a scan',
+      );
+      expect((await d.reconciler.ledger()).plainFiles, 1);
+    });
+
+    test('is editable afterwards through the plain-file writer', () async {
+      final d = await device();
+      await d.writer.write('long.md', 'one\n');
+      await d.reconciler.convertToPlainFile('long.md');
+
+      await d.writer.write('long.md', 'one\ntrimmed\n');
+
+      expect(await engram.readString('long.md'), 'one\ntrimmed\n');
+      expect(changesOf(d, 'long.md'), 2, reason: 'the claim and one more');
+      expect((await d.reconciler.scan()).isClean, isTrue);
+    });
+
+    test('a note that is already a plain file is left alone', () async {
+      final d = await device();
+      await engram.writeBytes('pic.png', Uint8List.fromList([1, 2, 3]));
+      await d.reconciler.scan();
+      final before = d.store.catalog.byPath('pic.png')!;
+
+      await d.reconciler.convertToPlainFile('pic.png');
+
+      expect(d.store.catalog.byPath('pic.png'), before);
+      expect(changesOf(d, 'pic.png'), 1);
+      expect(await d.reconciler.recentScans(), hasLength(1), reason: 'the mint');
+    });
+
+    test('an unknown path is refused', () async {
+      final d = await device();
+      expect(() => d.reconciler.convertToPlainFile('nope.md'), throwsStateError);
+    });
+
+    test('an adopted note can be converted: the epoch is a new seed', () async {
+      // A minted it; B adopted the ULID from A's map and, over #67, would
+      // hold A's log — imported by hand here. B converts. With A's log
+      // cleared B would have an empty document under A's seed claim, which
+      // open() rightly refuses; the conversion claims a new seed, so B's
+      // register opens as B's own.
+      final a = await device();
+      await a.writer.write('shared.md', 'from A\n');
+      await a.publish();
+      final ulid = a.store.catalog.byPath('shared.md')!.ulid;
+      final b = await device();
+      await b.reconciler.scan();
+      b.store.crdt.changeStorageForDocument(ulid).saveChanges(
+        a.store.crdt.changeStorageForDocument(ulid).getChanges(),
+      );
+      expect(b.store.catalog.byUlid(ulid)!.seededBy, a.store.peerId);
+
+      await b.reconciler.convertToPlainFile('shared.md');
+
+      final row = b.store.catalog.byUlid(ulid)!;
+      expect(row.mergePolicy, MergePolicy.blobLww);
+      expect(row.seededBy, b.store.peerId);
+      final blob = BlobDocument.open(store: b.store, ulid: ulid);
+      addTearDown(blob.dispose);
+      expect(blob.state, isNotNull);
+    });
+
+    group('made on another device', () {
+      test('is followed without asking, and the loss is counted', () async {
+        // Decision 4: one device keeping a character history for a note
+        // another has made whole is the split-brain one ceiling everywhere
+        // exists to prevent. B follows; its local history is left in
+        // place but nothing reads it again, and the count is reported.
+        final a = await device();
+        await a.writer.write('shared.md', 'from A\n');
+        await a.publish();
+        final ulid = a.store.catalog.byPath('shared.md')!.ulid;
+        final b = await device();
+        await b.reconciler.scan();
+        // B's copy of the history, as #67 would deliver it.
+        final theirs = a.store.crdt.changeStorageForDocument(ulid).getChanges();
+        b.store.crdt.changeStorageForDocument(ulid).saveChanges(theirs);
+        expect(changesOf(b, 'shared.md'), theirs.length);
+
+        await a.reconciler.convertToPlainFile('shared.md');
+        await a.publish();
+        final report = await b.reconciler.scan();
+
+        expect(report.convertedElsewhere, {'shared.md': theirs.length});
+        expect(report.isClean, isFalse);
+        final row = b.store.catalog.byUlid(ulid)!;
+        expect(row.mergePolicy, MergePolicy.blobLww);
+        expect(row.seedClaim, a.store.catalog.byUlid(ulid)!.seedClaim);
+        expect(
+          () => NoteDocument.open(store: b.store, ulid: ulid),
+          throwsArgumentError,
+        );
+        expect(await engram.readString('shared.md'), 'from A\n');
+        // Recorded, so Housekeeping can tell the user.
+        final notice = (await b.reconciler.recentScans()).first;
+        expect(notice.report.convertedElsewhere, {'shared.md': theirs.length});
+        // And once: the next scan has nothing to follow.
+        expect((await b.reconciler.scan()).isClean, isTrue);
+      });
+
+      test('never runs the other way', () async {
+        // B holds the note as a plain file; A's map row — older, or from a
+        // build that predates the conversion — says text. Promotion does
+        // not exist, so B ignores it.
+        final a = await device();
+        await a.writer.write('shared.md', 'from A\n');
+        await a.publish();
+        final ulid = a.store.catalog.byPath('shared.md')!.ulid;
+        final b = await device();
+        await b.reconciler.scan();
+        await b.reconciler.convertToPlainFile('shared.md');
+        // B's conversion is not published: A's text row is the only one.
+        expect(a.identity.rows[ulid]!.mergePolicy, MergePolicy.fugueText);
+
+        final report = await b.reconciler.scan();
+
+        expect(report.convertedElsewhere, isEmpty);
+        expect(b.store.catalog.byUlid(ulid)!.mergePolicy, MergePolicy.blobLww);
+      });
+    });
+  });
+
   group('hidden paths', () {
     test('dot-directories and dotfiles are not notes', () async {
       // Without this the scan mints a note for every object in a checkout's

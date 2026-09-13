@@ -182,5 +182,8 @@ class _Reconciler implements NoteReconciler {
   Future<void> dismissScan(int id) async {}
 
   @override
+  Future<void> convertToPlainFile(String path) async {}
+
+  @override
   Stream<String> get reconciled => const Stream<String>.empty();
 }

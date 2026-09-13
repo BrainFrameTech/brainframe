@@ -24,6 +24,8 @@ class DriftScanReport {
     this.failed = const <String, Object>{},
     this.created = const <String>[],
     this.oversized = const <String>[],
+    this.converted = const <String>[],
+    this.convertedElsewhere = const <String, int>{},
     this.adopted = const <String>[],
     this.moved = const <String, String>{},
     this.tombstoned = const <String>[],
@@ -56,6 +58,20 @@ class DriftScanReport {
   /// and the user is told so rather than asked, since there was no history
   /// to lose. The size was decided from a `stat`, before any read.
   final List<String> oversized;
+
+  /// Paths this device made plain files of, at the user's request, with
+  /// their history dropped (the note size ceiling design, Decision 3). Not
+  /// a scan's finding — a conversion is recorded as a scan of its own so
+  /// Housekeeping lists it beside the rest.
+  final List<String> converted;
+
+  /// Paths another device made plain files of, which this device followed
+  /// without asking — one device keeping a character history for a note
+  /// another has made a plain file is the split-brain one ceiling everywhere
+  /// exists to prevent (Decision 4) — with, for each, how many changes of
+  /// local history are now unreachable. The user is informed, not asked;
+  /// consent was given once, by the person who converted it.
+  final Map<String, int> convertedElsewhere;
 
   /// Paths adopted from another device's identity map: the ULID is recorded
   /// and **nothing is seeded** — the note is history-pending until its op-log
@@ -98,6 +114,8 @@ class DriftScanReport {
       failed.isEmpty &&
       created.isEmpty &&
       oversized.isEmpty &&
+      converted.isEmpty &&
+      convertedElsewhere.isEmpty &&
       adopted.isEmpty &&
       moved.isEmpty &&
       tombstoned.isEmpty &&
@@ -299,6 +317,21 @@ abstract class NoteReconciler {
   /// Dismisses the recorded scan [id]: it leaves [recentScans] and stays in
   /// the history.
   Future<void> dismissScan(int id);
+
+  /// Makes the text note at [path] a plain file — a `blobLww` note whose
+  /// saves replace the file whole — dropping its history (the note size
+  /// ceiling design, Decision 3).
+  ///
+  /// **Only ever after the user has been told what is lost and agreed.**
+  /// This is the mechanism; the asking is the caller's, at the doors of
+  /// Decision 4. Irreversible: there is no way back to a text history for
+  /// the same note. The file on disk is left as it is and becomes the
+  /// note's only copy; the change is recorded as a scan of its own so
+  /// Housekeeping lists it, and published so other devices follow.
+  ///
+  /// A note that is already a plain file is left alone. Throws
+  /// [StateError] if no note is at [path].
+  Future<void> convertToPlainFile(String path);
 
   /// Reconciles the one note at engram-relative [path], if it has drifted —
   /// or brings it into the catalog if it is not there yet, by minting or by

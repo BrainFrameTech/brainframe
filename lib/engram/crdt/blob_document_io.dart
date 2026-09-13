@@ -190,6 +190,70 @@ class BlobDocument extends PersistedDocument {
     return note;
   }
 
+  /// Makes the text note [ulid] a plain file: the conversion epoch (the note
+  /// size ceiling design, Decision 3).
+  ///
+  /// The caller has already cleared the ULID's op-log and has the user's
+  /// consent; what remains is a fresh register over the same identity, seeded
+  /// with [digest] — the file as it is on disk — and a catalog row that says
+  /// so: `blobLww`, no sketch (a plain file is matched across renames by
+  /// exact hash), and a **new seed claim** held by this device. The claim is
+  /// what makes the epoch coherent: a note adopted from another device has a
+  /// foreign seed, and with its log cleared [open] would refuse it as history
+  /// pending; the conversion is a first claim of a new kind, and the device
+  /// that made it is its seeder. Published through the map, the claim also
+  /// outranks the old one — seed claims resolve to the newest — so every
+  /// device converges on the same seeder for the same epoch.
+  ///
+  /// Never called on a row that is already a blob, and never the other way:
+  /// there is no `convert` on [NoteDocument], because promotion would be a
+  /// second seed of a text sequence, which the seed claim exists to forbid.
+  /// Throws [UnknownNoteException] for an unknown ULID and [StateError] if
+  /// the row is already a plain file or its log is not empty.
+  static BlobDocument convert({
+    required MetadataDatabase store,
+    required String ulid,
+    required ContentDigest digest,
+  }) {
+    final row = store.catalog.byUlid(ulid);
+    if (row == null) throw UnknownNoteException(ulid);
+    if (row.mergePolicy == MergePolicy.blobLww) {
+      throw StateError('note $ulid is already a plain file');
+    }
+    final changes = store.crdt.changeStorageForDocument(ulid);
+    if (changes.getChanges().isNotEmpty) {
+      throw StateError('note $ulid still has a history; clear it first');
+    }
+    final document = CRDTDocument(
+      peerId: store.peerId,
+      documentId: ulid,
+      initialClock: HybridLogicalClock.now(),
+    );
+    final register = _registerOn(document);
+    register.set(digest);
+    final blob = BlobDocument._(
+      ulid,
+      document,
+      register,
+      changes,
+      const <OperationId>{},
+    );
+    store.catalog.upsert(
+      CatalogRow(
+        ulid: ulid,
+        path: row.path,
+        mergePolicy: MergePolicy.blobLww,
+        state: row.state,
+        materializedHash: digest.hash,
+        size: digest.size,
+        mtimeUtc: row.mtimeUtc,
+        seedClaim: OperationId(store.peerId, document.hlc),
+      ),
+    );
+    blob.persist();
+    return blob;
+  }
+
   /// Reopens the blob note [ulid], rebuilding its register from the op-log.
   ///
   /// Never seeds: an empty op-log this device did not seed is a

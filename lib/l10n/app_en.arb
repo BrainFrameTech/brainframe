@@ -976,6 +976,33 @@
     }
   },
 
+  "housekeepingScanConverted": "{count, plural, =1{1 made a plain file} other{{count} made plain files}}",
+  "@housekeepingScanConverted": {
+    "description": "Part of a scan summary: text notes the user converted to plain files (no history, whole-file saves) on this device.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingConvertedDetail": "Made a plain file at your request, history dropped: {paths}.",
+  "@housekeepingConvertedDetail": {
+    "description": "Scan detail line for notes converted to plain files on this device. {paths} is a comma-separated path list.",
+    "placeholders": { "paths": { "type": "String", "example": "journal/2025.md" } }
+  },
+
+  "housekeepingScanConvertedElsewhere": "{count, plural, =1{1 made a plain file on another device} other{{count} made plain files on another device}}",
+  "@housekeepingScanConvertedElsewhere": {
+    "description": "Part of a scan summary: text notes another device converted to plain files, which this device followed.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingConvertedElsewhereDetail": "{path}: made a plain file on another device, so {count, plural, =0{it keeps no history here either} =1{1 edit of its history on this device is no longer reachable} other{{count} edits of its history on this device are no longer reachable}}.",
+  "@housekeepingConvertedElsewhereDetail": {
+    "description": "Scan detail line, one per note another device converted to a plain file. {count} is how many changes of local history are now unreachable.",
+    "placeholders": {
+      "path": { "type": "String", "example": "journal/2025.md" },
+      "count": { "type": "int", "example": "12" }
+    }
+  },
+
   "housekeepingScanDeleted": "{count, plural, =1{1 deleted} other{{count} deleted}}",
   "@housekeepingScanDeleted": {
     "description": "Part of a scan summary: notes tombstoned because their file was gone.",

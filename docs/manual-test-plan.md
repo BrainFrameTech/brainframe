@@ -702,37 +702,74 @@ rewrite what was cleared.
   actually the defaults — verify the clear took *and* the save-on-exit didn't
   quietly rewrite it.
 
-### F21 — Housekeeping: forget an engram
+### F21 — Housekeeping: the note ledger, and forgetting an engram
 
 > Non-destructive (forgetting never deletes files) — but still exercise it on a
 > throwaway registry entry: adopt the **Field Notebook** fixture via
 > **Open folder…** (F15), then forget that. Don't forget a real engram you want
 > to keep listed.
 
+The pane has two parts as of CRDT step 13. The top, **Notes in “…”** (named
+for the active engram), is what this device knows about that engram's notes
+— the design's answer to "is this engram from another machine?", which the
+app never asks and instead shows here. The bottom, **Engrams added from a
+folder**, is the forget list.
+
 **Steps:**
 
-1. Ensure at least one **registry-backed** engram exists (adopt a folder such as
+1. With a **writable** engram open, Settings → **Housekeeping**. Read the
+   ledger card and the **Recent scans** list.
+2. Switch to a **built-in** engram (Tutorial); reopen Housekeeping.
+3. Back in the writable engram: outside the app, delete one note and create
+   an unrelated new one (as in F29 step 11), then resume or relaunch and
+   reopen Housekeeping.
+4. On a second install (or after copying the engram folder, with its
+   `.brainframe/shared/`, to another machine): open it and read the ledger.
+5. Ensure at least one **registry-backed** engram exists (adopt a folder such as
    the Field Notebook fixture via Open folder…).
-2. Settings → **Housekeeping**. Confirm the list shows forgettable engrams with
-   their on-disk path; built-in and container engrams do **not** appear.
-3. Tap **Forget** on one; read the confirm dialog; **Cancel** — nothing changes.
-4. Tap **Forget** again; confirm. The row disappears, the engram leaves the
+6. Confirm the forget list shows forgettable engrams with their on-disk path;
+   built-in and container engrams do **not** appear.
+7. Tap **Forget** on one; read the confirm dialog; **Cancel** — nothing changes.
+8. Tap **Forget** again; confirm. The row disappears, the engram leaves the
    switcher too, and **its files on disk are untouched**.
-5. If an engram's folder is missing on disk, confirm a **MISSING** badge and that
+9. If an engram's folder is missing on disk, confirm a **MISSING** badge and that
    it can still be forgotten. With nothing forgettable, confirm the empty state.
 
-**Expected:** forgetting drops the engram from BrainFrame's registry (and the
-switcher) without deleting files; a confirmation is required; missing entries are
-badged and clearable; an empty state shows when nothing is forgettable.
+**Expected:**
+
+- Step 1: four sentences — devices that have written to the engram (one, and
+  it says "this one"), notes minted on this device, notes adopted from
+  another device (none), deleted notes remembered — every count a whole
+  sentence with correct singular and plural. Under **Recent scans**, either
+  "No scan has changed anything" or one card per scan that did, newest
+  first, each with a time and a summary such as "32 created".
+- Step 2: the ledger card says the engram has no note catalog; no Recent
+  scans list; the forget list is unaffected.
+- Step 3: the newest scan card reads "1 created, 1 deleted" and carries a
+  second line in the **error colour** explaining that a note deleted and
+  created in one scan may be a rename past recognition whose history stayed
+  with the deleted note, naming both paths. The ledger's deleted count is 1.
+- Step 4: the ledger says **two** devices have written, the notes minted on
+  the first device show as **adopted, waiting for their history**, and after
+  one scan Recent scans shows them as "adopted".
+- Steps 5–9: forgetting drops the engram from BrainFrame's registry (and the
+  switcher) without deleting files; a confirmation is required; missing
+  entries are badged and clearable; an empty state shows when nothing is
+  forgettable.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
 | ✓ | ✓ | ✓ | ✓ pane renders, but with no folder-adoption on mobile (F15) there may be **no forgettable engrams** — verify the empty state | same as Android | same as Android | same as Android (no native adoption yet) |
 
 - **A11y:** the Forget button is labeled with the engram name; the confirm dialog
-  is adaptive.
+  is adaptive. The ledger is plain text and reads in order.
 - **Declarative-trap probe:** after a confirmed forget, the list actually
-  re-loads (the row is gone), not just visually dimmed.
+  re-loads (the row is gone), not just visually dimmed. The ledger's counts
+  are taken when the pane opens — leave and reopen Settings to refresh them.
+- **Inspection point:** a note the editor opened before the start-up scan
+  reached it is minted by the open, not the scan, so "minted on this device"
+  can exceed the scan card's "created" by the notes opened that way. That is
+  correct, not a miscount.
 
 ### F22 — About
 

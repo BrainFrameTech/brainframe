@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engram/engram_scope.dart';
+import '../engram/ui/crdt_session_scope.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../widgets/app_scaffold.dart';
 import 'settings_shell.dart';
@@ -14,16 +15,27 @@ import 'settings_shell.dart';
 /// `home`, so a pushed route is its sibling, not its descendant, and would
 /// otherwise not see the open engram at all (the same capture the engram
 /// switcher does before opening its sheet). Writes through the proxy — the
-/// Engram pane's rename — still reach the real scope underneath.
+/// Engram pane's rename — still reach the real scope underneath. The engram's
+/// op-log session is captured and re-published the same way, so Housekeeping
+/// can ask the reconciler what it knows about the notes.
 Future<void> openSettingsScreen(
   BuildContext context, {
   String? initialCategoryId,
 }) {
   final engramScope = EngramScope.maybeOf(context);
+  final writer = CrdtSessionScope.maybeOf(context);
+  final reconciler = CrdtSessionScope.maybeReconcilerOf(context);
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) {
-        final screen = SettingsScreen(initialCategoryId: initialCategoryId);
+        Widget screen = SettingsScreen(initialCategoryId: initialCategoryId);
+        if (writer != null || reconciler != null) {
+          screen = CrdtSessionScope.republish(
+            writer: writer,
+            reconciler: reconciler,
+            child: screen,
+          );
+        }
         if (engramScope == null) return screen;
         return EngramScopeProxy(source: engramScope, child: screen);
       },

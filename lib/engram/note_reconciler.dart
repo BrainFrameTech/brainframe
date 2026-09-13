@@ -125,6 +125,64 @@ class AdoptionProgress {
   String toString() => 'AdoptionProgress($done of $total)';
 }
 
+/// What this device knows about the notes in an engram, for the Housekeeping
+/// panel — Decision 9's promise, paid out here instead of as a prompt on open.
+///
+/// Minting is reversible, most users cannot answer "is this engram from
+/// another machine?", and refusing to open until an unbuilt transport reached
+/// an unreachable peer would trade a possible history loss for a certain
+/// outage. So the app never asks; it reads the shared map, adopts what it
+/// finds, and shows the result here. Before **#67** exists, [adopted] is
+/// exactly the set of notes with no local history, and this is the only place
+/// that state is visible at all.
+class NoteLedger {
+  const NoteLedger({
+    required this.peers,
+    required this.minted,
+    required this.adopted,
+    required this.unclaimed,
+    required this.tombstoned,
+  });
+
+  /// Devices that have written to this engram's shared map, this one
+  /// included — one file each under `.brainframe/shared/`.
+  final int peers;
+
+  /// Notes this device seeded: minted here, so their whole history is here.
+  final int minted;
+
+  /// Notes whose identity was adopted from another device's map and whose
+  /// history has not arrived: readable and editable as ordinary files, with
+  /// no document behind them until a log lands.
+  final int adopted;
+
+  /// Of [adopted], those whose seed nobody has claimed anywhere — the map
+  /// outlived every op-log that ever backed them.
+  final int unclaimed;
+
+  /// Notes this device remembers as deleted: the tombstones, kept so a later
+  /// file at the same path is a new note and not the dead one resurrected.
+  final int tombstoned;
+}
+
+/// One scan that changed something or failed, kept for the session so the
+/// Housekeeping panel can show what the log otherwise swallows — above all a
+/// deletion and a creation in one scan, which is a rename past recognition
+/// and a history that stayed with the tombstone.
+class ScanNotice {
+  const ScanNotice({required this.at, required this.report});
+
+  /// When the scan finished, local time.
+  final DateTime at;
+
+  final DriftScanReport report;
+
+  /// Whether this scan tombstoned and created in one pass: the case Decision
+  /// 7 requires to be surfaced rather than silent.
+  bool get lostHistory =>
+      report.tombstoned.isNotEmpty && report.created.isNotEmpty;
+}
+
 /// Reconciles the folder into the catalog: files that changed outside the app
 /// into their notes' history, and files that appeared, moved, or vanished into
 /// the notes' identities.
@@ -167,6 +225,13 @@ abstract class NoteReconciler {
 
   /// What [adoption] last reported, or null.
   AdoptionProgress? get currentAdoption;
+
+  /// What this device knows about the engram's notes, counted now.
+  Future<NoteLedger> ledger();
+
+  /// This session's scans that changed something or failed, newest first
+  /// and bounded, so the panel can show what the log otherwise swallows.
+  List<ScanNotice> get recentScans;
 
   /// Reconciles the one note at engram-relative [path], if it has drifted —
   /// or brings it into the catalog if it is not there yet, by minting or by

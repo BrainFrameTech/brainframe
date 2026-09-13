@@ -211,6 +211,28 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
     return rows;
   }
 
+  /// The devices that have written to this engram: one per map file in the
+  /// shared directory, this one's included if it has written yet.
+  ///
+  /// A file counts whether or not it holds rows — a device that adopted
+  /// everything and minted nothing still wrote its (empty) file. A file whose
+  /// name is not a peer id is not a device and is skipped.
+  Future<List<PeerId>> peersSeen() async {
+    final directory = Directory(directoryPath);
+    if (!await directory.exists()) return const [];
+    final peers = <PeerId>[];
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File || !entity.path.endsWith('.db')) continue;
+      final name = entity.uri.pathSegments.last;
+      try {
+        peers.add(PeerId.parse(name.substring(0, name.length - 3)));
+      } on FormatException {
+        // Not one of ours: a temp file, a stray copy. Not a device.
+      }
+    }
+    return peers;
+  }
+
   /// Every row this device itself last wrote.
   Future<List<IdentityRow>> readOurs() async =>
       File(filePath).existsSync() ? _readFile(filePath) : const [];

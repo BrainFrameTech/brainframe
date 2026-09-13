@@ -2,7 +2,9 @@ import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
 import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
+import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/repository_scope.dart';
+import 'package:brainframe/engram/ui/crdt_session_scope.dart';
 import 'package:brainframe/settings/app_settings_controller.dart';
 import 'package:brainframe/settings/settings_scope.dart';
 import 'package:brainframe/settings/settings_store.dart';
@@ -230,6 +232,48 @@ void main() {
       );
     });
 
+    testWidgets('Housekeeping sees the engram\'s reconciler through the route',
+        (tester) async {
+      // Settings is a pushed route, a sibling of the session host; the
+      // reconciler reaches it only because openSettingsScreen captured and
+      // re-published it. Without that, the ledger would say there is no
+      // catalog for an engram that has one.
+      setSize(tester, 1000);
+      final engram = Engram(
+        id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+        displayName: 'zettel',
+        readOnly: false,
+        store: _FakeStore(),
+      );
+      await tester.pumpWidget(
+        host(
+          EngramScope(
+            initialEngram: engram,
+            child: CrdtSessionScope.republish(
+              writer: null,
+              reconciler: _CountingReconciler(),
+              child: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () => openSettingsScreen(context),
+                    child: const Text('open settings'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open settings'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Housekeeping'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Notes in “zettel”'), findsOneWidget);
+      expect(find.textContaining('7 notes were minted'), findsOneWidget);
+      expect(find.textContaining('has no note catalog'), findsNothing);
+    });
+
     testWidgets('is absent when there is no engram to describe', (
       tester,
     ) async {
@@ -244,4 +288,45 @@ void main() {
     });
   });
 
+}
+
+/// A reconciler with one number to show, so the route's republish can be
+/// seen to have worked.
+class _CountingReconciler implements NoteReconciler {
+  @override
+  Future<NoteLedger> ledger() async => const NoteLedger(
+    peers: 1,
+    minted: 7,
+    adopted: 0,
+    unclaimed: 0,
+    tombstoned: 0,
+  );
+
+  @override
+  List<ScanNotice> get recentScans => const [];
+
+  @override
+  Future<DriftScanReport> scan() async => DriftScanReport.clean;
+
+  @override
+  Future<bool> reconcile(String path) async => false;
+
+  @override
+  Future<void> noteCreated(String path) async {}
+
+  @override
+  Future<void> noteMoved(String from, String to) async {}
+
+  @override
+  Future<void> noteDeleted(String path) async {}
+
+  @override
+  Stream<String> get reconciled => const Stream<String>.empty();
+
+  @override
+  Stream<AdoptionProgress?> get adoption =>
+      const Stream<AdoptionProgress?>.empty();
+
+  @override
+  AdoptionProgress? get currentAdoption => null;
 }

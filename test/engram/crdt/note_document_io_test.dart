@@ -88,13 +88,28 @@ void main() {
       final store = await openStore();
       addTearDown(store.close);
 
-      final note = NoteDocument.mint(store: store, path: 'refs/diagram.png');
+      final note = NoteDocument.mint(store: store, path: 'refs/notes.txt');
       addTearDown(note.dispose);
 
       final row = store.catalog.byUlid(note.ulid)!;
-      expect(row.path, 'refs/diagram.png');
-      expect(row.mergePolicy, MergePolicy.blobLww);
+      expect(row.path, 'refs/notes.txt');
+      expect(row.mergePolicy, MergePolicy.fugueText);
       expect(row.state, NoteState.live);
+    });
+
+    test('refuses a blob path', () async {
+      // Step 14: one shape per policy. A PNG that reached a Fugue sequence
+      // would be normalized and character-merged, neither of which is
+      // recoverable, so the door refuses rather than seeding an empty
+      // sequence for something else to fill.
+      final store = await openStore();
+      addTearDown(store.close);
+
+      expect(
+        () => NoteDocument.mint(store: store, path: 'refs/diagram.png'),
+        throwsArgumentError,
+      );
+      expect(store.catalog.byPath('refs/diagram.png'), isNull);
     });
 
     test('takes the seed claim for this device', () async {
@@ -226,24 +241,6 @@ void main() {
       note.insert(note.value.length, 'a\r\nb\r\n');
 
       expect(note.value, 'start\na\nb\n');
-    });
-
-    test('a blobLww note keeps its bytes exactly', () async {
-      final store = await openStore();
-      addTearDown(store.close);
-
-      // Decision 10 is scoped to fugueText. A blob whose bytes happen to
-      // contain 0x0d 0x0a must not be rewritten — normalization applied too
-      // broadly corrupts a file no one can recover, which is the asymmetry
-      // Decision 3's default is built around.
-      final note = NoteDocument.mint(
-        store: store,
-        path: 'refs/diagram.png',
-        content: 'PNG\r\nbytes\r\n',
-      );
-      addTearDown(note.dispose);
-
-      expect(note.value, 'PNG\r\nbytes\r\n');
     });
 
     test('content with no CRLF is seeded unchanged', () async {
@@ -630,8 +627,10 @@ void main() {
         content: 'one\ntwo\n',
       );
       addTearDown(note.dispose);
-      final before =
-          store.crdt.changeStorageForDocument(note.ulid).getChanges().length;
+      final before = store.crdt
+          .changeStorageForDocument(note.ulid)
+          .getChanges()
+          .length;
 
       note.applyExternalText('one\r\ntwo\r\n');
 

@@ -59,38 +59,35 @@ class NoteHistoryPendingException implements Exception {
       'seed claim belongs to another peer';
 }
 
-/// A live `CRDTDocument` for one note, persisted to this engram's op-log.
+/// What every live document over the op-log shares, whatever its merge
+/// policy: the `CRDTDocument`, the slice of the op-log it persists to, and
+/// the write-behind that keeps the two agreeing.
 ///
-/// **Hold one at a time, and [dispose] it.** The Performance envelope puts a
-/// Fugue tree at roughly 470 bytes per character, so a document is
-/// deliberately expensive to keep open: the note ULID identifies it, the
-/// op-log outlives it, and it is rebuilt from storage on demand.
-///
-/// The `documentId` handed to `crdt_lf` **is** the note ULID. Note identity
-/// and CRDT document identity are one string, so nothing has to map between
-/// them and nothing can disagree about which document a change belongs to.
-class NoteDocument {
-  NoteDocument._(
+/// [NoteDocument] is the `fugueText` shape and `BlobDocument` the `blobLww`
+/// one. They differ in the handler they put on the document — a Fugue
+/// sequence against a register — and in nothing about how it is stored.
+abstract class PersistedDocument {
+  PersistedDocument(
     this.ulid,
     this.document,
-    this.text,
     this._changes,
     this._savedVersion,
   );
 
   /// The note's ULID, which is also the CRDT `documentId`.
+  ///
+  /// Note identity and CRDT document identity are one string, so nothing has
+  /// to map between them and nothing can disagree about which document a
+  /// change belongs to.
   final String ulid;
 
   /// The underlying document. Exposed for the materializer and the
-  /// reconciler, which need the change-level API rather than the text.
+  /// reconciler, which need the change-level API rather than the value.
   final CRDTDocument document;
-
-  /// The single whole-note Fugue sequence.
-  final CRDTFugueTextHandler text;
 
   final CRDTSqliteChangeStorage _changes;
 
-  /// The document frontier as of the last [_persist].
+  /// The document frontier as of the last [persist].
   ///
   /// Only changes that are not ancestors of this are written on the next save.
   /// The op-log's `INSERT OR REPLACE` makes re-writing a change harmless, so
@@ -100,6 +97,74 @@ class NoteDocument {
   /// pins that the stored change count matches the document's after a run of
   /// edits, which is what would fail if it ever under-saved.
   Set<OperationId> _savedVersion;
+
+  /// Writes everything not yet in the op-log.
+  ///
+  /// Called after every mutation, so a document that is disposed — or a
+  /// process that dies — never leaves an edit only in memory. Durability is
+  /// the whole point of this layer: the alternative is an editor whose history
+  /// exists until the app closes. For subclasses; a caller mutates through
+  /// the shape's own methods, which persist as they go.
+  void persist() {
+    final pending = document.exportChanges(from: _savedVersion);
+    if (pending.isEmpty) return;
+    _changes.saveChanges(pending);
+    _savedVersion = document.version;
+  }
+
+  /// Releases the document. Idempotent; the note's history stays in the
+  /// op-log, and `open` rebuilds from it.
+  void dispose() => document.dispose();
+}
+
+/// The catalog row and stored history of [ulid], for an `open` to rebuild
+/// from — with the one guard both shapes share.
+///
+/// Never seeds. An empty op-log is only acceptable when this device holds the
+/// note's seed claim — an empty note we minted ourselves — and is otherwise a
+/// [NoteHistoryPendingException]. That distinction is the guard the design
+/// asks for, in code rather than in prose: the failure it prevents duplicates
+/// content while looking like a clean merge.
+///
+/// Throws [UnknownNoteException] if the catalog has no row for [ulid].
+({CatalogRow row, CRDTSqliteChangeStorage changes, List<Change> stored})
+storedHistoryOf(MetadataDatabase store, String ulid) {
+  final row = store.catalog.byUlid(ulid);
+  if (row == null) throw UnknownNoteException(ulid);
+
+  final changes = store.crdt.changeStorageForDocument(ulid);
+  final stored = changes.getChanges();
+  if (stored.isEmpty && row.seededBy != store.peerId) {
+    throw NoteHistoryPendingException(ulid);
+  }
+  return (row: row, changes: changes, stored: stored);
+}
+
+/// A live `CRDTDocument` for one `fugueText` note, persisted to this engram's
+/// op-log.
+///
+/// **Hold one at a time, and [dispose] it.** The Performance envelope puts a
+/// Fugue tree at roughly 470 bytes per character, so a document is
+/// deliberately expensive to keep open: the note ULID identifies it, the
+/// op-log outlives it, and it is rebuilt from storage on demand.
+///
+/// **`fugueText` only.** A `blobLww` note has no text sequence — its op-log
+/// carries a register (Decision 3), which `BlobDocument` holds — so [mint]
+/// and [open] refuse one rather than hand back a sequence nothing should
+/// write to. Refusing is the merge-policy gate the design describes at the
+/// seeding door, made loud: a PNG that reached a Fugue sequence would be
+/// normalized and character-merged, and neither is recoverable.
+class NoteDocument extends PersistedDocument {
+  NoteDocument._(
+    super.ulid,
+    super.document,
+    this.text,
+    super.changes,
+    super.savedVersion,
+  );
+
+  /// The single whole-note Fugue sequence.
+  final CRDTFugueTextHandler text;
 
   /// The note's current text — body and frontmatter, one sequence.
   String get value => text.value;
@@ -118,8 +183,10 @@ class NoteDocument {
   /// a device that later adopts this ULID can tell a history exists somewhere.
   ///
   /// [path] is engram-relative; its extension derives the merge policy, fixed
-  /// here at creation. Throws if a findable note already holds that path — the
-  /// catalog's own constraint, surfaced rather than merged.
+  /// here at creation, and it must be `fugueText` — a blob is minted through
+  /// `BlobDocument.mint`, and an [ArgumentError] says so. Throws if a findable
+  /// note already holds that path — the catalog's own constraint, surfaced
+  /// rather than merged.
   ///
   /// [content] is the note's initial text, seeded as a single insert. Empty
   /// for a note the user just created; from the scan (step 11) and adoption
@@ -137,8 +204,15 @@ class NoteDocument {
     required String path,
     String content = '',
   }) {
-    final ulid = newUlid();
     final policy = mergePolicyForPath(path);
+    if (policy != MergePolicy.fugueText) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'a ${policy.name} note has no text sequence; mint it as a BlobDocument',
+      );
+    }
+    final ulid = newUlid();
     final document = CRDTDocument(
       peerId: store.peerId,
       documentId: ulid,
@@ -151,19 +225,13 @@ class NoteDocument {
     // there is no such rule.
     //
     // Normalized here rather than at the callers because this is the only
-    // place a document is ever seeded, and the scan and adoption both arrive
+    // place a sequence is ever seeded, and the scan and adoption both arrive
     // with a file's raw text. Decision 10's invariant is worth nothing if it
-    // depends on four callers each remembering it.
-    //
-    // `fugueText` only. Normalizing a `blobLww` note would corrupt bytes that
-    // merely happen to contain 0x0d 0x0a, and Decision 10 scopes itself to the
-    // policy for exactly that reason. Today a blob's content is empty — its
-    // op-log carries a register, not the bytes (Decision 3) — so this gate is
-    // guarding a door that step 14 will open rather than one already ajar.
-    text.insert(
-      0,
-      policy == MergePolicy.fugueText ? normalizeTerminators(content) : content,
-    );
+    // depends on four callers each remembering it. It is safe to do without
+    // looking at the policy because the check above already did: only text
+    // gets this far, and a blob's bytes — which might contain 0x0d 0x0a by
+    // accident — never enter a sequence at all.
+    text.insert(0, normalizeTerminators(content));
 
     // An empty saved frontier, not the document's current one: the seed
     // change already exists by this point, and treating it as saved would
@@ -187,30 +255,28 @@ class NoteDocument {
         seedClaim: OperationId(store.peerId, document.hlc),
       ),
     );
-    note._persist();
+    note.persist();
     return note;
   }
 
   /// Reopens the note [ulid], rebuilding its document from the op-log.
   ///
-  /// Never seeds. An empty op-log is only acceptable when this device holds
-  /// the note's seed claim — an empty note we minted ourselves — and is
-  /// otherwise a [NoteHistoryPendingException]. That distinction is the guard
-  /// the design asks for, in code rather than in prose: the failure it
-  /// prevents duplicates content while looking like a clean merge.
-  ///
-  /// Throws [UnknownNoteException] if the catalog has no row for [ulid].
+  /// Never seeds: an empty op-log this device did not seed is a
+  /// [NoteHistoryPendingException], as [storedHistoryOf] explains. Throws
+  /// [UnknownNoteException] if the catalog has no row for [ulid], and
+  /// [ArgumentError] if the row is a blob, which has no sequence to rebuild.
   static NoteDocument open({
     required MetadataDatabase store,
     required String ulid,
   }) {
-    final row = store.catalog.byUlid(ulid);
-    if (row == null) throw UnknownNoteException(ulid);
-
-    final changes = store.crdt.changeStorageForDocument(ulid);
-    final stored = changes.getChanges();
-    if (stored.isEmpty && row.seededBy != store.peerId) {
-      throw NoteHistoryPendingException(ulid);
+    final (:row, :changes, :stored) = storedHistoryOf(store, ulid);
+    if (row.mergePolicy != MergePolicy.fugueText) {
+      throw ArgumentError.value(
+        ulid,
+        'ulid',
+        'a ${row.mergePolicy.name} note has no text sequence; open it as a '
+            'BlobDocument',
+      );
     }
 
     // A fresh clock is safe: applying a change always advances the document's
@@ -237,21 +303,17 @@ class NoteDocument {
   /// computing a follow-up index from `value.length` rather than from
   /// [NoteDocument.value] afterwards.
   ///
-  /// Unconditional, where [mint] gates on the merge policy. Not because a
-  /// `blobLww` note lacks a sequence — [mint] gives every note one regardless
-  /// of policy — but because Decision 3 keeps a blob's bytes out of the op-log
-  /// altogether, so that sequence stays empty and nothing inserts into it.
-  /// The safety is the caller's, not a guard here; a gate would need this
-  /// object to carry its policy, which it has no other reason to know.
+  /// Unconditional: only a `fugueText` note can be a [NoteDocument] at all,
+  /// so there is no policy left to gate on here.
   void insert(int index, String value) {
     text.insert(index, normalizeTerminators(value));
-    _persist();
+    persist();
   }
 
   /// Deletes [count] characters at [index], and commits the operation.
   void delete(int index, int count) {
     text.delete(index, count);
-    _persist();
+    persist();
   }
 
   /// Replaces the note's content with [newText] as a *minimal* set of
@@ -274,23 +336,6 @@ class NoteDocument {
   /// alone leaves the edits in memory and loses them at dispose.
   void applyExternalText(String newText) {
     diff.applyExternalText(document, text, newText);
-    _persist();
+    persist();
   }
-
-  /// Writes everything not yet in the op-log.
-  ///
-  /// Called after every mutation, so a document that is disposed — or a
-  /// process that dies — never leaves an edit only in memory. Durability is
-  /// the whole point of this step: the alternative is an editor whose history
-  /// exists until the app closes.
-  void _persist() {
-    final pending = document.exportChanges(from: _savedVersion);
-    if (pending.isEmpty) return;
-    _changes.saveChanges(pending);
-    _savedVersion = document.version;
-  }
-
-  /// Releases the document. Idempotent; the note's history stays in the
-  /// op-log, and [open] rebuilds from it.
-  void dispose() => document.dispose();
 }

@@ -1195,6 +1195,11 @@ folder.
     back; open it.
 12. **One file per device:** look inside the engram folder at
     `.brainframe/shared/`.
+13. **A replaced image (step 14):** with an image (`.png`, `.jpg`) in the
+    engram, open it in BrainFrame, then switch away and overwrite the file
+    with a *different* image of the same name in the file manager. Switch
+    back (the resume is what notices it — an image is not reconciled on
+    open the way a note is); select the image; open Settings › Housekeeping.
 
 **Expected:**
 
@@ -1226,10 +1231,15 @@ folder.
   ever written to this engram, and nothing else the app did not put there.
   Two installs over one synced folder show two files. It is never renamed,
   and it is small (kilobytes).
+- Step 13: the viewer shows the new image, and Housekeeping's newest scan
+  card counts it — "1 note updated from disk" — the same wording as a text
+  note that changed. The file itself is byte-identical to what was copied in:
+  BrainFrame never rewrites an image. A defect here looks like the card
+  saying nothing (the replacement was not noticed) or the image reverting.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android | ✓ for steps 3–6 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android | ✓ for steps 3–6 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
 
 - **The window of loss, on record:** a keystroke made between the resume and
   the reload of a note that *did* change externally is dropped in favour of
@@ -1247,6 +1257,11 @@ folder.
   scan created, moved, or tombstoned, and calls out a delete-plus-create in
   one scan — the rename-past-recognition case, whose lost history has no
   surface yet either.
+- **Inspection point (step 14):** an image's history is a register of its
+  hash and size, never its bytes. After step 13 the engram's `metadata.db`
+  (under the app-data directory) has grown by well under a kilobyte, however
+  large the image — covered by the automated tests, since the file is not
+  reachable from the UI.
 - **Dot-directories are not notes.** A `.obsidian/` or `.git/` folder inside
   the engram must never gain entries in `.brainframe/shared/`; the tree
   already hides them (F4), and the scan uses the same rule.

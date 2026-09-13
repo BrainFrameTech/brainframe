@@ -648,9 +648,56 @@ The v1 boundary is deliberate: a peer receiving a `blobLww` operation has the
 every other transport question. Locally, where both live in one folder,
 nothing is missing.
 
-- **Tests that matter:** an image never enters the diff path; two concurrent
-  writes resolve deterministically through the locked comparator; the
-  database does not grow with the file.
+**One document shape per policy.** `BlobDocument` in
+[blob_document_io.dart](../../lib/engram/crdt/blob_document_io.dart) is the
+`blobLww` counterpart of `NoteDocument`: the same ULID-as-documentId, the same
+op-log slice and write-behind (lifted into a shared `PersistedDocument`), and
+a `crdt_lf` `CRDTRegisterHandler` where the text note has a Fugue sequence.
+The register's value is the hash and size, in a fixed 33-to-40-byte binary
+codec; the stamp is the operation's own id and is not repeated in the value.
+Its `handlerType` is a constant rather than the library's default
+`runtimeType.toString()`, since the tag is persisted and a minified build
+would not reproduce it.
+
+`NoteDocument.mint` and `open` now **refuse** a `blobLww` path or row, and
+`BlobDocument` refuses a `fugueText` one. Before this step a blob was minted
+as a text note with an empty sequence — the gate the design calls "defence in
+depth" was a conditional around `normalizeTerminators`. Refusing is the same
+gate made loud: a call site that picks the wrong shape fails at once instead
+of producing a document nothing should write to. "An image never enters the
+diff path" is thereby true by construction, not by a check: there is no text
+handler on a blob's document to diff into.
+
+**What writes the register.** The scan's mint path (step 11's `_bringIn`)
+seeds it from the file at creation — unconditionally, so a zero-byte file is
+a claim like any other and a blob's op-log is never empty after a mint. The
+drift branch of Decision 6, which until now only refreshed the catalog's
+hash so a moved blob could be matched, additionally records the new bytes as
+one last-writer-wins claim stamped with this device's clock: an external
+replacement of an image becomes history, and the scan reports it as
+reconciled — so Housekeeping's "updated from disk" count is honest for images
+as well as notes. Recording the same hash again writes nothing. A live row
+whose seed is another peer's and whose log has not arrived gets its hash and
+no claim, as a text note in that state gets no operations: there is no
+register to write to until the log lands.
+
+**Nothing materializes a blob.** The bytes on disk are the only copy; the
+register describes them, not the other way round. When a remote claim
+arrives over **#67** naming bytes this device does not hold, that is the
+boundary above, and the step that carries bytes is the one to decide what
+the file does meanwhile.
+
+- **Tests that matter:** an image never enters the diff path (the document
+  has no sequence, and `NoteDocument.open` refuses it); two concurrent writes
+  resolve deterministically through the locked comparator — a later HLC wins
+  in either delivery order, an equal HLC falls through to peerID with the
+  direction pinned as `peer_ordering_test.dart` pins it, and a cold third
+  replica agrees; the database does not grow with the file — a four-megabyte
+  claim costs the same as a three-byte one plus the varint that spells the
+  size, and replacing a file adds one change under 128 bytes.
+- **Measured:** a claim is 33 bytes of value for a file under 128 bytes and
+  40 for one under a terabyte; the change envelope around it is larger than
+  either.
 
 ## Rules that apply to every step
 
@@ -698,12 +745,12 @@ nothing is missing.
   history-pending direct write (8), and adoption (12); and later **#85**, whose
   CRDT-aware editor is specified to bypass Decision 6's steps 2–4 and so
   bypasses the obvious home for this. `blobLww` content is never normalized —
-  `NoteDocument.mint` gates on the merge policy, and the doors handed a bare
-  sequence have no policy to gate on, so what actually keeps a PNG safe is
-  Decision 3 keeping its bytes out of the op-log entirely; the gate is defence
-  in depth for step 14. A leak is not fatal, because Decision 10's canonical
-  form is agreed by every device and a normalizing pass repairs it, but it is
-  silent until two platforms meet.
+  since step 14 `NoteDocument.mint` and `open` refuse a blob outright, and the
+  doors handed a bare sequence have no policy to gate on, so what actually
+  keeps a PNG safe is Decision 3 keeping its bytes out of the op-log entirely;
+  the refusal is defence in depth. A leak is not fatal, because Decision 10's
+  canonical form is agreed by every device and a normalizing pass repairs it,
+  but it is silent until two platforms meet.
 - **No hardcoded UI strings** in the steps that touch UI (9, 12, 13).
 - **The manual test plan moves in the same PR.** Steps 9, 12, and 13 are the
   user-facing ones and edit real cases. The rest add nothing a human can

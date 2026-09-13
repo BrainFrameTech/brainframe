@@ -94,6 +94,7 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
   late Future<List<RegisteredEngram>> _engrams;
   Future<NoteLedger>? _ledger;
   Future<List<ScanNotice>>? _scans;
+  Future<List<PendingNote>>? _pending;
 
   @override
   void initState() {
@@ -101,6 +102,27 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
     _engrams = widget.load();
     _ledger = widget.notes?.ledger();
     _scans = widget.notes?.recentScans();
+    _pending = widget.notes?.awaitingDecision();
+  }
+
+  /// After a decision, every part of the section re-reads: the note left
+  /// the pending list, the ledger's counts moved, and a scan card was added.
+  void _reloadNotes() {
+    setState(() {
+      _ledger = widget.notes?.ledger();
+      _scans = widget.notes?.recentScans();
+      _pending = widget.notes?.awaitingDecision();
+    });
+  }
+
+  Future<void> _reconstruct(PendingNote note) async {
+    await widget.notes?.reconstruct(note.path);
+    if (mounted) _reloadNotes();
+  }
+
+  Future<void> _convert(PendingNote note) async {
+    await widget.notes?.convertToPlainFile(note.path);
+    if (mounted) _reloadNotes();
   }
 
   Future<void> _dismiss(ScanNotice scan) async {
@@ -220,7 +242,10 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                     notes: widget.notes,
                     ledger: _ledger,
                     scans: _scans,
+                    pending: _pending,
                     onDismiss: _dismiss,
+                    onReconstruct: _reconstruct,
+                    onConvert: _convert,
                   ),
                   const SizedBox(height: 28),
                 ],
@@ -273,14 +298,20 @@ class _LedgerSection extends StatelessWidget {
     required this.notes,
     required this.ledger,
     required this.scans,
+    required this.pending,
     required this.onDismiss,
+    required this.onReconstruct,
+    required this.onConvert,
   });
 
   final Engram engram;
   final NoteReconciler? notes;
   final Future<NoteLedger>? ledger;
   final Future<List<ScanNotice>>? scans;
+  final Future<List<PendingNote>>? pending;
   final void Function(ScanNotice scan) onDismiss;
+  final void Function(PendingNote note) onReconstruct;
+  final void Function(PendingNote note) onConvert;
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +374,49 @@ class _LedgerSection extends StatelessWidget {
                       ),
                   ],
                 ),
+              );
+            },
+          ),
+          FutureBuilder<List<PendingNote>>(
+            future: pending,
+            builder: (context, snapshot) {
+              final waiting = snapshot.data;
+              // Nothing at all when there is nothing to decide — the
+              // ordinary case — so the pane is exactly as it was.
+              if (waiting == null || waiting.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.housekeepingPendingTitle,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.housekeepingPendingIntro,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final note in waiting)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _PendingCard(
+                        note: note,
+                        ceilingBytes: engram.noteSizeCeilingBytes,
+                        onReconstruct: () => onReconstruct(note),
+                        onConvert: () => onConvert(note),
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -414,6 +488,10 @@ class _ScanCard extends StatelessWidget {
         l10n.housekeepingScanCreated(report.created.length),
       if (report.oversized.isNotEmpty)
         l10n.housekeepingScanOversized(report.oversized.length),
+      if (report.awaitingDecision.isNotEmpty)
+        l10n.housekeepingScanAwaiting(report.awaitingDecision.length),
+      if (report.reconstructed.isNotEmpty)
+        l10n.housekeepingScanReconstructed(report.reconstructed.length),
       if (report.converted.isNotEmpty)
         l10n.housekeepingScanConverted(report.converted.length),
       if (report.convertedElsewhere.isNotEmpty)
@@ -483,6 +561,15 @@ class _ScanCard extends StatelessWidget {
               ),
               emphasis: true,
             ),
+          if (report.awaitingDecision.isNotEmpty)
+            _Line(
+              l10n.housekeepingAwaitingDetail(
+                report.awaitingDecision.join(', '),
+              ),
+              emphasis: true,
+            ),
+          for (final entry in report.reconstructed.entries)
+            _Line(l10n.housekeepingReconstructedDetail(entry.key, entry.value)),
           if (report.converted.isNotEmpty)
             _Line(
               l10n.housekeepingConvertedDetail(report.converted.join(', ')),
@@ -501,6 +588,76 @@ class _ScanCard extends StatelessWidget {
               ),
               emphasis: true,
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One note awaiting a decision: what happened, the two ways out, and a
+/// button for each. The card is the asking — it says what each choice
+/// keeps and loses (the note size ceiling design, Decisions 4 and 5) — so
+/// the buttons act at once rather than opening a second dialog that would
+/// say the same thing again.
+class _PendingCard extends StatelessWidget {
+  const _PendingCard({
+    required this.note,
+    required this.ceilingBytes,
+    required this.onReconstruct,
+    required this.onConvert,
+  });
+
+  final PendingNote note;
+  final int ceilingBytes;
+  final VoidCallback onReconstruct;
+  final VoidCallback onConvert;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Line(
+            l10n.housekeepingPendingNote(
+              note.path,
+              _bytes(context, note.sizeBytes),
+              _bytes(context, ceilingBytes),
+            ),
+            emphasis: true,
+          ),
+          _Line(
+            l10n.housekeepingPendingChoices(
+              asidePathFor(note.path).split('/').last,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            children: [
+              Semantics(
+                button: true,
+                label: l10n.housekeepingReconstructNote(note.path),
+                child: ExcludeSemantics(
+                  child: FilledButton.tonal(
+                    onPressed: onReconstruct,
+                    child: Text(l10n.housekeepingReconstruct),
+                  ),
+                ),
+              ),
+              Semantics(
+                button: true,
+                label: l10n.housekeepingConvertNote(note.path),
+                child: ExcludeSemantics(
+                  child: TextButton(
+                    onPressed: onConvert,
+                    child: Text(l10n.housekeepingConvert),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

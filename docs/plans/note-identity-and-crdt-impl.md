@@ -836,6 +836,25 @@ last state over the file, keeping the oversized version beside it as
 `<name> (oversized).<ext>` — or **convert** (step 19) (Decision 4). The
 state survives a restart.
 
+As built: the check is the `stat` size against the engram's ceiling, in the
+text drift branch, **before any read and whether or not the file looks
+changed** — a lowered ceiling changes nothing on disk, and no code may
+assume the ceiling is monotonic. Found by the scan it is reported under
+`awaitingDecision`; found by the before-open reconciliation it is recorded
+as a scan of its own, so Housekeeping has the same card either way. Later
+scans leave it alone and do not report it again; the writer refuses a save
+for it. A note trimmed back under the line outside the app returns to
+`live` and comes back as ordinary drift — no decision needed. Reconstruct
+**moves** the oversized file aside rather than copying it (a rename never
+reads it), then materializes the CRDT's state at the path; the aside name
+is `asidePathFor`, shared with Housekeeping's card so the promise and the
+act agree, and never overwrites an existing file. Housekeeping gains an
+*Awaiting your decision* section above the scans — nothing at all when
+there is nothing to decide — whose card is the asking: what happened, what
+each choice keeps and loses, and a button for each, acting at once. The
+editor shows the reader under a banner naming Housekeeping, with no header
+and nothing to save; step 22 moves the verbs onto the status bar.
+
 - **Tests that matter:** the state persists across a session close and
   reopen; the scan does not touch the file while pending; reconstruct
   restores the last materialized text and the kept copy is byte-identical to

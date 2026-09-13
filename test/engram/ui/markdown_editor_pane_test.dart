@@ -73,6 +73,9 @@ class _FakeReconciler implements NoteReconciler {
   /// Every path handed to [reconcile], in order.
   final List<String> reconciles = [];
 
+  /// Paths awaiting the user's decision in Housekeeping (step 20).
+  final Set<String> awaiting = {};
+
   /// When set, [reconcile] blocks on it — to observe the pane mid-open.
   Completer<void>? gate;
 
@@ -131,6 +134,22 @@ class _FakeReconciler implements NoteReconciler {
 
   @override
   Future<void> convertToPlainFile(String path) async {}
+
+  @override
+  Future<List<PendingNote>> awaitingDecision() async => [
+    for (final path in awaiting) PendingNote(path: path, sizeBytes: 200000),
+  ];
+
+  @override
+  Future<String> reconstruct(String path) async => path;
+
+  /// Housekeeping reconstructed the note: it is no longer waiting, the file
+  /// is back to [text], and the reconciler says so on its stream.
+  void reconstructedElsewhere(String path, String text) {
+    awaiting.remove(path);
+    store.files[path] = text;
+    _events.add(path);
+  }
 
   @override
   Stream<String> get reconciled => _events.stream;
@@ -390,6 +409,47 @@ void main() {
       expect(find.text('# A, edited outside'), findsOneWidget);
       expect(find.text('Saved'), findsOneWidget);
       expect(store.writes, isEmpty, reason: 'a reload is not a save');
+    });
+
+    testWidgets('a note awaiting a decision opens read-only, with a banner', (
+      tester,
+    ) async {
+      // Step 20: it grew past the ceiling outside the app. It has a history
+      // and is too large to open as one, so there is no editor — the reader
+      // over the file, and a line saying where the decision is made.
+      final store = _RwStore({'big.md': '# Big\n\nmuch text'});
+      final reconciler = _FakeReconciler(store)..awaiting.add('big.md');
+      await tester.pumpWidget(_host(store, 'big.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownSourceEditor), findsNothing);
+      expect(find.byType(MarkdownReader), findsOneWidget);
+      expect(find.text('Saved'), findsNothing, reason: 'nothing to save');
+      expect(find.text('Edit'), findsNothing);
+      expect(
+        find.textContaining('read-only until you decide what to do with it '
+            'in Settings › Housekeeping'),
+        findsOneWidget,
+      );
+      expect(reconciler.reconciles, ['big.md'], reason: 'still reconciled first');
+    });
+
+    testWidgets('a reconstructed note becomes editable again', (
+      tester,
+    ) async {
+      final store = _RwStore({'big.md': '# Big\n\nmuch text'});
+      final reconciler = _FakeReconciler(store)..awaiting.add('big.md');
+      await tester.pumpWidget(_host(store, 'big.md', reconciler: reconciler));
+      await tester.pumpAndSettle();
+      expect(find.byType(MarkdownSourceEditor), findsNothing);
+
+      reconciler.reconstructedElsewhere('big.md', '# Big\n');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownSourceEditor), findsOneWidget);
+      expect(find.text('# Big\n'), findsOneWidget);
+      expect(find.text('Saved'), findsOneWidget);
+      expect(find.textContaining('read-only'), findsNothing);
     });
 
     testWidgets('a reconciliation of some other note is ignored', (

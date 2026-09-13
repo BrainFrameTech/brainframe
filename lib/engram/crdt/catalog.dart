@@ -154,7 +154,18 @@ enum NoteState {
   /// storage design already draws for whole engrams: a file missing because a
   /// drive is unmounted is not a deleted file, and tombstoning one would
   /// destroy a note that is merely out of reach.
-  unavailable;
+  unavailable,
+
+  /// A text note whose file grew past the engram's note size ceiling outside
+  /// the app — *oversized, awaiting decision* (the note size ceiling design,
+  /// Decision 4). It has a history and is too large to open as one; the file
+  /// is left exactly as found, the note opens read-only, and the scan does
+  /// not touch it again until the user reconstructs the last version under
+  /// the ceiling or converts it to a plain file. Persisted, because the scan
+  /// that finds it is usually the launch scan and the user may quit before
+  /// answering. A note found back under the ceiling on a later scan simply
+  /// returns to [live].
+  oversized;
 
   /// Parses the stored spelling, which is the enum's own [name]. Throws
   /// [FormatException] for anything else.

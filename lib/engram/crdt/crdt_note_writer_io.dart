@@ -73,6 +73,14 @@ class CrdtNoteWriter implements NoteWriter {
     if (policy != MergePolicy.fugueText) {
       return _blob.writeHoldingLock(path, text);
     }
+    // A note grown past the ceiling outside the app is read-only until the
+    // user decides what to do with it (the note size ceiling design,
+    // Decision 4). The editor does not offer a save; this is the seam
+    // refusing one anyway, since applying a buffer that size is the thing
+    // the ceiling exists to prevent.
+    if (row?.state == NoteState.oversized) {
+      throw StateError('$path is awaiting a decision and cannot be saved');
+    }
 
     // A path the catalog has never seen is a note nobody has minted. Since
     // step 11 the scan and the before-open reconciliation bring a file in

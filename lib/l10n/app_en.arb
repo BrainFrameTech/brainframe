@@ -892,6 +892,88 @@
     }
   },
 
+  "housekeepingPendingTitle": "Awaiting your decision",
+  "@housekeepingPendingTitle": {
+    "description": "Heading of the Housekeeping section listing text notes that grew past the note size ceiling outside the app and are read-only until the user chooses."
+  },
+
+  "housekeepingPendingIntro": "These notes grew past the size limit outside BrainFrame. Each has a history, and is too large to keep one; it is read-only until you choose.",
+  "@housekeepingPendingIntro": {
+    "description": "Explanatory line under the Awaiting-your-decision heading."
+  },
+
+  "housekeepingPendingNote": "{path} is now {size} bytes; the limit is {limit}.",
+  "@housekeepingPendingNote": {
+    "description": "Card line for one note awaiting a decision: its path, its size on disk now, and the ceiling. Both numbers formatted with separators.",
+    "placeholders": {
+      "path": { "type": "String", "example": "journal/2025.md" },
+      "size": { "type": "String", "example": "140,206" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "housekeepingPendingChoices": "Reconstruct restores the last version BrainFrame saved and keeps this larger file beside it as “{aside}”, tracked as a plain file. Convert keeps this file as it is, drops the note’s history, and saves it whole from now on.",
+  "@housekeepingPendingChoices": {
+    "description": "Card line explaining the two verbs for a note awaiting a decision. {aside} is the name the oversized copy will be kept under.",
+    "placeholders": {
+      "aside": { "type": "String", "example": "2025 (oversized).md" }
+    }
+  },
+
+  "housekeepingReconstruct": "Reconstruct",
+  "@housekeepingReconstruct": {
+    "description": "Button: restore the last saved version of a note awaiting a decision, keeping the oversized file beside it."
+  },
+
+  "housekeepingReconstructNote": "Reconstruct {path}",
+  "@housekeepingReconstructNote": {
+    "description": "Accessibility label of a Reconstruct button, naming the note.",
+    "placeholders": { "path": { "type": "String", "example": "journal/2025.md" } }
+  },
+
+  "housekeepingConvert": "Convert to a plain file",
+  "@housekeepingConvert": {
+    "description": "Button: convert a note awaiting a decision to a plain file, dropping its history."
+  },
+
+  "housekeepingConvertNote": "Convert {path} to a plain file",
+  "@housekeepingConvertNote": {
+    "description": "Accessibility label of a Convert button, naming the note.",
+    "placeholders": { "path": { "type": "String", "example": "journal/2025.md" } }
+  },
+
+  "housekeepingScanAwaiting": "{count, plural, =1{1 awaiting a decision} other{{count} awaiting a decision}}",
+  "@housekeepingScanAwaiting": {
+    "description": "Part of a scan summary: tracked text notes found grown past the ceiling outside the app.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingAwaitingDetail": "Grew past the size limit outside BrainFrame and is read-only until you decide, above: {paths}.",
+  "@housekeepingAwaitingDetail": {
+    "description": "Scan detail line naming the notes found grown past the ceiling. {paths} is a comma-separated path list; “above” refers to the Awaiting-your-decision section, which is higher on the pane.",
+    "placeholders": { "paths": { "type": "String", "example": "journal/2025.md" } }
+  },
+
+  "housekeepingScanReconstructed": "{count, plural, =1{1 reconstructed} other{{count} reconstructed}}",
+  "@housekeepingScanReconstructed": {
+    "description": "Part of a scan summary: notes the user reconstructed to their last saved version.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingReconstructedDetail": "{path} was restored to the last version BrainFrame saved; the larger file is kept as {aside}.",
+  "@housekeepingReconstructedDetail": {
+    "description": "Scan detail line, one per reconstructed note.",
+    "placeholders": {
+      "path": { "type": "String", "example": "journal/2025.md" },
+      "aside": { "type": "String", "example": "journal/2025 (oversized).md" }
+    }
+  },
+
+  "editorAwaitingDecision": "This note grew past the size limit outside BrainFrame and is read-only until you decide what to do with it in Settings › Housekeeping.",
+  "@editorAwaitingDecision": {
+    "description": "Banner over a read-only note that is awaiting the user's decision in Housekeeping."
+  },
+
   "scanOversizedNotice": "{count, plural, =1{1 file was too large to keep a history. See Settings › Housekeeping.} other{{count} files were too large to keep a history. See Settings › Housekeeping.}}",
   "@scanOversizedNotice": {
     "description": "Transient notice shown once when a scan found text files over the note size ceiling and tracked them as plain files. Points at Housekeeping, which is the durable surface.",

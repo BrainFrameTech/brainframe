@@ -243,7 +243,9 @@ class BlobDocument extends PersistedDocument {
         ulid: ulid,
         path: row.path,
         mergePolicy: MergePolicy.blobLww,
-        state: row.state,
+        // Live, whatever it was: a note converted from the awaiting-decision
+        // state has been decided.
+        state: NoteState.live,
         materializedHash: digest.hash,
         size: digest.size,
         mtimeUtc: row.mtimeUtc,

@@ -26,6 +26,8 @@ class DriftScanReport {
     this.oversized = const <String>[],
     this.converted = const <String>[],
     this.convertedElsewhere = const <String, int>{},
+    this.awaitingDecision = const <String>[],
+    this.reconstructed = const <String, String>{},
     this.adopted = const <String>[],
     this.moved = const <String, String>{},
     this.tombstoned = const <String>[],
@@ -73,6 +75,18 @@ class DriftScanReport {
   /// consent was given once, by the person who converted it.
   final Map<String, int> convertedElsewhere;
 
+  /// Paths of tracked text notes the scan found grown past the engram's
+  /// ceiling outside the app, and put in the *oversized, awaiting decision*
+  /// state (the note size ceiling design, Decision 4). Listed once, when
+  /// found; the note stays in that state — and in Housekeeping's list —
+  /// until the user reconstructs or converts it.
+  final List<String> awaitingDecision;
+
+  /// Paths the user reconstructed, each to the path its oversized version
+  /// was kept beside it as. Not a scan's finding — recorded as a scan of
+  /// its own, like a conversion.
+  final Map<String, String> reconstructed;
+
   /// Paths adopted from another device's identity map: the ULID is recorded
   /// and **nothing is seeded** — the note is history-pending until its op-log
   /// arrives. Also a note of our own recovered from our own map after the
@@ -116,6 +130,8 @@ class DriftScanReport {
       oversized.isEmpty &&
       converted.isEmpty &&
       convertedElsewhere.isEmpty &&
+      awaitingDecision.isEmpty &&
+      reconstructed.isEmpty &&
       adopted.isEmpty &&
       moved.isEmpty &&
       tombstoned.isEmpty &&
@@ -229,6 +245,45 @@ enum ScanTrigger {
   );
 }
 
+/// Where a reconstructed note's oversized version is kept: beside [path], as
+/// `<stem> (oversized).<ext>` — or `(oversized 2)` and so on for [ordinal]
+/// above one, when the first name is taken. The directory is preserved; a
+/// name with no extension gets the suffix at its end.
+String asidePathFor(String path, {int ordinal = 1}) {
+  final slash = path.lastIndexOf('/');
+  final directory = slash < 0 ? '' : path.substring(0, slash + 1);
+  final name = path.substring(slash + 1);
+  final dot = name.lastIndexOf('.');
+  final stem = dot <= 0 ? name : name.substring(0, dot);
+  final extension = dot <= 0 ? '' : name.substring(dot);
+  final suffix = ordinal == 1 ? ' (oversized)' : ' (oversized $ordinal)';
+  return '$directory$stem$suffix$extension';
+}
+
+/// A text note grown past the ceiling outside the app, awaiting the user's
+/// decision (the note size ceiling design, Decision 4).
+class PendingNote {
+  const PendingNote({required this.path, required this.sizeBytes});
+
+  /// Engram-relative.
+  final String path;
+
+  /// The file's size on disk now — what put it over the line.
+  final int sizeBytes;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PendingNote &&
+      other.path == path &&
+      other.sizeBytes == sizeBytes;
+
+  @override
+  int get hashCode => Object.hash(path, sizeBytes);
+
+  @override
+  String toString() => 'PendingNote($path, $sizeBytes bytes)';
+}
+
 /// One scan that changed something or failed, kept for the session so the
 /// Housekeeping panel can show what the log otherwise swallows — above all a
 /// deletion and a creation in one scan, which is a rename past recognition
@@ -332,6 +387,23 @@ abstract class NoteReconciler {
   /// A note that is already a plain file is left alone. Throws
   /// [StateError] if no note is at [path].
   Future<void> convertToPlainFile(String path);
+
+  /// Text notes found grown past the ceiling outside the app, waiting for
+  /// the user to choose between [reconstruct] and [convertToPlainFile]
+  /// (the note size ceiling design, Decision 4). From the catalog, not the
+  /// scan history, so the list is the current truth and survives a restart.
+  Future<List<PendingNote>> awaitingDecision();
+
+  /// Resolves the note at [path] from [awaitingDecision] by restoring the
+  /// last version BrainFrame saved — the CRDT's state, which is under the
+  /// ceiling by construction — and keeping the oversized file beside it as
+  /// `<name> (oversized).<ext>`, so the work done outside the app is never
+  /// destroyed. The kept copy is an ordinary file the next scan tracks as it
+  /// tracks any oversized arrival: a plain file.
+  ///
+  /// Returns the engram-relative path the oversized version was kept at.
+  /// Throws [StateError] if the note is not awaiting a decision.
+  Future<String> reconstruct(String path);
 
   /// Reconciles the one note at engram-relative [path], if it has drifted —
   /// or brings it into the catalog if it is not there yet, by minting or by

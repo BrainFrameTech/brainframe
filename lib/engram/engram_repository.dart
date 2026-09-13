@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../settings/device_settings.dart';
 import '../settings/settings_store.dart';
 import 'built_in_engrams.dart';
+import 'crdt/app_data_resolver.dart';
 import 'engram.dart';
 import 'fs/fs_store.dart';
 
@@ -34,13 +35,21 @@ class EngramRepository {
     required SharedPreferencesAsync preferences,
     required Future<String> Function() containerPathResolver,
     AssetBundle? bundle,
+    AppDataRootResolver? dataRootResolver,
   }) : _prefs = preferences,
        _resolveContainerPath = containerPathResolver,
-       _assetBundle = bundle;
+       _assetBundle = bundle,
+       _resolveDataRoot = dataRootResolver;
 
   final SharedPreferencesAsync _prefs;
   final Future<String> Function() _resolveContainerPath;
   final AssetBundle? _assetBundle;
+
+  /// Where each engram's device-local store lives, for [cleanUp] — null for
+  /// the platform default, which is also what the session opens with. If a
+  /// configured root ever arrives (the Raspberry Pi's mounted library), it
+  /// must be handed to both, or a clean-up looks in the wrong place.
+  final AppDataRootResolver? _resolveDataRoot;
 
   /// The per-device tier of the settings store, over the same preferences —
   /// used for the last-opened engram id (a per-device preference).
@@ -214,6 +223,51 @@ class EngramRepository {
     }
     final entries = (await _readRegistry())..removeWhere((e) => e.id == id);
     await _writeRegistry(entries);
+  }
+
+  /// Deletes everything BrainFrame made for the registered engram [id] and
+  /// forgets it, leaving the folder a plain folder of notes.
+  ///
+  /// Three steps, in this order: the `.brainframe/` tree inside the folder
+  /// (marker, per-engram settings, and `shared/` — every peer's identity map,
+  /// so every other device that opens the folder stops seeing an engram
+  /// too); this device's store directory (`metadata.db`, the op-log and
+  /// catalog, this device's peer identity); then the registry row. The notes
+  /// themselves are never touched.
+  ///
+  /// Each step tolerates absence and the row is dropped last, so a failure
+  /// part-way — a permission refused, a file locked — leaves the entry
+  /// listed (as missing, if the marker is already gone) and a second attempt
+  /// finishes the job. A dangling entry whose folder no longer exists is the
+  /// intended case as much as a live one: it is the only way to reach the
+  /// orphaned store that folder left behind.
+  ///
+  /// Only registry-backed engrams qualify, the same set [forget] acts on: a
+  /// built-in has nothing on disk, and a container engram is removed by
+  /// deleting its folder. Throws [ArgumentError] for either. **The caller
+  /// must not pass the active engram** — its open session holds
+  /// `metadata.db` and rewrites the identity map on a timer; Housekeeping
+  /// disables the action for it.
+  Future<void> cleanUp(String id) async {
+    if (isBuiltInEngramId(id)) {
+      throw ArgumentError.value(
+        id,
+        'id',
+        'built-in engrams cannot be cleaned up',
+      );
+    }
+    final entries = await _readRegistry();
+    final entry = entries.where((e) => e.id == id).firstOrNull;
+    if (entry == null) {
+      throw ArgumentError.value(
+        id,
+        'id',
+        'only engrams added from a folder can be cleaned up',
+      );
+    }
+    await removeFileSystemEngramMarker(EngramLocation(entry.path));
+    await deleteEngramStore(id, resolveRoot: _resolveDataRoot);
+    await _writeRegistry(entries..remove(entry));
   }
 
   /// The engrams held in the registry (the externally-adopted roots), each

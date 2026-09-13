@@ -176,10 +176,27 @@ abstract class EngramRepository {
   Future<Engram> create(String displayName);
   Future<Engram> adopt(EngramLocation location); // wrap a picked folder
   Future<void> forget(String id);           // drop from registry, leave files
+  Future<void> cleanUp(String id);          // delete our files, then forget
   Future<Engram?> get lastOpened;
   Future<void> setLastOpened(String id);
 }
 ```
+
+`forget` and `cleanUp` are the two ways out of the registry, and the
+difference is what happens to the disk. **Forget** touches nothing: the
+folder keeps its `.brainframe/` and this device keeps its store for it, so
+re-adopting later resumes where it left off. **Clean up** (added 2026-09-13)
+deletes everything BrainFrame made — the `.brainframe/` tree in the folder
+(marker, per-engram settings, and `shared/`, every peer's identity map
+included) and this device's `<app data>/engrams/<ULID>/` store — and then
+forgets, leaving a plain folder of notes; re-adopting mints a fresh identity.
+Both act on registry-backed engrams only: a built-in has nothing on disk, and
+a container engram is removed by deleting its folder. A clean-up is idempotent
+step by step and drops the registry row last, so a failure part-way leaves the
+entry listed for a retry — including a dangling entry, which is the only way
+to reach the store a deleted folder left behind. It is refused for the open
+engram, whose store is a live database and whose identity map is rewritten
+on a timer; Housekeeping disables the action for it.
 
 Two stores implement the contract in v1: a read-only `AssetEngramStore` over
 the Flutter asset bundle (all platforms) and a read-write

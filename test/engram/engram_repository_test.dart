@@ -15,15 +15,21 @@ void main() {
   late String containerPath;
   late SharedPreferencesAsync prefs;
 
+  /// Where the repository looks for each engram's device-local store —
+  /// `<dataRoot>/engrams/<ULID>/` — instead of the platform app-data root.
+  late String dataRoot;
+
   EngramRepository repoWith({Future<String> Function()? container}) =>
       EngramRepository(
         preferences: prefs,
         containerPathResolver: container ?? () async => containerPath,
+        dataRootResolver: () async => dataRoot,
       );
 
   setUp(() async {
     tempRoot = await Directory.systemTemp.createTemp('engram_repo_test');
     containerPath = '${tempRoot.path}/container';
+    dataRoot = '${tempRoot.path}/appdata';
     await Directory(containerPath).create(recursive: true);
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
@@ -183,6 +189,140 @@ void main() {
       );
       final back = await repo.discover();
       expect(back.available.any((e) => e.displayName == 'External'), isTrue);
+    });
+
+    group('cleanUp', () {
+      /// The device-local store for [id], as a session would have left it.
+      Directory storeFor(String id) =>
+          Directory('$dataRoot/engrams/$id')..createSync(recursive: true);
+
+      test('deletes the marker tree, the store, and the registry row', () async {
+        final repo = repoWith();
+        final adopted = await repo.adopt(EngramLocation(externalPath));
+        final store = storeFor(adopted.id);
+        File('${store.path}/metadata.db').writeAsStringSync('db');
+        File('$externalPath/.brainframe/shared/peer.db')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('map');
+        File('$externalPath/notes/keep.md')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('mine');
+
+        await repo.cleanUp(adopted.id);
+
+        expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
+        expect(store.existsSync(), isFalse);
+        expect(await repo.registeredEngrams(), isEmpty);
+        expect(
+          (await repo.discover()).unavailable,
+          isEmpty,
+          reason: 'cleaned up, not dangling',
+        );
+        // The notes are the user's and stay exactly where they were.
+        expect(File('$externalPath/notes/keep.md').readAsStringSync(), 'mine');
+        expect(Directory(externalPath).existsSync(), isTrue);
+      });
+
+      test('a dangling entry still loses its orphaned store', () async {
+        // The folder is gone but this device's metadata.db for it is not —
+        // and nothing else in the app can reach it.
+        final repo = repoWith();
+        final adopted = await repo.adopt(EngramLocation(externalPath));
+        final store = storeFor(adopted.id);
+        Directory(externalPath).deleteSync(recursive: true);
+
+        await repo.cleanUp(adopted.id);
+
+        expect(store.existsSync(), isFalse);
+        expect(await repo.registeredEngrams(), isEmpty);
+      });
+
+      test('an engram never opened on this device has no store to lose',
+          () async {
+        final repo = repoWith();
+        final adopted = await repo.adopt(EngramLocation(externalPath));
+
+        await repo.cleanUp(adopted.id);
+
+        expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
+        expect(await repo.registeredEngrams(), isEmpty);
+      });
+
+      test('leaves other engrams\' stores and folders alone', () async {
+        final repo = repoWith();
+        final adopted = await repo.adopt(EngramLocation(externalPath));
+        final otherPath = '${tempRoot.path}/other';
+        final other = await repo.adoptFolder(EngramLocation(otherPath));
+        final otherStore = storeFor(other.id);
+        storeFor(adopted.id);
+
+        await repo.cleanUp(adopted.id);
+
+        expect(otherStore.existsSync(), isTrue);
+        expect(Directory('$otherPath/.brainframe').existsSync(), isTrue);
+        expect((await repo.registeredEngrams()).map((e) => e.id), [other.id]);
+      });
+
+      test('refuses the built-ins', () async {
+        expect(() => repoWith().cleanUp(builtinHelpId), throwsArgumentError);
+      });
+
+      test('refuses an engram that is not registry-backed', () async {
+        final repo = repoWith();
+        final contained = await repo.create('In the container');
+        storeFor(contained.id);
+
+        await expectLater(repo.cleanUp(contained.id), throwsArgumentError);
+        await expectLater(
+          repo.cleanUp('01JBQ9YQ7C8VF9YB0X5H3TQ2ZK'),
+          throwsArgumentError,
+        );
+
+        // Nothing was touched by the refusal.
+        expect(
+          Directory('$dataRoot/engrams/${contained.id}').existsSync(),
+          isTrue,
+        );
+        expect(
+          (await repo.discover()).available.any((e) => e.id == contained.id),
+          isTrue,
+        );
+      });
+
+      test(
+        'a failure keeps the row so a second attempt can finish',
+        () async {
+          final repo = repoWith();
+          final adopted = await repo.adopt(EngramLocation(externalPath));
+          // A store that cannot be deleted: a subdirectory nobody may list.
+          // By then the marker is already gone, which is the partial state
+          // a retry must cope with.
+          final store = storeFor(adopted.id);
+          final locked = Directory('${store.path}/locked')..createSync();
+          File('${locked.path}/metadata.db').createSync();
+          await Process.run('chmod', ['000', locked.path]);
+          try {
+            await expectLater(
+              repo.cleanUp(adopted.id),
+              throwsA(isA<FileSystemException>()),
+            );
+
+            expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
+            final listed = await repo.registeredEngrams();
+            expect(listed.map((e) => e.id), [adopted.id]);
+            expect(listed.single.available, isFalse, reason: 'marker gone');
+          } finally {
+            await Process.run('chmod', ['755', locked.path]);
+          }
+
+          // With the obstruction gone the retry finishes the job.
+          await repo.cleanUp(adopted.id);
+          expect(store.existsSync(), isFalse);
+          expect(await repo.registeredEngrams(), isEmpty);
+        },
+        // Needs POSIX permissions; CI runs the suite on Linux.
+        skip: Platform.isWindows ? 'no chmod on Windows' : false,
+      );
     });
 
     test('adoptFolder turns a plain folder into a registered engram', () async {

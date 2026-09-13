@@ -530,14 +530,61 @@
     "description": "Subtitle of the Housekeeping settings category, shown under its name in the sidebar."
   },
 
-  "housekeepingIntro": "Forgetting an engram removes it from BrainFrame and the switcher. Its folder and files are left on disk — nothing is deleted.",
+  "housekeepingIntro": "Forgetting an engram removes it from BrainFrame and the switcher; its folder and files are left on disk. Cleaning up also deletes BrainFrame's own files for it — the .brainframe folder inside it and this device's history — leaving only your notes.",
   "@housekeepingIntro": {
-    "description": "Explanatory text at the top of the Housekeeping pane, clarifying that forgetting never deletes files."
+    "description": "Explanatory text above the Housekeeping list of engrams added from a folder, contrasting Forget (registry only, deletes nothing) with Clean up (deletes BrainFrame's files, never the notes)."
   },
 
-  "housekeepingEmpty": "Nothing to forget. Only engrams you've added from a folder can be forgotten.",
+  "housekeepingEmpty": "Nothing to forget or clean up. Only engrams you've added from a folder appear here.",
   "@housekeepingEmpty": {
-    "description": "Shown in the Housekeeping pane when there are no forgettable engrams (ones added from a folder)."
+    "description": "Shown in the Housekeeping pane when there are no engrams added from a folder (the only ones that can be forgotten or cleaned up)."
+  },
+
+  "housekeepingCleanUp": "Clean up",
+  "@housekeepingCleanUp": {
+    "description": "Button that deletes BrainFrame's files for an engram (its .brainframe folder and this device's history) and forgets it, leaving the notes; also the confirm-dialog action label."
+  },
+
+  "housekeepingCleanUpActive": "Open now — switch to another engram to clean this one up.",
+  "@housekeepingCleanUpActive": {
+    "description": "Hint under a Housekeeping row for the engram currently open, whose Clean up button is disabled because its files are in use."
+  },
+
+  "housekeepingCleanUpConfirmTitle": "Clean up “{name}”?",
+  "@housekeepingCleanUpConfirmTitle": {
+    "description": "Title of the confirmation dialog before cleaning up an engram.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Field Notebook" }
+    }
+  },
+
+  "housekeepingCleanUpConfirmBody": "This permanently deletes BrainFrame's files for it: the .brainframe folder inside {path} — including the shared map every device that opens this folder relies on — and this device's history for it. Your notes are not touched. It is removed from BrainFrame as well.",
+  "@housekeepingCleanUpConfirmBody": {
+    "description": "Body of the confirmation dialog before cleaning up an engram, spelling out exactly what is deleted and that notes are kept.",
+    "placeholders": {
+      "path": { "type": "String", "example": "/home/user/notes" }
+    }
+  },
+
+  "housekeepingCleanUpFailedTitle": "Could not clean up “{name}”",
+  "@housekeepingCleanUpFailedTitle": {
+    "description": "Title of the dialog shown when cleaning up an engram failed part-way.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Field Notebook" }
+    }
+  },
+
+  "housekeepingCleanUpFailedBody": "{error}\n\nIt stays listed so you can try again; a second attempt picks up where this one stopped.",
+  "@housekeepingCleanUpFailedBody": {
+    "description": "Body of the dialog shown when cleaning up an engram failed: the error, then reassurance that the entry is kept and a retry is safe.",
+    "placeholders": {
+      "error": { "type": "String", "example": "FileSystemException: Permission denied" }
+    }
+  },
+
+  "ok": "OK",
+  "@ok": {
+    "description": "Generic acknowledgement button that dismisses an informational dialog."
   },
 
   "housekeepingMissing": "Missing",

@@ -366,9 +366,18 @@ corruption rather than divergence. In v1 policy is derived from the extension,
 so devices would usually agree by construction; "usually agree by accident" is
 a worse guarantee than one shared column.
 
-**Policy is fixed at note creation for v1.** Changing it mid-life means
-reinterpreting an existing op-log under different semantics, which needs a
-migration story. Reserve the column's ability to change; do not build it.
+**Policy changes in one direction only, by consent.** As first written this
+said policy was fixed at creation, with the column's ability to change
+reserved and not built. The [note size ceiling](note-size-ceiling.md) amends
+that (its Decision 3, 2026-09-13): a `fugueText` note that grows past the
+ceiling may become `blobLww` — its op-log cleared, one register claim
+written — after the user is told what is lost and agrees. It never goes back;
+a plain file that wants a history again is recreated. The storage allows the
+change because `crdt_lf` routes changes by handler id, so one ULID can carry
+both kinds and each shape reads only its own; the reason it is one-way is
+that promotion would be a second seed of the same document, which the seed
+claim exists to forbid. The column's ability to change is therefore built,
+narrowly, and only for that reason.
 
 **`blobLww` stores a register, not the bytes.** The op-log carries the content
 hash, size, and the HLC/peerID stamp that the comparator needs — not the file's
@@ -1127,10 +1136,10 @@ absorbs it; the other targets do not.
 
 Nothing here is a reason to reopen the storage model, which is settled and
 correct for the notes people actually write. It is a reason to know the ceiling
-before a user finds it, and to decide deliberately what happens above it —
-refuse to open, open read-only without CRDT backing, or split the note — rather
-than discovering the answer as an out-of-memory kill. The ceiling itself is now
-set, below; what happens above it is still **#124**'s.
+before a user finds it, and to decide deliberately what happens above it rather
+than discovering the answer as an out-of-memory kill. The ceiling itself is
+set, below; what happens above it is the
+[note size ceiling](note-size-ceiling.md) design's.
 
 To reproduce: build a `CRDTFugueTextHandler` at each size, timing the insert,
 the `value` getter, and a transaction of scattered inserts, sampling
@@ -1199,10 +1208,13 @@ against the Pi 4's A72 at 1.5 GHz) also mean a 128 KiB note will take
 several seconds to seed there; that number is unmeasured and should be, once
 one is on the bench. The ceiling is still above every note anyone writes by
 hand; what lives beyond it is generated or pasted text, which is the case the
-design was always willing to treat differently. What happens to a text
-file above the ceiling — refused, opened read-only without CRDT backing, or
-held as a `blobLww` note from the moment it is minted — is the decision that
-remains, and it is **#124**'s. No step may pick one by quietly adding a limit.
+design was always willing to treat differently. What happens to a text file
+above the ceiling is decided in the
+[note size ceiling](note-size-ceiling.md) design: the unit is bytes on disk,
+a text note over the line becomes a `blobLww` note only after the user is
+told and agrees, an arrival already over it is tracked as one and reported,
+and the ceiling is recorded per engram so every device enforces the same
+one. No step may implement a limit that disagrees with it.
 
 To reproduce, on any target with the Flutter tool:
 `flutter test tool/bench_crdt.dart` (`BENCH=quick` for a short run; `scan` or
@@ -1454,11 +1466,12 @@ installed dependency and it decides how defensive the importer must be.
   be settled before **#67**, since that is the moment peers below the frontier
   become possible. Tracked as **#118**, whose scope narrows with this revision:
   there are no export files to compact, only the local op-log.
-- **What happens above the note-size ceiling.** The ceiling itself is set
-  — 128 KiB, measured on the Raspberry Pi 4 and recorded under "Performance
-  envelope" — but whether a text file beyond it is refused, opened read-only
-  without CRDT backing, or minted as a `blobLww` note is not. Tracked as
-  **#124**, whose remaining scope is that policy and its UX.
+- **The Raspberry Pi Zero 2 W measurement.** The ceiling was measured on a
+  Pi 4 and extrapolated to the Zero 2 W's 512 MB. What happens above it is
+  now decided — the [note size ceiling](note-size-ceiling.md) design, which
+  closed **#124** — and the measurement is tracked as **#156**. If it comes
+  back worse than expected, that design's Decision 7 is how the number
+  moves, for everyone.
 
 ### Decided during review — recorded so it is not relitigated
 
@@ -1471,8 +1484,8 @@ installed dependency and it decides how defensive the importer must be.
   of the machine and is affordable only because the app holds one document
   at a time — which is the constraint a single ceiling rests on. It sits
   above anything written by hand and below the generated or pasted text the
-  design was always willing to treat differently. The value is decided; the
-  behaviour above it is not, and stays with **#124**.
+  design was always willing to treat differently. The behaviour above it is
+  decided too, in the [note size ceiling](note-size-ceiling.md) design.
 - **The similarity threshold's value: decided, measured against the fixture
   engram in step 11.** Word trigrams, a 128-slot MinHash signature stored as
   one blob per catalog row, and a cutoff of **0.5**. Against

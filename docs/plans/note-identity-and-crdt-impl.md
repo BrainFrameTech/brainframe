@@ -784,13 +784,12 @@ and is not made here.
 
 ## Questions this plan does not answer
 
-- **What happens above the note-size ceiling** (**#124**). The ceiling is
-  set — 128 KiB of text, from the Raspberry Pi 4 measurements in the design's
-  "Performance envelope" — but whether a text file beyond it is refused,
-  opened read-only without CRDT backing, or minted as a `blobLww` note is not,
-  and each leads to different UX. No step here may quietly pick one by adding
-  a limit; when it is decided it becomes a step of its own, and the scan's
-  mint path is where it lands.
+- **What happens above the note-size ceiling** is now answered — the
+  [note size ceiling](../design/note-size-ceiling.md) design, which closed
+  **#124** — but not yet planned. **#157** carries its "What this asks of
+  the implementation" list as the steps to add here; none of them is any of
+  the fifteen above, and the scan's mint path is still where the check
+  lands. Until those steps exist, no step here may quietly add a limit.
 - **Snapshot and compaction policy** (**#118**). Purely local use has no
   stranded peers, so it stays deferred — but it must be settled before
   **#67**, which is the moment peers below the frontier become possible.

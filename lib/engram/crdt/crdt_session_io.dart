@@ -22,12 +22,7 @@ import 'note_document_lock.dart';
 /// transaction boundary the schema depends on, so switching engrams closes the
 /// outgoing session before the incoming one opens.
 class CrdtSession {
-  CrdtSession._(
-    this._database,
-    this.writer,
-    this._reconciler,
-    this._identity,
-  );
+  CrdtSession._(this._database, this.writer, this._reconciler, this._identity);
 
   final MetadataDatabase _database;
   final AuthoredIdentity? _identity;
@@ -91,6 +86,7 @@ class CrdtSession {
         engram: store,
         lock: lock,
         identity: identity,
+        noteSizeCeilingBytes: engram.noteSizeCeilingBytes,
       ),
       identity,
     );

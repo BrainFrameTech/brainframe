@@ -44,6 +44,7 @@ import 'dart:typed_data';
 
 import '../engram_paths.dart';
 import '../engram_store.dart';
+import '../metadata.dart';
 import '../note_reconciler.dart';
 import 'blob_document_io.dart';
 import 'catalog.dart';
@@ -66,6 +67,7 @@ class DriftReconciler implements NoteReconciler {
     required this.engram,
     required this.lock,
     required this.identity,
+    this.noteSizeCeilingBytes = defaultNoteSizeCeilingBytes,
   });
 
   /// The engram's catalog and op-log.
@@ -85,6 +87,13 @@ class DriftReconciler implements NoteReconciler {
   /// scan reconciles drift and nothing else: without a folder to enumerate,
   /// there is no listing to infer creations and deletions from.
   final AuthoredIdentity? identity;
+
+  /// The largest text note this engram allows, in bytes on disk — the
+  /// engram's recorded value, never the build's constant (the note size
+  /// ceiling design, Decision 7). A text file arriving larger than this is
+  /// minted as a plain file (Decision 6); the decision is made from a
+  /// `stat`, before any read, so the file is never loaded to find out.
+  final int noteSizeCeilingBytes;
 
   final StreamController<String> _reconciled =
       StreamController<String>.broadcast();
@@ -197,11 +206,18 @@ class DriftReconciler implements NoteReconciler {
     var minted = 0;
     var adopted = 0;
     var unclaimed = 0;
+    var plainFiles = 0;
     for (final row in database.catalog.findable()) {
       if (row.seededBy == ours) minted++;
       if (row.state == NoteState.historyPending) {
         adopted++;
         if (row.seedClaim == null) unclaimed++;
+      }
+      // The row's policy against the path's: a blob at a text path is one
+      // the ceiling made, since nothing else mints a .md as a blob.
+      if (row.mergePolicy == MergePolicy.blobLww &&
+          mergePolicyForPath(row.path) == MergePolicy.fugueText) {
+        plainFiles++;
       }
     }
     // This device counts whether or not it has written its file yet — it is
@@ -217,6 +233,7 @@ class DriftReconciler implements NoteReconciler {
       adopted: adopted,
       unclaimed: unclaimed,
       tombstoned: database.catalog.countTombstoned(),
+      plainFiles: plainFiles,
       lastScanAt: _lastScanAt(),
     );
   }
@@ -234,6 +251,7 @@ class DriftReconciler implements NoteReconciler {
     final reconciled = <String>[];
     final failed = <String, Object>{};
     final created = <String>[];
+    final oversized = <String>[];
     final adopted = <String>[];
     final moved = <String, String>{};
     final tombstoned = <String>[];
@@ -326,7 +344,11 @@ class DriftReconciler implements NoteReconciler {
           // One pass over the file, shared by the match and the mint: a
           // blob is digested over a stream and its bytes are never held;
           // text is read whole, since the sketch and the seed need it.
-          final content = await _NewFile.read(engram, path);
+          final content = await _NewFile.read(
+            engram,
+            path,
+            ceiling: noteSizeCeilingBytes,
+          );
           final match = await _matchMissing(path, content, missing);
           if (match != null) {
             missing.remove(match);
@@ -338,7 +360,7 @@ class DriftReconciler implements NoteReconciler {
           }
           switch (await _bringIn(path, content, merged!)) {
             case _Arrival.minted:
-              created.add(path);
+              (content.overCeiling ? oversized : created).add(path);
             case _Arrival.adopted:
               adopted.add(path);
             case _Arrival.present:
@@ -385,6 +407,7 @@ class DriftReconciler implements NoteReconciler {
       reconciled: reconciled,
       failed: failed,
       created: created,
+      oversized: oversized,
       adopted: adopted,
       moved: moved,
       tombstoned: tombstoned,
@@ -431,7 +454,7 @@ class DriftReconciler implements NoteReconciler {
     // which re-reads anyway) is the fix if it ever shows up in a profile.
     final arrival = await _bringIn(
       path,
-      await _NewFile.read(engram, path),
+      await _NewFile.read(engram, path, ceiling: noteSizeCeilingBytes),
       mergeIdentity(await map.map.readEveryDevicesRows()),
     );
     // Present means a scan got there first while this was waiting on the
@@ -687,6 +710,7 @@ class DriftReconciler implements NoteReconciler {
             store: database,
             path: path,
             digest: content.digest,
+            overCeiling: content.overCeiling,
           );
           // Just written by mint, under this same lock; a missing row
           // here is a bug, and a named exception says so rather than a
@@ -837,13 +861,33 @@ enum _Arrival { minted, adopted, present }
 ///
 /// A blob is digested over a stream and [bytes] is null: nothing downstream
 /// needs more than its digest, and a video is a blob like any other. Text is
-/// read whole, because the sketch and the seed both need it, and it is
-/// bounded by the note-size ceiling.
+/// read whole, because the sketch and the seed both need it — but only once
+/// a `stat` has said it is under the engram's note size ceiling. A text file
+/// over it is a blob from this moment on ([overCeiling]): digested like one,
+/// never read whole, and minted as one (the note size ceiling design,
+/// Decisions 1 and 6). That is what keeps a 500 MB `.txt` from ever being
+/// loaded, and it is the one place the ceiling is measured for an arrival.
 class _NewFile {
-  const _NewFile(this.digest, this.bytes);
+  const _NewFile(this.digest, this.bytes, {this.overCeiling = false});
 
-  static Future<_NewFile> read(EngramStore engram, String path) async {
+  static Future<_NewFile> read(
+    EngramStore engram,
+    String path, {
+    required int ceiling,
+  }) async {
     if (mergePolicyForPath(path) == MergePolicy.fugueText) {
+      // Bytes on disk, as found (Decision 1): the size the user can see,
+      // and never fewer than the elements the sequence would allocate. A
+      // stat that comes back null is a file that vanished between the
+      // listing and here; reading it fails the same way it would have.
+      final size = (await engram.statFile(path))?.size;
+      if (size != null && size > ceiling) {
+        return _NewFile(
+          await digestFile(engram, path),
+          null,
+          overCeiling: true,
+        );
+      }
       final bytes = await engram.readBytes(path);
       return _NewFile(ContentDigest.of(bytes), bytes);
     }
@@ -852,4 +896,7 @@ class _NewFile {
 
   final ContentDigest digest;
   final Uint8List? bytes;
+
+  /// A text path the ceiling made a blob of.
+  final bool overCeiling;
 }

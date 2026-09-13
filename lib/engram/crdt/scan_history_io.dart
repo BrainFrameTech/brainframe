@@ -186,6 +186,9 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         for (final path in report.created) {
           event(ScanEventKind.created, path);
         }
+        for (final path in report.oversized) {
+          event(ScanEventKind.oversized, path);
+        }
         for (final path in report.adopted) {
           event(ScanEventKind.adopted, path);
         }
@@ -289,6 +292,7 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
     );
     final reconciled = <String>[];
     final created = <String>[];
+    final oversized = <String>[];
     final adopted = <String>[];
     final moved = <String, String>{};
     final tombstoned = <String>[];
@@ -301,6 +305,8 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
           reconciled.add(path);
         case ScanEventKind.created:
           created.add(path);
+        case ScanEventKind.oversized:
+          oversized.add(path);
         case ScanEventKind.adopted:
           adopted.add(path);
         case ScanEventKind.moved:
@@ -329,6 +335,7 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
       report: DriftScanReport(
         reconciled: reconciled,
         created: created,
+        oversized: oversized,
         adopted: adopted,
         moved: moved,
         tombstoned: tombstoned,
@@ -349,6 +356,9 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
 enum ScanEventKind {
   reconciled,
   created,
+
+  /// Minted as a plain file because it arrived over the note size ceiling.
+  oversized,
   adopted,
   moved,
   tombstoned,

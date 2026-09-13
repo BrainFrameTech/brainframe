@@ -19,6 +19,7 @@ import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
+import 'package:brainframe/engram/metadata.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,7 +52,11 @@ void main() {
   ///
   /// The map is written only on [_Device.publish], never by a timer: what the
   /// other device can see is then something each test states.
-  Future<_Device> device({String? engramId, EngramStore? over}) async {
+  Future<_Device> device({
+    String? engramId,
+    EngramStore? over,
+    int ceiling = defaultNoteSizeCeilingBytes,
+  }) async {
     final files = over ?? engram;
     final store = await MetadataDatabase.open(
       engramId ?? newUlid(),
@@ -81,6 +86,7 @@ void main() {
         engram: files,
         lock: lock,
         identity: identity,
+        noteSizeCeilingBytes: ceiling,
       ),
     );
     addTearDown(d.close);
@@ -604,6 +610,122 @@ void main() {
 
       expect(await engram.readString('new.md'), 'one\ntwo\nthree\n');
       expect(changesOf(d, 'new.md'), 2, reason: 'the seed and one edit');
+    });
+
+    group('an arrival over the note size ceiling (step 18)', () {
+      // A text file larger than the engram's ceiling cannot keep a character
+      // history, so it is minted as a plain file and reported, not refused
+      // (the note size ceiling design, Decision 6). The ceiling here is set
+      // low so the files stay small.
+      const ceiling = 4096;
+      Uint8List filler(int bytes) =>
+          Uint8List.fromList(List.filled(bytes, 0x61)); // 'a' × bytes
+
+      test('is minted as a plain file and reported as oversized', () async {
+        final d = await device(ceiling: ceiling);
+        await engram.writeBytes('journal.md', filler(ceiling + 1));
+
+        final report = await d.reconciler.scan();
+
+        expect(report.oversized, ['journal.md']);
+        expect(report.created, isEmpty, reason: 'disjoint from created');
+        expect(report.isClean, isFalse);
+        final row = d.store.catalog.byPath('journal.md')!;
+        expect(row.mergePolicy, MergePolicy.blobLww);
+        expect(row.sketch, isNull);
+        expect(row.size, ceiling + 1);
+        final blob = BlobDocument.open(store: d.store, ulid: row.ulid);
+        addTearDown(blob.dispose);
+        expect(blob.state!.size, ceiling + 1);
+        expect(
+          () => NoteDocument.open(store: d.store, ulid: row.ulid),
+          throwsArgumentError,
+          reason: 'no text sequence was ever seeded',
+        );
+        // Announced as what it is, so a second device does not seed it.
+        expect(d.identity.rows.values.single.mergePolicy, MergePolicy.blobLww);
+      });
+
+      test('exactly the ceiling is text; one byte more is not', () async {
+        final d = await device(ceiling: ceiling);
+        await engram.writeBytes('at.md', filler(ceiling));
+        await engram.writeBytes('over.md', filler(ceiling + 1));
+
+        final report = await d.reconciler.scan();
+
+        expect(report.created, ['at.md']);
+        expect(report.oversized, ['over.md']);
+        expect(d.store.catalog.byPath('at.md')!.mergePolicy, MergePolicy.fugueText);
+        expect(d.store.catalog.byPath('over.md')!.mergePolicy, MergePolicy.blobLww);
+      });
+
+      test('the size is decided from a stat, never a read', () async {
+        // What keeps a 500 MB .txt from ever being loaded: the store here
+        // refuses to hand over the oversized file whole, and the scan does
+        // not ask.
+        final guarded = _NoWholeBlobStore(engram, alsoRefuse: {'huge.txt'});
+        final d = await device(over: guarded, ceiling: ceiling);
+        await engram.writeBytes('huge.txt', filler(ceiling * 3));
+        await engram.writeBytes('small.txt', filler(10));
+
+        final report = await d.reconciler.scan();
+
+        expect(report.oversized, ['huge.txt']);
+        expect(report.created, ['small.txt']);
+        expect(report.failed, isEmpty);
+        expect(guarded.streamed, ['huge.txt']);
+      });
+
+      test('the before-open path minted it the same way', () async {
+        // The editor opening an unknown file goes through reconcile(), not
+        // the scan; it must reach the same conclusion.
+        final d = await device(ceiling: ceiling);
+        await engram.writeBytes('journal.md', filler(ceiling + 1));
+
+        expect(await d.reconciler.reconcile('journal.md'), isTrue);
+
+        expect(d.store.catalog.byPath('journal.md')!.mergePolicy, MergePolicy.blobLww);
+        expect((await d.reconciler.scan()).isClean, isTrue);
+      });
+
+      test('the ledger counts it as a plain file', () async {
+        final d = await device(ceiling: ceiling);
+        await engram.writeBytes('journal.md', filler(ceiling + 1));
+        await engram.writeBytes('note.md', filler(10));
+        await engram.writeBytes('pic.png', filler(ceiling + 1));
+        await d.reconciler.scan();
+
+        final ledger = await d.reconciler.ledger();
+
+        expect(ledger.plainFiles, 1, reason: 'a png is a blob, not a plain file');
+        expect(ledger.minted, 3);
+      });
+
+      test('the default ceiling is 128 KiB', () async {
+        final d = await device();
+        await engram.writeBytes('big.md', filler(131072 + 1));
+        await engram.writeBytes('fits.md', filler(131072));
+
+        final report = await d.reconciler.scan();
+
+        expect(report.oversized, ['big.md']);
+        expect(report.created, ['fits.md']);
+      });
+
+      test('it is editable through the writer as a plain file', () async {
+        // Step 17's writer, reached the way the editor reaches it.
+        final d = await device(ceiling: ceiling);
+        await engram.writeBytes('journal.md', filler(ceiling + 1));
+        await d.reconciler.scan();
+
+        await d.writer.write('journal.md', 'trimmed\n');
+
+        expect(await engram.readString('journal.md'), 'trimmed\n');
+        final row = d.store.catalog.byPath('journal.md')!;
+        expect(row.mergePolicy, MergePolicy.blobLww, reason: 'still a plain file');
+        expect(changesOf(d, 'journal.md'), 2, reason: 'the seed and one claim');
+        expect((await d.reconciler.scan()).isClean, isTrue);
+      });
     });
 
     test('a blob is never read whole, at any step', () async {
@@ -1716,10 +1838,13 @@ class _Device {
 /// A store over the real one that refuses to read a blob whole: what
 /// proves the scan streams every blob and never loads one.
 class _NoWholeBlobStore extends EngramStore {
-  _NoWholeBlobStore(this.inner);
+  _NoWholeBlobStore(this.inner, {this.alsoRefuse = const {}});
 
   final FileSystemEngramStore inner;
   final List<String> streamed = [];
+
+  /// Text paths that must be streamed too — the ones over the ceiling.
+  final Set<String> alsoRefuse;
 
   @override
   Future<List<String>> list() => inner.list();
@@ -1729,7 +1854,8 @@ class _NoWholeBlobStore extends EngramStore {
 
   @override
   Future<Uint8List> readBytes(String path) {
-    if (mergePolicyForPath(path) == MergePolicy.blobLww) {
+    if (mergePolicyForPath(path) == MergePolicy.blobLww ||
+        alsoRefuse.contains(path)) {
       throw StateError('readBytes($path): a blob must be streamed');
     }
     return inner.readBytes(path);

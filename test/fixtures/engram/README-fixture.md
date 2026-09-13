@@ -65,6 +65,12 @@ markdown edge cases the tutorial engram is too small and too pristine to show.
   (`[text](https://…)`, `mailto:`) plus a bare URL and an autolink, so tapping an
   external link (which today does nothing — no external opener) can be verified,
   alongside a contrasting relative link that *does* navigate (plan case F6).
+- `reference/logger-export-full-transcript.md` — a generated note of about
+  136,000 bytes, deliberately **over the 128 KiB note size ceiling**, so the
+  ceiling can be driven by hand: on first open it is tracked as a plain file
+  (no history, whole-file saves), Housekeeping reports it, and the editor still
+  opens and saves it (plan case F31). Regenerate rather than edit: it must stay
+  over 131,072 bytes.
 - `reading list/` — a folder *and* files whose names contain spaces, linked with
   percent-encoded destinations (`Reading%20List%20MoC.md`). Exercises intra-engram
   navigation to spaced filenames, which silently did nothing before the link

@@ -875,12 +875,27 @@
     }
   },
 
+  "housekeepingPlainFiles": "{count, plural, =1{1 note is a plain file: it was larger than {limit} bytes when it arrived, so it keeps no history and its saves replace each other whole.} other{{count} notes are plain files: they were larger than {limit} bytes when they arrived, so they keep no history and their saves replace each other whole.}}",
+  "@housekeepingPlainFiles": {
+    "description": "Ledger line, shown only when non-zero: text notes tracked as plain files (no history, whole-file last-writer-wins) because they were over the engram's note size ceiling on arrival.",
+    "placeholders": {
+      "count": { "type": "int", "example": "3" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
   "housekeepingTombstoned": "{count, plural, =0{No deleted notes are remembered.} =1{1 deleted note is remembered, so a new file at its path is a new note.} other{{count} deleted notes are remembered, so a new file at any of their paths is a new note.}}",
   "@housekeepingTombstoned": {
     "description": "Ledger line: tombstoned notes this device keeps.",
     "placeholders": {
       "count": { "type": "int", "example": "3" }
     }
+  },
+
+  "scanOversizedNotice": "{count, plural, =1{1 file was too large to keep a history. See Settings › Housekeeping.} other{{count} files were too large to keep a history. See Settings › Housekeeping.}}",
+  "@scanOversizedNotice": {
+    "description": "Transient notice shown once when a scan found text files over the note size ceiling and tracked them as plain files. Points at Housekeeping, which is the durable surface.",
+    "placeholders": { "count": { "type": "int", "example": "3" } }
   },
 
   "housekeepingScansTitle": "Recent scans",
@@ -944,6 +959,21 @@
   "@housekeepingScanMoved": {
     "description": "Part of a scan summary: notes found at a new path.",
     "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingScanOversized": "{count, plural, =1{1 too large to keep history} other{{count} too large to keep history}}",
+  "@housekeepingScanOversized": {
+    "description": "Part of a scan summary: text files minted as plain files because they were over the note size ceiling when they arrived.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingOversizedDetail": "Larger than {limit} bytes on arrival, so tracked as plain files with no history: {paths}. To keep a history, move some of the content into another note.",
+  "@housekeepingOversizedDetail": {
+    "description": "Scan detail line listing text files minted as plain files because they were over the note size ceiling. {paths} is a comma-separated path list; {limit} is the ceiling in bytes, formatted with separators.",
+    "placeholders": {
+      "limit": { "type": "String", "example": "131,072" },
+      "paths": { "type": "String", "example": "journal/2025.md, exports/chat.md" }
+    }
   },
 
   "housekeepingScanDeleted": "{count, plural, =1{1 deleted} other{{count} deleted}}",

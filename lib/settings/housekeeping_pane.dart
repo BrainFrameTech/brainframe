@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../engram/engram.dart';
 import '../engram/engram_repository.dart';
@@ -325,6 +326,13 @@ class _LedgerSection extends StatelessWidget {
                     if (counts.unclaimed > 0)
                       _Line(l10n.housekeepingUnclaimed(counts.unclaimed)),
                     _Line(l10n.housekeepingTombstoned(counts.tombstoned)),
+                    if (counts.plainFiles > 0)
+                      _Line(
+                        l10n.housekeepingPlainFiles(
+                          counts.plainFiles,
+                          _bytes(context, engram.noteSizeCeilingBytes),
+                        ),
+                      ),
                     if (counts.lastScanAt != null)
                       _Line(
                         l10n.housekeepingLastScan(
@@ -359,6 +367,7 @@ class _LedgerSection extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _ScanCard(
                         scan: scan,
+                        ceilingBytes: engram.noteSizeCeilingBytes,
                         onDismiss: scan.id == null
                             ? null
                             : () => onDismiss(scan),
@@ -377,9 +386,17 @@ class _LedgerSection extends StatelessWidget {
 /// One scan that changed something or failed: a summary line, then the
 /// details that matter — a history loss, an unlisted folder, each failure.
 class _ScanCard extends StatelessWidget {
-  const _ScanCard({required this.scan, required this.onDismiss});
+  const _ScanCard({
+    required this.scan,
+    required this.ceilingBytes,
+    required this.onDismiss,
+  });
 
   final ScanNotice scan;
+
+  /// The engram's note size ceiling, for the line that explains why a file
+  /// was tracked as a plain file.
+  final int ceilingBytes;
 
   /// Hides the card; null for a notice that was never recorded and so
   /// cannot be dismissed.
@@ -395,6 +412,8 @@ class _ScanCard extends StatelessWidget {
         l10n.housekeepingScanUpdated(report.reconciled.length),
       if (report.created.isNotEmpty)
         l10n.housekeepingScanCreated(report.created.length),
+      if (report.oversized.isNotEmpty)
+        l10n.housekeepingScanOversized(report.oversized.length),
       if (report.adopted.isNotEmpty)
         l10n.housekeepingScanAdopted(report.adopted.length),
       if (report.moved.isNotEmpty)
@@ -447,6 +466,14 @@ class _ScanCard extends StatelessWidget {
               l10n.housekeepingHistoryLoss(
                 report.tombstoned.join(', '),
                 report.created.join(', '),
+              ),
+              emphasis: true,
+            ),
+          if (report.oversized.isNotEmpty)
+            _Line(
+              l10n.housekeepingOversizedDetail(
+                _bytes(context, ceilingBytes),
+                report.oversized.join(', '),
               ),
               emphasis: true,
             ),
@@ -685,3 +712,9 @@ class _MissingBadge extends StatelessWidget {
     );
   }
 }
+
+/// [bytes] with the locale's thousands separators — the number the ceiling
+/// is stated in, as the user will compare it against a file manager.
+String _bytes(BuildContext context, int bytes) => NumberFormat.decimalPattern(
+  Localizations.localeOf(context).toString(),
+).format(bytes);

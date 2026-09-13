@@ -23,6 +23,7 @@ class DriftScanReport {
     this.reconciled = const <String>[],
     this.failed = const <String, Object>{},
     this.created = const <String>[],
+    this.oversized = const <String>[],
     this.adopted = const <String>[],
     this.moved = const <String, String>{},
     this.tombstoned = const <String>[],
@@ -47,6 +48,14 @@ class DriftScanReport {
   /// Paths this device minted a new note for: a file no catalog row and no
   /// identity-map row claimed, seeded from its own text.
   final List<String> created;
+
+  /// Paths this device minted as a **plain file** — a `blobLww` note —
+  /// because the file had a text extension but was over the engram's note
+  /// size ceiling when it arrived (the note size ceiling design, Decision
+  /// 6). Disjoint from [created]: these keep no history and merge whole,
+  /// and the user is told so rather than asked, since there was no history
+  /// to lose. The size was decided from a `stat`, before any read.
+  final List<String> oversized;
 
   /// Paths adopted from another device's identity map: the ULID is recorded
   /// and **nothing is seeded** — the note is history-pending until its op-log
@@ -88,6 +97,7 @@ class DriftScanReport {
       reconciled.isEmpty &&
       failed.isEmpty &&
       created.isEmpty &&
+      oversized.isEmpty &&
       adopted.isEmpty &&
       moved.isEmpty &&
       tombstoned.isEmpty &&
@@ -142,6 +152,7 @@ class NoteLedger {
     required this.adopted,
     required this.unclaimed,
     required this.tombstoned,
+    this.plainFiles = 0,
     this.lastScanAt,
   });
 
@@ -164,6 +175,13 @@ class NoteLedger {
   /// Notes this device remembers as deleted: the tombstones, kept so a later
   /// file at the same path is a new note and not the dead one resurrected.
   final int tombstoned;
+
+  /// Live notes with a text extension that are plain files — `blobLww`,
+  /// keeping no history and merging whole — because they were over the note
+  /// size ceiling when they arrived (the note size ceiling design, Decision
+  /// 6), or, once conversion exists, because the user chose it. The count a
+  /// user needs to know how much of their vault has no history.
+  final int plainFiles;
 
   /// When the last scan finished — clean or not — or null if none has run on
   /// this device. Clean scans leave only this behind.

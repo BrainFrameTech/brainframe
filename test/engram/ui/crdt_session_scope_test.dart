@@ -8,8 +8,10 @@ import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/note_writer.dart';
 import 'package:brainframe/engram/ui/crdt_session_scope.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/localized_app.dart';
 
 /// The host that owns the active engram's session and publishes its writer.
 void main() {
@@ -174,6 +176,86 @@ void main() {
       reconciler.gate!.complete();
       await tester.pumpAndSettle();
       expect(find.text('crdt'), findsOneWidget);
+    });
+
+    testWidgets('a scan that found oversized arrivals says so, once', (
+      tester,
+    ) async {
+      // Step 18, Decision 6: the one transient line — count and where to
+      // look — and only when a scan found some.
+      final reconciler = _RecordingReconciler()
+        ..report = const DriftScanReport(
+          created: ['a.md'],
+          oversized: ['journal.md', 'export.md'],
+        );
+      await tester.pumpWidget(
+        localizedApp(
+          home: Scaffold(
+            body: EngramScope(
+              initialEngram: engramNamed('a'),
+              child: CrdtSessionHost(
+                openSession: (_) async =>
+                    _FakeSession(() {}, reconciler: reconciler),
+                child: probe(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          '2 files were too large to keep a history. '
+          'See Settings › Housekeeping.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a scan that found none says nothing', (tester) async {
+      final reconciler = _RecordingReconciler()
+        ..report = const DriftScanReport(created: ['a.md']);
+      await tester.pumpWidget(
+        localizedApp(
+          home: Scaffold(
+            body: EngramScope(
+              initialEngram: engramNamed('a'),
+              child: CrdtSessionHost(
+                openSession: (_) async =>
+                    _FakeSession(() {}, reconciler: reconciler),
+                child: probe(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('with no messenger to show it in, nothing is shown', (
+      tester,
+    ) async {
+      // The bare hosts every other test here uses: no MaterialApp, no
+      // Scaffold. The notice is skipped rather than thrown.
+      final reconciler = _RecordingReconciler()
+        ..report = const DriftScanReport(oversized: ['journal.md']);
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async =>
+                _FakeSession(() {}, reconciler: reconciler),
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(reconciler.scans, 1);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a scan that throws is logged, not raised', (tester) async {
@@ -362,6 +444,7 @@ class _RecordingReconciler implements NoteReconciler {
   int scans = 0;
   Completer<void>? gate;
   bool failScans = false;
+  DriftScanReport report = DriftScanReport.clean;
 
   @override
   Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async {
@@ -369,7 +452,7 @@ class _RecordingReconciler implements NoteReconciler {
     log.add('scan ${trigger.name}');
     if (gate != null) await gate!.future;
     if (failScans) throw StateError('catalog unreadable');
-    return DriftScanReport.clean;
+    return report;
   }
 
   @override

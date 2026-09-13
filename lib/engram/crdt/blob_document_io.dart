@@ -135,15 +135,22 @@ class BlobDocument extends PersistedDocument {
   ///
   /// [path] is engram-relative; its extension derives the merge policy, fixed
   /// here at creation, and it must be `blobLww` — text is minted through
-  /// [NoteDocument.mint], and an [ArgumentError] says so. Throws if a
-  /// findable note already holds that path — the catalog's own constraint,
-  /// surfaced rather than merged.
+  /// [NoteDocument.mint], and an [ArgumentError] says so — **unless
+  /// [overCeiling]**: a text file that arrives larger than the engram's note
+  /// size ceiling cannot keep a character history, so the scan mints it as a
+  /// plain file despite its extension (the note size ceiling design,
+  /// Decision 6). That is the one door through which a `.md` becomes a blob
+  /// at creation; from then on the catalog row, not the path, says what the
+  /// note is, and every other gate consults the row. Throws if a findable
+  /// note already holds that path — the catalog's own constraint, surfaced
+  /// rather than merged.
   static BlobDocument mint({
     required MetadataDatabase store,
     required String path,
     required ContentDigest digest,
+    bool overCeiling = false,
   }) {
-    final policy = mergePolicyForPath(path);
+    final policy = overCeiling ? MergePolicy.blobLww : mergePolicyForPath(path);
     if (policy != MergePolicy.blobLww) {
       throw ArgumentError.value(
         path,

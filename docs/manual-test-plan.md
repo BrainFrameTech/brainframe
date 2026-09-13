@@ -1395,6 +1395,78 @@ bar easy to watch.
 - **Inspection point:** the count in the dialog is the number the scan mints;
   a mismatch between the two is a bug in one filter or the other.
 
+### F31 — The note size ceiling: a note that arrives too large
+
+As of ceiling step 18, a text file larger than the engram's note size limit —
+128 KiB on disk, the same on every device — cannot keep a character history,
+so when the scan first meets it, it is tracked as a **plain file**: it opens
+and saves like any note, but each save replaces the file whole (no history,
+no merging), and BrainFrame says so rather than asking. The manual-testing
+engram carries one such file, `reference/logger-export-full-transcript.md`
+(about 136,000 bytes). This case drives that first meeting; the doors a note
+can hit the limit through *after* it is tracked (editing past it, an external
+edit that grows it) are later steps and are not testable yet.
+
+**Steps:**
+
+1. Reset the fixture engram (`git checkout -- test/fixtures/engram` and
+   `git clean -fd test/fixtures/engram`), and make sure it has never been
+   opened by this install — or forget it in Housekeeping first, so its
+   catalog is gone. Launch with `--engram test/fixtures/engram` and wait for
+   the adoption bar to finish.
+2. Open **Settings › Housekeeping** and read the ledger and the newest scan
+   card.
+3. Open `reference/logger-export-full-transcript.md` in the editor. Add a
+   line at the top and let it save (`saved`). Check the file in another
+   editor.
+4. Quit and relaunch; open the note again, then open Housekeeping again.
+5. In another editor, append a paragraph to the same file; switch back to
+   BrainFrame (resume) and open Housekeeping.
+6. In the file manager, copy `daily/2026-05-02.md` to a new name; switch
+   back and open Housekeeping.
+
+**Expected:**
+
+- Step 1: once the bar is gone, a brief notice at the bottom of the window:
+  **1 file was too large to keep a history. See Settings › Housekeeping.**
+  It appears once and goes away on its own; nothing else is different.
+- Step 2: the ledger has a line *1 note is a plain file: it was larger than
+  131,072 bytes when it arrived, so it keeps no history and its saves replace
+  each other whole.* The newest card reads "*N* created, **1 too large to
+  keep history**" and carries an emphasised line naming the path and ending
+  *To keep a history, move some of the content into another note.*
+- Step 3: the note opens in the editor like any other and saves normally —
+  the chip reaches `saved`, and the other editor sees the added line. There
+  is no size warning or wall here yet (ceiling step 21).
+- Step 4: the edit is still there. Housekeeping's ledger still says **1**
+  plain file — it stays one — and no new scan card appeared for a clean
+  relaunch.
+- Step 5: the newest card says "1 note updated from disk" — an external
+  change to a plain file is recorded like any other — and the file keeps the
+  paragraph exactly as written.
+- Step 6: the copied daily note is "1 created", **not** too large: an
+  ordinary note under the limit is tracked with a history as before.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app; step 1's `--engram` **N/A** — adopt the folder through the app instead | as Android | as Android | ✓ with the file edited over SSH; step 5's resume **N/A** — relaunch instead; the notice, if it animates, is the Reduce Motion question of D2 |
+
+- **Never asked, only told:** there is no dialog at step 1. A file that
+  arrives over the limit has no history to lose, so tracking it as a plain
+  file is reported, not consented to (ceiling design, Decision 6). Report a
+  dialog here as a defect.
+- **Irreversible:** trimming the note under the limit does **not** make it a
+  history-keeping note again — that is by design (Decision 3). The path to a
+  history is a new note with the content.
+- **A11y:** the notice is read by a screen reader as it appears; the ledger
+  and card lines are plain text in reading order.
+- **Declarative-trap probe:** after step 3 the ledger count is unchanged
+  because the note is *still* a plain file, not because the pane is stale —
+  leave and reopen Housekeeping to confirm.
+- **Inspection point:** the file is never read whole to decide its size; the
+  decision is a `stat`. Not observable by hand; covered by the automated
+  tests with a store that refuses to read the file.
+
 ---
 
 ## Bug-class deep-dives

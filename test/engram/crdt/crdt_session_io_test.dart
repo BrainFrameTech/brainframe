@@ -10,6 +10,7 @@ import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
+import 'package:brainframe/engram/metadata.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,11 +29,15 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
-  Engram engramWith({required bool readOnly}) => Engram(
+  Engram engramWith({
+    required bool readOnly,
+    int ceiling = defaultNoteSizeCeilingBytes,
+  }) => Engram(
     id: newUlid(),
     displayName: 'test',
     readOnly: readOnly,
     store: FileSystemEngramStore(EngramLocation('${root.path}/engram')),
+    noteSizeCeilingBytes: ceiling,
   );
 
   test('a read-only engram gets no session', () async {
@@ -132,6 +137,22 @@ void main() {
       peerId: PeerId.generate(),
     ).readEveryDevicesRows();
     expect(rows.single.path, 'b.md');
+  });
+
+  test('the scan enforces the engram\'s ceiling, not the build\'s', () async {
+    // Decision 7: the value in engram.json is what every device enforces.
+    // An engram recording 1 KiB treats a 2 KiB note as a plain file even
+    // though this build could hold it.
+    final engram = engramWith(readOnly: false, ceiling: 1024);
+    await engram.store.writeString('small.md', 'x' * 100);
+    await engram.store.writeString('big.md', 'y' * 2048);
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    addTearDown(() => session!.close());
+
+    final report = await session!.reconciler.scan();
+
+    expect(report.created, ['small.md']);
+    expect(report.oversized, ['big.md']);
   });
 
   test('opening a session prunes old scan records', () async {

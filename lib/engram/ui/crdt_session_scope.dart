@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import '../../commands/pending_saves.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../crdt/crdt_session.dart';
 import '../engram.dart';
 import '../engram_scope.dart';
@@ -128,18 +129,37 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
   /// logged rather than left as an unhandled error from a fire-and-forget.
   void _scanInBackground(CrdtSession session, ScanTrigger trigger) {
     unawaited(
-      session.reconciler.scan(trigger: trigger).catchError((
-        Object error,
-        StackTrace stack,
-      ) {
-        developer.log(
-          'scan failed',
-          name: 'brainframe.engram.drift',
-          error: error,
-          stackTrace: stack,
-        );
-        return const DriftScanReport();
-      }),
+      session.reconciler
+          .scan(trigger: trigger)
+          .then(_noticeOversized)
+          .catchError((Object error, StackTrace stack) {
+            developer.log(
+              'scan failed',
+              name: 'brainframe.engram.drift',
+              error: error,
+              stackTrace: stack,
+            );
+          }),
+    );
+  }
+
+  /// The one transient line the note size ceiling design allows (Decision
+  /// 6): a scan that found text files too large to keep a history says so,
+  /// once, and points at Housekeeping, which is the durable surface. Nothing
+  /// is shown for a scan that found none — the ordinary case — and nothing
+  /// is shown where there is no messenger to show it in.
+  void _noticeOversized(DriftScanReport report) {
+    if (!mounted || report.oversized.isEmpty) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          AppLocalizations.of(
+            context,
+          ).scanOversizedNotice(report.oversized.length),
+        ),
+      ),
     );
   }
 
@@ -222,9 +242,8 @@ class CrdtSessionScope extends InheritedWidget {
   /// Null is an ordinary answer, not a failure: it means "write to the store",
   /// which is correct for a read-only engram, for web, and for any widget test
   /// that did not install a host.
-  static NoteWriter? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
-      ?.writer;
+  static NoteWriter? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CrdtSessionScope>()?.writer;
 
   /// The reconciler published by the enclosing [CrdtSessionHost] widget, or
   /// null if there is none — the same three cases as [maybeOf], and null

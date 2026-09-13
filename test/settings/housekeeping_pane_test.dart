@@ -482,6 +482,95 @@ void main() {
       );
     });
 
+    testWidgets('an oversized arrival is counted, explained, and listed', (
+      tester,
+    ) async {
+      // Step 18: a text file over the ceiling was tracked as a plain file.
+      // The card says how many, why, which, and what to do; the ledger
+      // says how many notes are in that state overall.
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 3,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+          plainFiles: 2,
+        ),
+        scans: [
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(
+              created: ['a.md'],
+              oversized: ['journal/2025.md', 'exports/chat.md'],
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 created, 2 too large to keep history'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Larger than 131,072 bytes on arrival, so tracked as plain files '
+          'with no history: journal/2025.md, exports/chat.md.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('2 notes are plain files: they were larger than '
+            '131,072 bytes when they arrived'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the ledger line states the engram\'s own ceiling', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 1,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+          plainFiles: 1,
+        ),
+      );
+      final small = Engram(
+        id: field.id,
+        displayName: field.displayName,
+        readOnly: false,
+        store: _InertStore(),
+        noteSizeCeilingBytes: 65536,
+      );
+      await tester.pumpWidget(host(engram: small, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('1 note is a plain file: it was larger than '
+            '65,536 bytes when it arrived'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no plain files, no line', (tester) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 1,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('plain file'), findsNothing);
+    });
+
     testWidgets('failures and an unlisted folder are each their own line', (
       tester,
     ) async {

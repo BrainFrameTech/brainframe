@@ -1390,35 +1390,90 @@ void main() {
     });
   });
 
-  group('recent scans (step 13)', () {
-    test('a clean scan is not remembered; one that changed something is',
-        () async {
+  group('scan history (step 13.5)', () {
+    test('a clean scan leaves only its time behind', () async {
       final d = await device();
-      expect(d.reconciler.recentScans, isEmpty);
-      await d.reconciler.scan();
-      expect(d.reconciler.recentScans, isEmpty, reason: 'nothing to say');
-
-      await engram.writeString('a.md', 'new\n');
+      expect((await d.reconciler.ledger()).lastScanAt, isNull);
+      expect(await d.reconciler.recentScans(), isEmpty);
       final before = DateTime.now();
+
       await d.reconciler.scan();
 
-      final notice = d.reconciler.recentScans.single;
-      expect(notice.report.created, ['a.md']);
-      expect(notice.at.isBefore(before), isFalse);
-      expect(notice.lostHistory, isFalse);
+      expect(await d.reconciler.recentScans(), isEmpty, reason: 'nothing to say');
+      expect(d.store.scans.count(), 0);
+      final at = (await d.reconciler.ledger()).lastScanAt;
+      expect(at, isNotNull);
+      expect(at!.isBefore(before.subtract(const Duration(seconds: 1))), isFalse);
     });
 
-    test('newest first, and bounded', () async {
+    test('a scan that changed something is recorded, with its trigger',
+        () async {
       final d = await device();
-      for (var i = 0; i < 25; i++) {
+      await engram.writeString('a.md', 'new\n');
+
+      await d.reconciler.scan(trigger: ScanTrigger.resume);
+
+      final notice = (await d.reconciler.recentScans()).single;
+      expect(notice.report.created, ['a.md']);
+      expect(notice.trigger, ScanTrigger.resume);
+      expect(notice.id, isNotNull);
+      expect(notice.lostHistory, isFalse);
+      // The event knows the note, not only its path.
+      final row = d.store.database.select(
+        'SELECT ulid, kind FROM bf_scan_event WHERE scan_id = ?',
+        [notice.id],
+      ).single;
+      expect(row['ulid'], d.store.catalog.byPath('a.md')!.ulid);
+      expect(row['kind'], 'created');
+    });
+
+    test('the record outlives the reconciler that wrote it', () async {
+      // The point of writing it down: a notice a user never opened Settings
+      // to see is still there the next time the engram is opened.
+      final d = await device();
+      await engram.writeString('a.md', 'new\n');
+      await d.reconciler.scan(trigger: ScanTrigger.open);
+
+      final again = DriftReconciler(
+        database: d.store,
+        engram: engram,
+        lock: NoteDocumentLock(),
+        identity: d.identity,
+      );
+      addTearDown(again.close);
+
+      final notice = (await again.recentScans()).single;
+      expect(notice.report.created, ['a.md']);
+      expect(notice.trigger, ScanTrigger.open);
+    });
+
+    test('newest first, limited, and dismissed ones drop out', () async {
+      final d = await device();
+      for (var i = 0; i < 5; i++) {
         await engram.writeString('n$i.md', 'note $i\n');
         await d.reconciler.scan();
       }
 
-      final scans = d.reconciler.recentScans;
-      expect(scans.length, 20);
-      expect(scans.first.report.created, ['n24.md'], reason: 'newest first');
-      expect(scans.last.report.created, ['n5.md']);
+      final all = await d.reconciler.recentScans();
+      expect(all.map((n) => n.report.created.single), [
+        'n4.md',
+        'n3.md',
+        'n2.md',
+        'n1.md',
+        'n0.md',
+      ]);
+      expect((await d.reconciler.recentScans(limit: 2)).length, 2);
+
+      await d.reconciler.dismissScan(all[1].id!);
+
+      final left = await d.reconciler.recentScans();
+      expect(left.map((n) => n.report.created.single), [
+        'n4.md',
+        'n2.md',
+        'n1.md',
+        'n0.md',
+      ]);
+      expect(d.store.scans.count(), 5, reason: 'dismissed, not deleted');
     });
 
     test('a delete plus a create in one scan is marked as a history loss',
@@ -1429,6 +1484,7 @@ void main() {
         'old.md',
         List.generate(20, (i) => 'original line number $i here').join('\n'),
       );
+      final ulid = d.store.catalog.byPath('old.md')!.ulid;
       await engram.delete('old.md');
       await engram.writeString(
         'new.md',
@@ -1437,15 +1493,51 @@ void main() {
 
       await d.reconciler.scan();
 
-      final notice = d.reconciler.recentScans.single;
+      final notice = (await d.reconciler.recentScans()).single;
       expect(notice.lostHistory, isTrue);
       expect(notice.report.tombstoned, ['old.md']);
       expect(notice.report.created, ['new.md']);
+      expect(
+        d.store.database
+            .select('SELECT lost_history FROM bf_scan')
+            .single['lost_history'],
+        1,
+      );
+      // The tombstone event names the dead note, which byPath no longer
+      // finds: that identity is what a later "attach its history" needs.
+      final dead = d.store.database.select(
+        "SELECT ulid FROM bf_scan_event WHERE kind = 'tombstoned'",
+      ).single['ulid'];
+      expect(dead, ulid);
     });
 
-    test('the list handed out cannot be edited', () async {
+    test('a failure is recorded with its message', () async {
       final d = await device();
-      expect(() => d.reconciler.recentScans.clear(), throwsUnsupportedError);
+      await engram.writeBytes('bad.md', Uint8List.fromList([0xff, 0xfe]));
+
+      await d.reconciler.scan();
+
+      final notice = (await d.reconciler.recentScans()).single;
+      expect(notice.report.failed.keys, ['bad.md']);
+      expect(notice.report.failed['bad.md'].toString(), contains('FormatException'));
+    });
+
+    test('a scan cut short by close is not recorded', () async {
+      // Its report is partial by construction, and the next open's scan
+      // records the whole story.
+      final d = await device();
+      await engram.writeString('a.md', 'note\n');
+      final gate = Completer<void>();
+      final held = d.reconciler.lock.run(() => gate.future);
+      final scanning = d.reconciler.scan();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final closing = d.reconciler.close();
+      gate.complete();
+      await held;
+      await closing;
+      await scanning;
+
+      expect(d.store.scans.count(), 0);
     });
   });
 

@@ -59,6 +59,9 @@ class CrdtSession {
       engram.id,
       resolveRoot: resolveRoot,
     );
+    // Old scan records go on open, before anything reads them: a year of
+    // ordinary scans, never the ones that lost history or failed.
+    database.scans.prune();
     // The shared identity map lives inside the engram folder, so it exists
     // only for an engram that has one. Every writable engram today is a
     // filesystem engram; the seam allows otherwise, and such an engram would

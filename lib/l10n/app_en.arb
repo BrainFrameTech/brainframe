@@ -838,12 +838,41 @@
 
   "housekeepingScansTitle": "Recent scans",
   "@housekeepingScansTitle": {
-    "description": "Heading of the list of this session's scans that changed something or failed."
+    "description": "Heading of the list of recorded scans that changed something or failed and have not been dismissed."
   },
 
-  "housekeepingScansEmpty": "No scan has changed anything since this engram was opened.",
+  "housekeepingScansEmpty": "Nothing to show. Every recorded scan has been dismissed, or none has changed anything yet.",
   "@housekeepingScansEmpty": {
-    "description": "Shown under Recent scans when every scan this session was clean."
+    "description": "Shown under Recent scans when there is no undismissed scan record."
+  },
+
+  "housekeepingLastScan": "Last scan: {time}.",
+  "@housekeepingLastScan": {
+    "description": "Ledger line: when the most recent scan finished, clean or not, as a localized time.",
+    "placeholders": {
+      "time": { "type": "String", "example": "9:27 PM" }
+    }
+  },
+
+  "housekeepingScanTrigger": "{trigger, select, open{at open} resume{on resume} watcher{from the watcher} other{by request}}",
+  "@housekeepingScanTrigger": {
+    "description": "Part of a scan card's header: what started the scan. Follows the time.",
+    "placeholders": {
+      "trigger": { "type": "String", "example": "resume" }
+    }
+  },
+
+  "housekeepingDismiss": "Dismiss",
+  "@housekeepingDismiss": {
+    "description": "Button on a scan card: hides it from Recent scans. The record itself is kept."
+  },
+
+  "housekeepingDismissScan": "Dismiss the scan from {time}",
+  "@housekeepingDismissScan": {
+    "description": "Accessibility label of a scan card's Dismiss button.",
+    "placeholders": {
+      "time": { "type": "String", "example": "9:27 PM" }
+    }
   },
 
   "housekeepingScanUpdated": "{count, plural, =1{1 note updated from disk} other{{count} notes updated from disk}}",

@@ -77,12 +77,26 @@ class HousekeepingPane extends StatefulWidget {
 class _HousekeepingPaneState extends State<HousekeepingPane> {
   late Future<List<RegisteredEngram>> _engrams;
   Future<NoteLedger>? _ledger;
+  Future<List<ScanNotice>>? _scans;
 
   @override
   void initState() {
     super.initState();
     _engrams = widget.load();
     _ledger = widget.notes?.ledger();
+    _scans = widget.notes?.recentScans();
+  }
+
+  Future<void> _dismiss(ScanNotice scan) async {
+    final id = scan.id;
+    if (id == null) return;
+    await widget.notes?.dismissScan(id);
+    if (!mounted) return;
+    // A block, not an arrow: an arrow would hand setState the Future the
+    // assignment evaluates to, which it refuses.
+    setState(() {
+      _scans = widget.notes?.recentScans();
+    });
   }
 
   void _reload() {
@@ -144,6 +158,8 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                     engram: widget.engram!,
                     notes: widget.notes,
                     ledger: _ledger,
+                    scans: _scans,
+                    onDismiss: _dismiss,
                   ),
                   const SizedBox(height: 28),
                 ],
@@ -193,11 +209,15 @@ class _LedgerSection extends StatelessWidget {
     required this.engram,
     required this.notes,
     required this.ledger,
+    required this.scans,
+    required this.onDismiss,
   });
 
   final Engram engram;
   final NoteReconciler? notes;
   final Future<NoteLedger>? ledger;
+  final Future<List<ScanNotice>>? scans;
+  final void Function(ScanNotice scan) onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +241,7 @@ class _LedgerSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        if (notes == null || ledger == null)
+        if (notes == null || ledger == null || scans == null)
           _Card(child: _Line(l10n.housekeepingLedgerUnavailable))
         else ...[
           FutureBuilder<NoteLedger>(
@@ -243,6 +263,14 @@ class _LedgerSection extends StatelessWidget {
                     if (counts.unclaimed > 0)
                       _Line(l10n.housekeepingUnclaimed(counts.unclaimed)),
                     _Line(l10n.housekeepingTombstoned(counts.tombstoned)),
+                    if (counts.lastScanAt != null)
+                      _Line(
+                        l10n.housekeepingLastScan(
+                          MaterialLocalizations.of(context).formatTimeOfDay(
+                            TimeOfDay.fromDateTime(counts.lastScanAt!),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               );
@@ -254,14 +282,30 @@ class _LedgerSection extends StatelessWidget {
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          if (notes.recentScans.isEmpty)
-            _Card(child: _Line(l10n.housekeepingScansEmpty))
-          else
-            for (final scan in notes.recentScans)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _ScanCard(scan: scan),
-              ),
+          FutureBuilder<List<ScanNotice>>(
+            future: scans,
+            builder: (context, snapshot) {
+              final recent = snapshot.data;
+              if (recent == null) return const SizedBox.shrink();
+              if (recent.isEmpty) {
+                return _Card(child: _Line(l10n.housekeepingScansEmpty));
+              }
+              return Column(
+                children: [
+                  for (final scan in recent)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _ScanCard(
+                        scan: scan,
+                        onDismiss: scan.id == null
+                            ? null
+                            : () => onDismiss(scan),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ],
       ],
     );
@@ -271,9 +315,13 @@ class _LedgerSection extends StatelessWidget {
 /// One scan that changed something or failed: a summary line, then the
 /// details that matter — a history loss, an unlisted folder, each failure.
 class _ScanCard extends StatelessWidget {
-  const _ScanCard({required this.scan});
+  const _ScanCard({required this.scan, required this.onDismiss});
 
   final ScanNotice scan;
+
+  /// Hides the card; null for a notice that was never recorded and so
+  /// cannot be dismissed.
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -299,6 +347,7 @@ class _ScanCard extends StatelessWidget {
     final time = MaterialLocalizations.of(
       context,
     ).formatTimeOfDay(TimeOfDay.fromDateTime(scan.at));
+    final when = '$time · ${l10n.housekeepingScanTrigger(scan.trigger.name)}';
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,7 +356,7 @@ class _ScanCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                time,
+                when,
                 style: TextStyle(
                   fontSize: 12,
                   fontFamily: 'monospace',
@@ -316,6 +365,19 @@ class _ScanCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(child: _Line(parts.join(', '))),
+              if (onDismiss != null) ...[
+                const SizedBox(width: 12),
+                Semantics(
+                  button: true,
+                  label: l10n.housekeepingDismissScan(time),
+                  child: ExcludeSemantics(
+                    child: TextButton(
+                      onPressed: onDismiss,
+                      child: Text(l10n.housekeepingDismiss),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           if (scan.lostHistory)

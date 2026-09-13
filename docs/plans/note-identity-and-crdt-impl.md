@@ -574,6 +574,69 @@ possible history loss for a certain outage.
 - Strings through `AppLocalizations`; manual test plan updated for the new
   panel content.
 
+### Step 13.5 — Scan history in `metadata.db`
+
+Added after step 13 landed its in-memory list of recent scans and review
+asked why the data was not kept. It should be: a user who quits before
+opening Settings never sees the notice that a note's history stayed with a
+tombstone, and twenty in-memory entries are pushed out by an afternoon of
+editing in another tool. The facts the notices describe are already durable
+in the catalog; the narrative of how they got there is what this step keeps.
+
+Two tables in `metadata.db` — device-local, like everything in it, so nothing
+here reaches the shared map:
+
+```sql
+CREATE TABLE IF NOT EXISTS bf_scan (
+  id               INTEGER PRIMARY KEY,   -- rowid
+  started_utc      INTEGER NOT NULL,      -- ms since epoch
+  finished_utc     INTEGER NOT NULL,
+  trigger          TEXT    NOT NULL,      -- open | resume | watcher | manual
+  complete         INTEGER NOT NULL,      -- 0/1: the folder listed in full
+  listing_error    TEXT,                  -- when complete = 0
+  lost_history     INTEGER NOT NULL,      -- 0/1: tombstoned and created in one pass
+  acknowledged_utc INTEGER                -- null until dismissed in Housekeeping
+);
+CREATE TABLE IF NOT EXISTS bf_scan_event (
+  scan_id  INTEGER NOT NULL REFERENCES bf_scan(id) ON DELETE CASCADE,
+  kind     TEXT    NOT NULL,   -- reconciled | created | adopted | moved | tombstoned | retired | failed
+  path     TEXT    NOT NULL,   -- engram-relative, as it was at the time
+  new_path TEXT,               -- moved only
+  ulid     TEXT,               -- the note, when there is one
+  error    TEXT                -- failed only
+);
+```
+
+- **Only a scan that changed something or failed gets a row.** Clean scans
+  are the overwhelming majority — every resume where nothing moved — and
+  carry no information beyond "a scan ran at time T", which is one `bf_meta`
+  key, `last_scan_utc`. This is the same rule the in-memory list used.
+- **Measured, not estimated.** SQLite sizes an integer by its value, not its
+  declared type: a millisecond timestamp is 6 bytes, a 0/1 flag is 0 bytes,
+  a null is 0 bytes. On a real database with 10,000 scans and 100,000 events
+  after `VACUUM`, a `bf_scan` row costs **48 B** and a `bf_scan_event` row
+  **86 B**, indexes included. A year of heavy external editing is around
+  2 MB; the first scan of a 5,000-note vault is half a megabyte, once. The
+  op-log in the same file is already ten times that for such a vault.
+- **The event carries the note's ULID**, not only its path, so a tombstone
+  event still resolves after the path is reused — which is what a later
+  "the deleted note's history is still here; attach it to the new one?"
+  affordance would need, and the reason this is worth keeping at all.
+- **Retention:** rows older than a year are pruned on session open, except
+  scans that lost history or failed, which are never pruned automatically —
+  they are the ones the user needs to be able to find, and rare enough that
+  "never" is bounded in practice. **Dismissing** a notice in Housekeeping
+  sets `acknowledged_utc`; the panel lists what has not been dismissed.
+- **Schema version stays at 1.** Both tables are `CREATE TABLE IF NOT
+  EXISTS`, injected on open the way every table here is, so a database from
+  step 2 gains them silently; the version is for changes a build cannot read
+  past, and this is not one.
+- **Tests that matter:** a record round-trips through the two tables and
+  back into the report it came from, including a failure's message and a
+  move's two paths; a clean scan writes only the `bf_meta` stamp; the prune
+  rule keeps a history-loss scan from two years ago and drops a clean-ish
+  one from thirteen months ago; deleting a scan cascades to its events.
+
 ### Step 14 — `blobLww` for binary content
 
 The op-log carries a register — content hash, size, and the HLC/peerID stamp

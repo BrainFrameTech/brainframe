@@ -311,6 +311,21 @@ void main() {
     });
   });
 
+  group('lastTombstoneAt', () {
+    test('finds the newest tombstone at a path, and nothing live', () {
+      final first = row(path: 'a.md', state: NoteState.tombstoned);
+      final second = row(path: 'a.md', state: NoteState.tombstoned);
+      final live = row(path: 'a.md');
+      catalog
+        ..upsert(first)
+        ..upsert(second)
+        ..upsert(live);
+
+      expect(catalog.lastTombstoneAt('a.md'), second);
+      expect(catalog.lastTombstoneAt('b.md'), isNull);
+    });
+  });
+
   group('countTombstoned', () {
     test('counts only tombstones', () {
       catalog

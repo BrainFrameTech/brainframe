@@ -15,6 +15,7 @@ import 'package:brainframe/engram/crdt/materializer_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/note_document_io.dart';
 import 'package:brainframe/engram/crdt/note_document_lock.dart';
+import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
@@ -50,7 +51,8 @@ void main() {
   ///
   /// The map is written only on [_Device.publish], never by a timer: what the
   /// other device can see is then something each test states.
-  Future<_Device> device({String? engramId}) async {
+  Future<_Device> device({String? engramId, EngramStore? over}) async {
+    final files = over ?? engram;
     final store = await MetadataDatabase.open(
       engramId ?? newUlid(),
       resolveRoot: resolveRoot,
@@ -70,13 +72,13 @@ void main() {
       identity,
       CrdtNoteWriter(
         database: store,
-        engram: engram,
+        engram: files,
         lock: lock,
         identity: identity,
       ),
       DriftReconciler(
         database: store,
-        engram: engram,
+        engram: files,
         lock: lock,
         identity: identity,
       ),
@@ -247,7 +249,7 @@ void main() {
       expect(await engram.readString('pic.png'), 'still not a png, but longer');
       final blob = BlobDocument.open(store: d.store, ulid: after.ulid);
       addTearDown(blob.dispose);
-      expect(blob.state, BlobState.of(await engram.readBytes('pic.png')));
+      expect(blob.state, ContentDigest.of(await engram.readBytes('pic.png')));
       expect(
         blob.document.exportChanges().every(
           (change) => change.payloadBytes().length < 128,
@@ -604,6 +606,50 @@ void main() {
       expect(changesOf(d, 'new.md'), 2, reason: 'the seed and one edit');
     });
 
+    test('a blob is never read whole, at any step', () async {
+      // #151: a video is a blob like any other, and a Pi cannot hold one in
+      // memory. Every path that needs a blob's hash — bringing it in,
+      // matching it after a move, noticing it changed — streams it. The
+      // store here refuses to hand over a whole blob, so any regression is
+      // a thrown error, not a quiet allocation.
+      final guarded = _NoWholeBlobStore(engram);
+      final d = await device(over: guarded);
+      final bytes = Uint8List.fromList(
+        List.generate(300 * 1024, (i) => (i * 13) & 0xff),
+      );
+      await engram.writeBytes('clip.mp4', bytes);
+
+      // Brought in.
+      var report = await d.reconciler.scan();
+      expect(report.created, ['clip.mp4']);
+      expect(report.failed, isEmpty);
+      final row = d.store.catalog.byPath('clip.mp4')!;
+      expect(row.materializedHash, contentHash(bytes));
+      expect(row.size, bytes.length);
+
+      // Changed.
+      bytes[0] ^= 0xff;
+      await engram.writeBytes('clip.mp4', bytes);
+      report = await d.reconciler.scan();
+      expect(report.reconciled, ['clip.mp4']);
+      expect(report.failed, isEmpty);
+      expect(changesOf(d, 'clip.mp4'), 2);
+
+      // Moved: matched by hash against the missing row.
+      await engram.move('clip.mp4', 'media/clip.mp4');
+      report = await d.reconciler.scan();
+      expect(report.moved, {'clip.mp4': 'media/clip.mp4'});
+      expect(report.failed, isEmpty);
+      expect(d.store.catalog.byPath('media/clip.mp4')!.ulid, row.ulid);
+
+      expect(
+        guarded.streamed,
+        everyElement(endsWith('.mp4')),
+        reason: 'only blobs went through openRead',
+      );
+      expect(guarded.streamed.length, greaterThanOrEqualTo(3));
+    });
+
     test('a blob is minted with a register, not a sequence', () async {
       final d = await device();
       final bytes = Uint8List.fromList([0x89, 0x50, 0]);
@@ -621,7 +667,7 @@ void main() {
       // The claim is the file's hash and size; the document has no text.
       final blob = BlobDocument.open(store: d.store, ulid: row.ulid);
       addTearDown(blob.dispose);
-      expect(blob.state, BlobState.of(bytes));
+      expect(blob.state, ContentDigest.of(bytes));
       expect(
         () => NoteDocument.open(store: d.store, ulid: row.ulid),
         throwsArgumentError,
@@ -1663,4 +1709,41 @@ class _Device {
     await reconciler.close();
     store.close();
   }
+}
+
+
+/// A store over the real one that refuses to read a blob whole: what
+/// proves the scan streams every blob and never loads one.
+class _NoWholeBlobStore extends EngramStore {
+  _NoWholeBlobStore(this.inner);
+
+  final FileSystemEngramStore inner;
+  final List<String> streamed = [];
+
+  @override
+  Future<List<String>> list() => inner.list();
+
+  @override
+  Future<List<String>> listDirectories() => inner.listDirectories();
+
+  @override
+  Future<Uint8List> readBytes(String path) {
+    if (mergePolicyForPath(path) == MergePolicy.blobLww) {
+      throw StateError('readBytes($path): a blob must be streamed');
+    }
+    return inner.readBytes(path);
+  }
+
+  @override
+  Stream<List<int>> openRead(String path) {
+    streamed.add(path);
+    return inner.openRead(path);
+  }
+
+  @override
+  Future<void> writeBytes(String path, Uint8List bytes) =>
+      inner.writeBytes(path, bytes);
+
+  @override
+  Future<FileFingerprint?> statFile(String path) => inner.statFile(path);
 }

@@ -5,9 +5,15 @@
 /// the same callers. Decision 3 in code: the op-log carries what
 /// last-writer-wins actually requires — an ordering, and enough about the
 /// value to know which one won — and the file stays in the engram as the
-/// ordinary file it already is. The register holds the content hash and size;
-/// the HLC/peerID stamp the comparator needs is the operation's own id, so it
-/// is not repeated inside the value.
+/// ordinary file it already is. The register holds a [ContentDigest] — the
+/// content hash and size; the HLC/peerID stamp the comparator needs is the
+/// operation's own id, so it is not repeated inside the value.
+///
+/// **Nothing here sees the bytes.** [mint] and [record] take the digest, and
+/// the caller computes it over a stream ([digestFile]) — a video dropped into
+/// the folder is a blob like any other, and the targets this app runs on
+/// cannot hold one in memory. The one thing this file knows about a blob's
+/// content is forty bytes long.
 ///
 /// **A blob never enters the diff path.** Not by a check at the door but by
 /// construction: there is no text handler on this document to diff into, and
@@ -48,49 +54,24 @@ const String blobHandlerId = 'blob';
 /// read back on every open. Persisted data needs a constant.
 const String blobHandlerType = 'BrainFrameBlobRegister';
 
-/// What the register says the file is: its SHA-256 and its length.
+/// [ContentDigest] on the wire: the 32 hash bytes, then the size as a varint.
 ///
 /// The hash is what decides whether two claims are the same claim; the size
 /// is a cheap cross-check the scan's pre-filter can use without hashing, and
 /// costs a varint.
-class BlobState {
-  const BlobState({required this.hash, required this.size});
-
-  /// The bytes as the scan would describe them.
-  factory BlobState.of(Uint8List bytes) =>
-      BlobState(hash: contentHash(bytes), size: bytes.length);
-
-  /// Lowercase hex SHA-256 of the file, as [contentHash] spells it.
-  final String hash;
-
-  /// The file's length in bytes.
-  final int size;
-
-  @override
-  bool operator ==(Object other) =>
-      other is BlobState && other.hash == hash && other.size == size;
-
-  @override
-  int get hashCode => Object.hash(hash, size);
-
-  @override
-  String toString() => 'BlobState($hash, $size bytes)';
-}
-
-/// [BlobState] on the wire: the 32 hash bytes, then the size as a varint.
 ///
 /// Forty-odd bytes a claim, against a JSON encoding of about a hundred. Not
 /// for the saving — the change envelope around it is larger than either —
 /// but because a fixed binary layout is a statement that this value has
 /// exactly two fields, and a reader of a future build can tell a truncated
 /// record from a valid one.
-class BlobStateCodec implements ValueCodec<BlobState> {
-  const BlobStateCodec();
+class ContentDigestCodec implements ValueCodec<ContentDigest> {
+  const ContentDigestCodec();
 
   static const int _hashBytes = 32;
 
   @override
-  Uint8List encode(BlobState value) {
+  Uint8List encode(ContentDigest value) {
     if (value.hash.length != _hashBytes * 2) {
       throw FormatException('not a SHA-256 hex digest: "${value.hash}"');
     }
@@ -103,7 +84,7 @@ class BlobStateCodec implements ValueCodec<BlobState> {
   }
 
   @override
-  BlobState decode(Uint8List bytes) {
+  ContentDigest decode(Uint8List bytes) {
     if (bytes.length < _hashBytes + 1) {
       throw const FormatException('Truncated blob state');
     }
@@ -112,7 +93,7 @@ class BlobStateCodec implements ValueCodec<BlobState> {
       hash.write(bytes[i].toRadixString(16).padLeft(2, '0'));
     }
     final size = UVarint.read(bytes, offset: _hashBytes);
-    return BlobState(hash: hash.toString(), size: size.value);
+    return ContentDigest(hash: hash.toString(), size: size.value);
   }
 }
 
@@ -137,19 +118,20 @@ class BlobDocument extends PersistedDocument {
 
   /// The one register. Exposed like [NoteDocument.text], for a caller that
   /// needs the handler rather than its value.
-  final CRDTRegisterHandler<BlobState> register;
+  final CRDTRegisterHandler<ContentDigest> register;
 
   /// What the history says the file is, or null before the first claim —
   /// which [mint] makes, so a document this device opened never reads null.
-  BlobState? get state => register.value;
+  ContentDigest? get state => register.value;
 
-  /// Mints a new blob note: a fresh ULID, a register set to what [bytes]
-  /// are, and a catalog row.
+  /// Mints a new blob note: a fresh ULID, a register set to [digest], and a
+  /// catalog row.
   ///
-  /// The first claim is written unconditionally, even for an empty file — a
-  /// zero-byte image is a claim like any other — so a blob's op-log is never
-  /// empty after a mint, and [open] never mistakes one of ours for a note
-  /// whose history is elsewhere.
+  /// [digest] is what the caller established about the file, over a stream;
+  /// the bytes themselves never come this way. The first claim is written
+  /// unconditionally, even for an empty file — a zero-byte image is a claim
+  /// like any other — so a blob's op-log is never empty after a mint, and
+  /// [open] never mistakes one of ours for a note whose history is elsewhere.
   ///
   /// [path] is engram-relative; its extension derives the merge policy, fixed
   /// here at creation, and it must be `blobLww` — text is minted through
@@ -159,7 +141,7 @@ class BlobDocument extends PersistedDocument {
   static BlobDocument mint({
     required MetadataDatabase store,
     required String path,
-    required Uint8List bytes,
+    required ContentDigest digest,
   }) {
     final policy = mergePolicyForPath(path);
     if (policy != MergePolicy.blobLww) {
@@ -176,7 +158,7 @@ class BlobDocument extends PersistedDocument {
       initialClock: HybridLogicalClock.now(),
     );
     final register = _registerOn(document);
-    register.set(BlobState.of(bytes));
+    register.set(digest);
 
     final note = BlobDocument._(
       ulid,
@@ -230,30 +212,30 @@ class BlobDocument extends PersistedDocument {
     return BlobDocument._(ulid, document, register, changes, document.version);
   }
 
-  /// Claims that the file is now [bytes]: a last-writer-wins write, stamped
+  /// Claims that the file is now [digest]: a last-writer-wins write, stamped
   /// with this device's clock and id, and committed to the op-log.
   ///
   /// This is how an external replacement of an image becomes history — the
   /// scan finds the file's hash no longer matches the catalog's, and records
-  /// the new bytes as a write by this device at the time it noticed. A claim
+  /// what it found as a write by this device at the time it noticed. A claim
   /// identical to the current one is not written: it would say nothing the
   /// log does not already say, and the caller has usually just compared the
   /// hashes anyway.
   ///
   /// Returns whether a claim was written.
-  bool record(Uint8List bytes) {
-    final next = BlobState.of(bytes);
-    if (next == state) return false;
-    register.set(next);
+  bool record(ContentDigest digest) {
+    if (digest == state) return false;
+    register.set(digest);
     persist();
     return true;
   }
 
-  static CRDTRegisterHandler<BlobState> _registerOn(CRDTDocument document) =>
-      CRDTRegisterHandler<BlobState>(
-        document,
-        blobHandlerId,
-        valueCodec: const BlobStateCodec(),
-        handlerType: blobHandlerType,
-      );
+  static CRDTRegisterHandler<ContentDigest> _registerOn(
+    CRDTDocument document,
+  ) => CRDTRegisterHandler<ContentDigest>(
+    document,
+    blobHandlerId,
+    valueCodec: const ContentDigestCodec(),
+    handlerType: blobHandlerType,
+  );
 }

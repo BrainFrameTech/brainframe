@@ -41,7 +41,7 @@ void main() {
   /// A stand-in for a second device's copy of the same document: the same
   /// ULID, a different peer, and a clock the test controls so the winner
   /// is the comparator's choice rather than the wall clock's.
-  ({CRDTDocument doc, CRDTRegisterHandler<BlobState> register}) peerCopy(
+  ({CRDTDocument doc, CRDTRegisterHandler<ContentDigest> register}) peerCopy(
     String ulid,
     PeerId peer, {
     int clock = kBaseLogicalTime,
@@ -51,10 +51,10 @@ void main() {
       documentId: ulid,
       initialClock: HybridLogicalClock(l: clock, c: 0),
     );
-    final register = CRDTRegisterHandler<BlobState>(
+    final register = CRDTRegisterHandler<ContentDigest>(
       doc,
       blobHandlerId,
-      valueCodec: const BlobStateCodec(),
+      valueCodec: const ContentDigestCodec(),
       handlerType: blobHandlerType,
     );
     return (doc: doc, register: register);
@@ -62,32 +62,22 @@ void main() {
 
   final png = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a]);
 
-  group('BlobState', () {
-    test('describes bytes by hash and size', () {
-      final state = BlobState.of(png);
-      expect(state.hash, contentHash(png));
-      expect(state.size, png.length);
-      expect(state, BlobState.of(Uint8List.fromList(png)));
-      expect(state.hashCode, BlobState.of(Uint8List.fromList(png)).hashCode);
-      expect(state, isNot(BlobState.of(Uint8List.fromList([0x89]))));
-      expect(state.toString(), contains('${png.length} bytes'));
-    });
-
+  group('ContentDigest on the wire', () {
     test('the codec round-trips, in forty-odd bytes', () {
-      const codec = BlobStateCodec();
-      final state = BlobState.of(png);
+      const codec = ContentDigestCodec();
+      final state = ContentDigest.of(png);
       final bytes = codec.encode(state);
       expect(bytes.length, 33, reason: '32 hash bytes and a one-byte varint');
       expect(codec.decode(bytes), state);
 
-      final large = BlobState(hash: state.hash, size: 1 << 40);
+      final large = ContentDigest(hash: state.hash, size: 1 << 40);
       expect(codec.decode(codec.encode(large)), large);
     });
 
     test('the codec refuses what is not a digest', () {
-      const codec = BlobStateCodec();
+      const codec = ContentDigestCodec();
       expect(
-        () => codec.encode(const BlobState(hash: 'abc', size: 1)),
+        () => codec.encode(const ContentDigest(hash: 'abc', size: 1)),
         throwsFormatException,
       );
       expect(
@@ -102,11 +92,15 @@ void main() {
       final store = await openStore();
       addTearDown(store.close);
 
-      final blob = BlobDocument.mint(store: store, path: 'pic.png', bytes: png);
+      final blob = BlobDocument.mint(
+        store: store,
+        path: 'pic.png',
+        digest: ContentDigest.of(png),
+      );
       addTearDown(blob.dispose);
 
       expect(blob.document.documentId, blob.ulid);
-      expect(blob.state, BlobState.of(png));
+      expect(blob.state, ContentDigest.of(png));
       final row = store.catalog.byUlid(blob.ulid)!;
       expect(row.path, 'pic.png');
       expect(row.mergePolicy, MergePolicy.blobLww);
@@ -126,11 +120,11 @@ void main() {
       final blob = BlobDocument.mint(
         store: store,
         path: 'empty.bin',
-        bytes: Uint8List(0),
+        digest: ContentDigest.of(Uint8List(0)),
       );
       addTearDown(blob.dispose);
 
-      expect(blob.state, BlobState.of(Uint8List(0)));
+      expect(blob.state, ContentDigest.of(Uint8List(0)));
       expect(
         store.crdt.changeStorageForDocument(blob.ulid).getChanges(),
         isNotEmpty,
@@ -143,7 +137,11 @@ void main() {
       addTearDown(store.close);
 
       expect(
-        () => BlobDocument.mint(store: store, path: 'note.md', bytes: png),
+        () => BlobDocument.mint(
+          store: store,
+          path: 'note.md',
+          digest: ContentDigest.of(png),
+        ),
         throwsArgumentError,
       );
       expect(store.catalog.byPath('note.md'), isNull);
@@ -154,7 +152,11 @@ void main() {
     test('the document has no text sequence', () async {
       final store = await openStore();
       addTearDown(store.close);
-      final blob = BlobDocument.mint(store: store, path: 'pic.png', bytes: png);
+      final blob = BlobDocument.mint(
+        store: store,
+        path: 'pic.png',
+        digest: ContentDigest.of(png),
+      );
       addTearDown(blob.dispose);
 
       // The only handler on the document is the register, so there is
@@ -174,7 +176,11 @@ void main() {
       addTearDown(store.close);
       final crlf = Uint8List.fromList('PNG\r\nbytes\r\n'.codeUnits);
 
-      final blob = BlobDocument.mint(store: store, path: 'x.png', bytes: crlf);
+      final blob = BlobDocument.mint(
+        store: store,
+        path: 'x.png',
+        digest: ContentDigest.of(crlf),
+      );
       addTearDown(blob.dispose);
 
       expect(blob.state!.hash, contentHash(crlf));
@@ -187,8 +193,8 @@ void main() {
       final store = await openStore();
       addTearDown(store.close);
       final ulid = newUlid();
-      final earlier = BlobState.of(Uint8List.fromList([1]));
-      final later = BlobState.of(Uint8List.fromList([2]));
+      final earlier = ContentDigest.of(Uint8List.fromList([1]));
+      final later = ContentDigest.of(Uint8List.fromList([2]));
 
       final a = peerCopy(ulid, peerA, clock: kBaseLogicalTime + 1000);
       final b = peerCopy(ulid, peerB);
@@ -211,8 +217,8 @@ void main() {
       // peerA < peerB — and it is pinned here in the same spirit: a change
       // must fail loudly, not silently invert a winner.
       final ulid = newUlid();
-      final fromA = BlobState.of(Uint8List.fromList([0xa]));
-      final fromB = BlobState.of(Uint8List.fromList([0xb]));
+      final fromA = ContentDigest.of(Uint8List.fromList([0xa]));
+      final fromB = ContentDigest.of(Uint8List.fromList([0xb]));
 
       final a = peerCopy(ulid, peerA);
       final b = peerCopy(ulid, peerB);
@@ -233,8 +239,8 @@ void main() {
 
     test("a third replica replaying from scratch agrees", () async {
       final ulid = newUlid();
-      final fromA = BlobState.of(Uint8List.fromList([0xa]));
-      final fromB = BlobState.of(Uint8List.fromList([0xb]));
+      final fromA = ContentDigest.of(Uint8List.fromList([0xa]));
+      final fromB = ContentDigest.of(Uint8List.fromList([0xb]));
       final a = peerCopy(ulid, peerA, clock: kBaseLogicalTime + 5);
       final b = peerCopy(ulid, peerB);
       a.register.set(fromA);
@@ -255,7 +261,7 @@ void main() {
       final blob = BlobDocument.mint(
         store: store,
         path: 'pic.png',
-        bytes: Uint8List.fromList([1]),
+        digest: ContentDigest.of(Uint8List.fromList([1])),
       );
       final ours = blob.state;
       blob.dispose();
@@ -267,7 +273,7 @@ void main() {
         peerB,
         clock: DateTime.now().millisecondsSinceEpoch + 60000,
       );
-      final theirs = BlobState.of(Uint8List.fromList([2]));
+      final theirs = ContentDigest.of(Uint8List.fromList([2]));
       remote.register.set(theirs);
       store.crdt
           .changeStorageForDocument(blob.ulid)
@@ -290,9 +296,17 @@ void main() {
         big[i] = i & 0xff;
       }
 
-      final one = BlobDocument.mint(store: store, path: 'a.bin', bytes: small);
+      final one = BlobDocument.mint(
+        store: store,
+        path: 'a.bin',
+        digest: ContentDigest.of(small),
+      );
       addTearDown(one.dispose);
-      final two = BlobDocument.mint(store: store, path: 'b.bin', bytes: big);
+      final two = BlobDocument.mint(
+        store: store,
+        path: 'b.bin',
+        digest: ContentDigest.of(big),
+      );
       addTearDown(two.dispose);
 
       int stored(String ulid) =>
@@ -314,28 +328,32 @@ void main() {
       final blob = BlobDocument.mint(
         store: store,
         path: 'a.bin',
-        bytes: Uint8List(0),
+        digest: ContentDigest.of(Uint8List(0)),
       );
       addTearDown(blob.dispose);
 
       final replaced = Uint8List(1024 * 1024);
-      expect(blob.record(replaced), isTrue);
+      expect(blob.record(ContentDigest.of(replaced)), isTrue);
 
       final changes = store.crdt
           .changeStorageForDocument(blob.ulid)
           .getChanges();
       expect(changes.length, 2);
       expect(changes.last.payloadBytes().length, lessThan(128));
-      expect(blob.state, BlobState.of(replaced));
+      expect(blob.state, ContentDigest.of(replaced));
     });
 
     test('recording the same bytes again writes nothing', () async {
       final store = await openStore();
       addTearDown(store.close);
-      final blob = BlobDocument.mint(store: store, path: 'a.bin', bytes: png);
+      final blob = BlobDocument.mint(
+        store: store,
+        path: 'a.bin',
+        digest: ContentDigest.of(png),
+      );
       addTearDown(blob.dispose);
 
-      expect(blob.record(Uint8List.fromList(png)), isFalse);
+      expect(blob.record(ContentDigest.of(Uint8List.fromList(png))), isFalse);
       expect(
         store.crdt.changeStorageForDocument(blob.ulid).getChanges().length,
         1,
@@ -350,9 +368,9 @@ void main() {
         final blob = BlobDocument.mint(
           store: store,
           path: 'pic.png',
-          bytes: png,
+          digest: ContentDigest.of(png),
         );
-        blob.record(Uint8List.fromList([9, 9, 9]));
+        blob.record(ContentDigest.of(Uint8List.fromList([9, 9, 9])));
         blob.dispose();
         store.close();
         return blob.ulid;
@@ -363,7 +381,7 @@ void main() {
       final reopened = BlobDocument.open(store: store, ulid: ulid);
       addTearDown(reopened.dispose);
 
-      expect(reopened.state, BlobState.of(Uint8List.fromList([9, 9, 9])));
+      expect(reopened.state, ContentDigest.of(Uint8List.fromList([9, 9, 9])));
     });
 
     test('an unknown ULID is unknown', () async {

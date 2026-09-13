@@ -59,6 +59,70 @@ void main() {
     });
   });
 
+  group('ContentDigest', () {
+    final png = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a]);
+
+    test('describes bytes by hash and size, as one value', () {
+      final digest = ContentDigest.of(png);
+      expect(digest.hash, contentHash(png));
+      expect(digest.size, png.length);
+      expect(digest, ContentDigest.of(Uint8List.fromList(png)));
+      expect(
+        digest.hashCode,
+        ContentDigest.of(Uint8List.fromList(png)).hashCode,
+      );
+      expect(digest, isNot(ContentDigest.of(Uint8List.fromList([0x89]))));
+      expect(digest.toString(), contains('${png.length} bytes'));
+    });
+  });
+
+  group('digestStream', () {
+    // A blob may be larger than memory, so the hash is folded chunk by
+    // chunk. What matters is that the answer does not depend on where the
+    // chunk boundaries fall — including none at all, and one every byte.
+    final bytes = Uint8List.fromList(List.generate(1000, (i) => i * 7 & 0xff));
+    final whole = ContentDigest.of(bytes);
+
+    Stream<List<int>> chunked(int size) async* {
+      for (var i = 0; i < bytes.length; i += size) {
+        yield bytes.sublist(
+          i,
+          i + size > bytes.length ? bytes.length : i + size,
+        );
+      }
+    }
+
+    test('agrees with the whole-bytes digest at any chunk size', () async {
+      expect(await digestStream(chunked(bytes.length)), whole);
+      expect(await digestStream(chunked(64)), whole);
+      expect(await digestStream(chunked(7)), whole);
+      expect(await digestStream(chunked(1)), whole);
+    });
+
+    test('an empty stream is the digest of nothing', () async {
+      final empty = await digestStream(const Stream<List<int>>.empty());
+      expect(empty, ContentDigest.of(Uint8List(0)));
+      expect(empty.size, 0);
+    });
+
+    test('counts the size across chunks, not per chunk', () async {
+      expect((await digestStream(chunked(300))).size, 1000);
+    });
+
+    test('digestFile streams from the store', () async {
+      final store = _ChunkedStore({'a.bin': bytes}, chunkSize: 128);
+      expect(await digestFile(store, 'a.bin'), whole);
+      expect(store.reads, ['a.bin'], reason: 'openRead, never readBytes');
+    });
+
+    test('a store with no stream of its own still digests', () async {
+      // The base class delivers readBytes as one chunk, so a backend that
+      // has no streaming primitive is correct, if not memory-bounded.
+      final store = _WholeStore({'a.bin': bytes});
+      expect(await digestFile(store, 'a.bin'), whole);
+    });
+  });
+
   group('hasDrifted decides', () {
     test('a matching hash is not drift', () {
       final hash = contentHashOfString('same\n');
@@ -68,8 +132,10 @@ void main() {
 
     test('a different hash is drift', () {
       expect(
-        hasDrifted(rowWith(hash: contentHashOfString('old\n')),
-            contentHashOfString('new\n')),
+        hasDrifted(
+          rowWith(hash: contentHashOfString('old\n')),
+          contentHashOfString('new\n'),
+        ),
         isTrue,
       );
     });
@@ -244,4 +310,50 @@ void main() {
       );
     });
   });
+}
+
+/// A store that streams in fixed chunks and refuses to hand over a whole
+/// file: what proves a digest never loaded one.
+class _ChunkedStore extends EngramStore {
+  _ChunkedStore(this.files, {required this.chunkSize});
+
+  final Map<String, Uint8List> files;
+  final int chunkSize;
+  final List<String> reads = [];
+
+  @override
+  Future<List<String>> list() async => files.keys.toList();
+
+  @override
+  Future<Uint8List> readBytes(String path) =>
+      throw StateError('readBytes($path): a blob is never read whole');
+
+  @override
+  Stream<List<int>> openRead(String path) async* {
+    reads.add(path);
+    final bytes = files[path]!;
+    for (var i = 0; i < bytes.length; i += chunkSize) {
+      final end = i + chunkSize > bytes.length ? bytes.length : i + chunkSize;
+      yield bytes.sublist(i, end);
+    }
+  }
+
+  @override
+  Future<void> writeBytes(String path, Uint8List bytes) async {}
+}
+
+/// A store with only [readBytes]: the base class's default [openRead].
+class _WholeStore extends EngramStore {
+  _WholeStore(this.files);
+
+  final Map<String, Uint8List> files;
+
+  @override
+  Future<List<String>> list() async => files.keys.toList();
+
+  @override
+  Future<Uint8List> readBytes(String path) async => files[path]!;
+
+  @override
+  Future<void> writeBytes(String path, Uint8List bytes) async {}
 }

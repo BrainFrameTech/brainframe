@@ -492,7 +492,8 @@ void main() {
         store: store,
         engram: engram,
         row: store.catalog.byUlid(note.ulid)!,
-        bytes: bytes,
+        digest: ContentDigest.of(bytes),
+        text: 'as found\r\n',
       );
 
       expect(await engram.readString('inbox/today.md'), 'as found\r\n');
@@ -507,7 +508,11 @@ void main() {
       final store = await openStore();
       addTearDown(store.close);
       final bytes = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47]);
-      final note = BlobDocument.mint(store: store, path: 'pic.png', bytes: bytes);
+      final note = BlobDocument.mint(
+        store: store,
+        path: 'pic.png',
+        digest: ContentDigest.of(bytes),
+      );
       addTearDown(note.dispose);
       await engram.writeBytes('pic.png', bytes);
 
@@ -515,7 +520,7 @@ void main() {
         store: store,
         engram: engram,
         row: store.catalog.byUlid(note.ulid)!,
-        bytes: bytes,
+        digest: ContentDigest.of(bytes),
       );
 
       expect(row.materializedHash, contentHash(bytes));

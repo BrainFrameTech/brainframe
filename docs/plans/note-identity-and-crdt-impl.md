@@ -687,6 +687,23 @@ arrives over **#67** naming bytes this device does not hold, that is the
 boundary above, and the step that carries bytes is the one to decide what
 the file does meanwhile.
 
+**A blob is never read whole** (**#151**, landed after review of the first
+cut). A video dropped into the folder is a blob like any other, and the
+targets this app runs on cannot hold one in memory. `EngramStore.openRead`
+streams a file in chunks — a real `File.openRead` on the filesystem store,
+`readBytes` as one chunk everywhere else, which is honest because no other
+backend can hold a file larger than memory — and `digestStream` folds the
+chunks into one `ContentDigest` (hash and size, computed together so they
+cannot disagree). `BlobDocument.mint` and `record` take the digest, not the
+bytes; `recordFileState` takes the digest and, for text, the decoded text
+for the sketch. The scan reads each new file once — streamed for a blob,
+whole for text, which the sketch and the seed need — and hands the result to
+both the move-match and the mint, so a large file costs one pass per scan.
+Streaming fixes memory, not time: a multi-gigabyte file is still hashed once
+at adoption and again whenever its size or mtime changes. A threshold above
+which a blob is tracked by size and mtime alone would be a design decision,
+and is not made here.
+
 - **Tests that matter:** an image never enters the diff path (the document
   has no sequence, and `NoteDocument.open` refuses it); two concurrent writes
   resolve deterministically through the locked comparator — a later HLC wins
@@ -698,6 +715,12 @@ the file does meanwhile.
 - **Measured:** a claim is 33 bytes of value for a file under 128 bytes and
   40 for one under a terabyte; the change envelope around it is larger than
   either.
+- **And for #151:** a store that throws on `readBytes` for any blob path
+  carries a 300 KiB `.mp4` through creation, an external change, and a
+  move without an error — every blob hash in the scan is streamed; the
+  streamed digest agrees with the whole-bytes one at every chunk size,
+  including one byte; the filesystem store's `openRead` yields more than one
+  chunk for a file larger than `dart:io`'s 64 KiB read size.
 
 ## Rules that apply to every step
 

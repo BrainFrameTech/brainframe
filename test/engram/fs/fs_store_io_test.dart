@@ -104,6 +104,21 @@ void main() {
       expect(await store.readBytes('assets/diagram.png'), bytes);
     });
 
+    test('openRead streams a file in more than one chunk', () async {
+      // The one backend that can hold a file larger than memory reads it
+      // as dart:io does, chunk by chunk; the chunks concatenate to the file.
+      final store = FileSystemEngramStore(locFor('e'));
+      final bytes = Uint8List.fromList(
+        List.generate(200 * 1024, (i) => (i * 31) & 0xff),
+      );
+      await store.writeBytes('big.bin', bytes);
+
+      final chunks = await store.openRead('big.bin').toList();
+
+      expect(chunks.length, greaterThan(1));
+      expect(chunks.expand((c) => c).toList(), bytes);
+    });
+
     test('list is empty for a directory that does not exist yet', () async {
       expect(await FileSystemEngramStore(locFor('missing')).list(), isEmpty);
     });

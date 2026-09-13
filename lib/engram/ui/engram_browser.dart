@@ -453,6 +453,8 @@ class _EngramBrowserState extends State<EngramBrowser> {
       onNavigateToFile: _selectFile,
       // Built-in engrams are read-only; a writable engram gets the editor.
       readOnly: engram.readOnly,
+      // The engram's own limit, for the status bar (ceiling Decision 7).
+      noteSizeCeilingBytes: engram.noteSizeCeilingBytes,
     );
   }
 

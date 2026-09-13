@@ -688,6 +688,20 @@ void main() {
         expect((await d.reconciler.scan()).isClean, isTrue);
       });
 
+      test('isPlainFile is true for it, and only it', () async {
+        // Step 21: what the editor's status bar asks, to show the regime.
+        final d = await device(ceiling: ceiling);
+        await engram.writeBytes('journal.md', filler(ceiling + 1));
+        await engram.writeBytes('note.md', filler(10));
+        await engram.writeBytes('pic.png', filler(10));
+        await d.reconciler.scan();
+
+        expect(await d.reconciler.isPlainFile('journal.md'), isTrue);
+        expect(await d.reconciler.isPlainFile('note.md'), isFalse);
+        expect(await d.reconciler.isPlainFile('pic.png'), isFalse, reason: 'a blob at its own extension is not a plain-file note');
+        expect(await d.reconciler.isPlainFile('unknown.md'), isFalse);
+      });
+
       test('the ledger counts it as a plain file', () async {
         final d = await device(ceiling: ceiling);
         await engram.writeBytes('journal.md', filler(ceiling + 1));

@@ -82,6 +82,7 @@ import 'package:brainframe/engram/ui/help_overlay.dart';
 import 'package:brainframe/engram/ui/markdown_editor_pane.dart';
 import 'package:brainframe/engram/ui/markdown_reader.dart';
 import 'package:brainframe/engram/ui/markdown_source_editor.dart';
+import 'package:brainframe/engram/ui/note_status_bar.dart';
 import 'package:brainframe/main.dart';
 import 'package:brainframe/settings/app_settings_controller.dart';
 import 'package:brainframe/settings/device_settings.dart';

@@ -1436,8 +1436,9 @@ edit that grows it) are later steps and are not testable yet.
   keep history**" and carries an emphasised line naming the path and ending
   *To keep a history, move some of the content into another note.*
 - Step 3: the note opens in the editor like any other and saves normally —
-  the chip reaches `saved`, and the other editor sees the added line. There
-  is no size warning or wall here yet (ceiling step 21).
+  the chip reaches `saved`, and the other editor sees the added line. The
+  status bar at the bottom says *Plain file — edits are saved whole; no
+  history or merging* in place of any size warning (F33).
 - Step 4: the edit is still there. Housekeeping's ledger still says **1**
   plain file — it stays one — and no new scan card appeared for a clean
   relaunch.
@@ -1548,6 +1549,77 @@ over 131,072 bytes.
 - **Inspection point:** the oversized file is never read whole at any point
   — the decision is a `stat` and Reconstruct is a rename. Not observable by
   hand; the automated tests use a store that refuses to read it.
+
+### F33 — The editor's status bar: counts, the size warning, the regime
+
+As of ceiling step 21, the editor has a status bar along its bottom edge:
+the note's size in **bytes as it will be on disk**, its **words**, and its
+**lines**, each labeled. Within 10 % of the note size limit (117,965 of
+131,072 bytes) a **Near the size limit** button appears beside them and
+opens an explanation; for a note that is a plain file (F31, F32) the same
+slot says so instead. The fixture engram carries a note exactly one byte
+under the warning, `reference/point-count-tally-near-limit.md`.
+
+**Steps:**
+
+1. Open `index.md` in Edit mode. Read the bar. Type a word; wait a moment;
+   read it again. Delete the word.
+2. Open `reference/point-count-tally-near-limit.md`. Read the bar. Type one
+   character at the very end. Delete it.
+3. With the character typed again, tap **Near the size limit**. Read the
+   dialog; tap **OK**.
+4. Open `reference/logger-export-full-transcript.md` (the plain file from
+   F31). Read the bar.
+5. Open `daily/2026-05-02.md`; switch to **Preview**; read the bar. Switch
+   back.
+6. With a screen reader on (VoiceOver, TalkBack, NVDA), repeat step 2 and
+   listen at the moment the character is typed; then focus the button.
+7. Increase the system text size two steps and repeat step 2.
+
+**Expected:**
+
+- Step 1: *Bytes: 1,562 · Words: 182 · Lines: 47* for the unmodified
+  fixture; after the typed word the bytes and words are higher within a
+  fraction of a second — not on every keystroke, but by the time you look —
+  and back after the delete. No limit is shown and no warning.
+- Step 2: *Bytes: 117,964 · Words: … · Lines: …* and no warning. After one
+  character: *Bytes: 117,965 of 131,072 · …* and an amber **⚠ Near the size
+  limit** at the right. After the delete: the limit and the button are gone.
+  The change is a repaint, not an animation.
+- Step 3: a dialog titled **Approaching the size limit**: *This note is
+  117,965 bytes; the limit for a note that keeps its history is 131,072.
+  Above it, BrainFrame cannot keep the note's edit history or merge changes
+  from other devices.* — then what to do (move content to another note or
+  trim it) and what happens past the limit (you will be asked to undo or to
+  keep it as a plain file). OK closes it; nothing else changes.
+- Step 4: the counts, and in the warning's slot *Plain file — edits are
+  saved whole; no history or merging.* Never a warning here, however large
+  the note.
+- Step 5: the bar stays under the preview, with the same counts — it counts
+  the buffer, not the view.
+- Step 6: the button is announced as it appears (a live region) and reads
+  *Near the size limit: 117,965 of 131,072 bytes. Opens an explanation.* The
+  counts read in order as plain text.
+- Step 7: the bar's text scales; the counts stay on one line with the button
+  beside them or, if there is no room, the counts truncate with an ellipsis
+  and the button stays whole and tappable.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓; step 7 via Accessibility › Font size | as Android | ✓; step 7 via Dynamic Type | ✓; the bar repaints on the next push — after a typed character it is right by the next screen refresh, not before |
+
+- **The unit is bytes on disk, not characters** (ceiling Decision 1): type a
+  CJK character or an emoji and the byte count rises by 3 or 4, not 1.
+  Words are runs of non-whitespace — `#` on its own is a word, and a CJK
+  sentence without spaces is one word; that is by design.
+- **Never per keystroke:** the bar lags a burst of typing by up to ~150 ms
+  and then shows the final count. Report it if the editor stutters while
+  typing in the large note — that is what the coalescing exists to prevent.
+- **Declarative-trap probe:** after the delete in step 2 the limit and the
+  button must actually disappear, not linger greyed.
+- **Inspection point:** the warning threshold is the engram's ceiling × 0.9,
+  rounded up; an engram whose `engram.json` records a lower ceiling (F26's
+  probe) warns at 90 % of that instead.
 
 ---
 

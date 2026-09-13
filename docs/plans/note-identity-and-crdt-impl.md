@@ -873,6 +873,23 @@ slot (Decision 5). Every string through `AppLocalizations`. The fixture
 gains a note just under the warning. First user-visible step of the ceiling;
 the manual test plan gains its case.
 
+As built: `NoteStatusBar` in
+[note_status_bar.dart](../../lib/engram/ui/note_status_bar.dart), with
+`NoteCounts.of` as the one counting function (bytes through
+`noteSizeInBytes`, words as `\S+` runs, lines as LF count plus one — zero
+for an empty note) and `formatDecimal` as the one number formatter, which
+Housekeeping now shares. The edit controller notifies on every edit — once
+per edit, a transition having already notified — because a run of typing
+that stays dirty throughout would otherwise never reach the bar; the bar
+coalesces its counting to one per `repaintInterval` (150 ms), the adoption
+bar's pattern, so a burst of typing is one count. The pane takes the
+engram's ceiling from the browser and asks `NoteReconciler.isPlainFile` at
+open for the regime; a plain file gets the regime line and never the
+warning, since it has no limit and no history to lose to one. The warning
+is `TextButton.icon` with a live-region Semantics label carrying the
+numbers; its dialog says where the note stands, what happens at the limit,
+and what to do, and ends by saying what step 22 will ask.
+
 - **Tests that matter:** the three counts on a known text, including a CJK
   one; the warning appears at 117,965 and not at 117,964; the popup's
   Semantics; the regime line for a blob `.md` and not for a text one.

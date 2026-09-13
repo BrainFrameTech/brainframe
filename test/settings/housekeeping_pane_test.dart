@@ -831,6 +831,9 @@ class _Notes implements NoteReconciler {
   }
 
   @override
+  Future<bool> isPlainFile(String path) async => false;
+
+  @override
   Future<DriftScanReport> scan({
     ScanTrigger trigger = ScanTrigger.manual,
   }) async => DriftScanReport.clean;

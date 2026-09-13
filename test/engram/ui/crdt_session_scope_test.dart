@@ -498,6 +498,9 @@ class _RecordingReconciler implements NoteReconciler {
   Future<String> reconstruct(String path) async => path;
 
   @override
+  Future<bool> isPlainFile(String path) async => false;
+
+  @override
   Stream<String> get reconciled => const Stream<String>.empty();
 }
 

@@ -166,7 +166,24 @@ void main() {
       expect(find.text('2 of them have no history anywhere.'), findsOneWidget);
       expect(find.textContaining('3 deleted notes'), findsOneWidget);
       expect(find.text('Recent scans'), findsOneWidget);
-      expect(find.textContaining('No scan has changed'), findsOneWidget);
+      expect(find.textContaining('Nothing to show'), findsOneWidget);
+    });
+
+    testWidgets('says when the last scan ran, once one has', (tester) async {
+      final notes = _Notes.named(
+        ledgerValue: NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+          lastScanAt: DateTime(2026, 9, 12, 9, 27),
+        ),
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Last scan: 9:27 AM.'), findsOneWidget);
     });
 
     testWidgets('the singular and zero forms read as sentences', (
@@ -207,14 +224,18 @@ void main() {
         ),
         scans: [
           ScanNotice(
+            id: 2,
             at: DateTime(2026, 9, 12, 14, 30),
+            trigger: ScanTrigger.resume,
             report: const DriftScanReport(
               reconciled: ['a.md', 'b.md'],
               moved: {'old.md': 'new.md'},
             ),
           ),
           ScanNotice(
+            id: 1,
             at: DateTime(2026, 9, 12, 9, 5),
+            trigger: ScanTrigger.open,
             report: const DriftScanReport(created: ['c.md'], adopted: ['d.md']),
           ),
         ],
@@ -224,12 +245,74 @@ void main() {
 
       expect(find.text('2 notes updated from disk, 1 moved'), findsOneWidget);
       expect(find.text('1 created, 1 adopted'), findsOneWidget);
+      expect(find.text('2:30 PM · on resume'), findsOneWidget);
+      expect(find.text('9:05 AM · at open'), findsOneWidget);
       // Newest first: 14:30's card is above 09:05's.
       final later = tester.getTopLeft(
         find.text('2 notes updated from disk, 1 moved'),
       );
       final earlier = tester.getTopLeft(find.text('1 created, 1 adopted'));
       expect(later.dy, lessThan(earlier.dy));
+    });
+
+    testWidgets('Dismiss hides a recorded scan and tells the reconciler', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            id: 7,
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(created: ['c.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+      expect(find.text('1 created'), findsOneWidget);
+
+      final dismiss = find.widgetWithText(TextButton, 'Dismiss');
+      expect(
+        tester.getSemantics(dismiss).label,
+        contains('Dismiss the scan from 2:30 PM'),
+      );
+      await tester.tap(dismiss);
+      await tester.pumpAndSettle();
+
+      expect(notes.dismissed, [7]);
+      expect(find.text('1 created'), findsNothing);
+      expect(find.textContaining('Nothing to show'), findsOneWidget);
+    });
+
+    testWidgets('a notice that was never recorded has no Dismiss', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(created: ['c.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dismiss'), findsNothing);
     });
 
     testWidgets('a history loss is spelled out, with the paths', (
@@ -315,19 +398,28 @@ class _InertStore extends EngramStore {
 
 /// A reconciler that only answers the two questions the pane asks.
 class _Notes implements NoteReconciler {
-  _Notes.named({required this.ledgerValue, this.scans = const []});
+  _Notes.named({required this.ledgerValue, List<ScanNotice> scans = const []})
+      : scans = List.of(scans);
 
   final NoteLedger ledgerValue;
   final List<ScanNotice> scans;
+  final List<int> dismissed = [];
 
   @override
   Future<NoteLedger> ledger() async => ledgerValue;
 
   @override
-  List<ScanNotice> get recentScans => scans;
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async =>
+      scans.take(limit).toList();
 
   @override
-  Future<DriftScanReport> scan() async => DriftScanReport.clean;
+  Future<void> dismissScan(int id) async {
+    dismissed.add(id);
+    scans.removeWhere((scan) => scan.id == id);
+  }
+
+  @override
+  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async => false;

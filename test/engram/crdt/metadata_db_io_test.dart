@@ -53,6 +53,8 @@ void main() {
       expect(tableNames(store.database), {
         'bf_catalog',
         'bf_meta',
+        'bf_scan',
+        'bf_scan_event',
         'changes',
         'snapshots',
       });

@@ -117,6 +117,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS bf_catalog_findable_path
       .map(_rowFrom)
       .toList();
 
+  /// The tombstone most recently written at [path], or null if none.
+  ///
+  /// The counterpart of [byPath] for a note that is gone: the scan history
+  /// records which note a deletion was, and a path may have died more than
+  /// once, so the newest tombstone — by insertion order — is the one meant.
+  CatalogRow? lastTombstoneAt(String path) => _one(
+    'SELECT * FROM bf_catalog WHERE path = ? AND state = ? '
+    'ORDER BY rowid DESC LIMIT 1',
+    [path, NoteState.tombstoned.name],
+  );
+
   /// How many notes this device remembers as deleted.
   int countTombstoned() =>
       database.select('SELECT COUNT(*) AS n FROM bf_catalog WHERE state = ?', [

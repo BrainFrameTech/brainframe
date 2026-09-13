@@ -6,12 +6,14 @@ import 'package:sqlite3/sqlite3.dart' as sq;
 
 import 'app_data_resolver.dart';
 import 'catalog_io.dart';
+import 'scan_history_io.dart';
 import 'store_exceptions.dart';
 
 // The failure types moved to store_exceptions.dart so catalog_io.dart can
 // raise them without importing this file, which imports it. Re-exported here
 // so every existing `import 'metadata_db_io.dart'` still sees them.
 export 'catalog_io.dart';
+export 'scan_history_io.dart';
 export 'store_exceptions.dart';
 
 /// The device-local database for one engram: the CRDT op-log, and
@@ -35,6 +37,7 @@ class MetadataDatabase {
     this.database,
     this.crdt,
     this.catalog,
+    this.scans,
     this.peerId,
     this.schemaVersion,
   );
@@ -71,6 +74,9 @@ CREATE TABLE IF NOT EXISTS bf_meta (
   /// One row per note, over the same connection — so a catalog write and the
   /// op-log write it accompanies commit together or not at all.
   final NoteCatalog catalog;
+
+  /// What each scan that changed something did, over the same connection.
+  final ScanHistory scans;
 
   /// This install's identity for this engram, minted on first open.
   ///
@@ -119,6 +125,9 @@ CREATE TABLE IF NOT EXISTS bf_meta (
   static MetadataDatabase _initialize(sq.Database database) {
     database.execute(createSchemaSql);
     NoteCatalog.createSchema(database);
+    // Step 13.5's tables. Added with IF NOT EXISTS like every table here, so
+    // a database from before them gains them on open with no version change.
+    ScanHistory.createSchema(database);
     // Injected into the connection BrainFrame already owns, so the catalog and
     // the op-log commit together. Re-run on every open, which its
     // IF NOT EXISTS DDL makes idempotent.
@@ -130,6 +139,7 @@ CREATE TABLE IF NOT EXISTS bf_meta (
       database,
       crdt,
       NoteCatalog(database),
+      ScanHistory(database),
       peerId,
       version,
     );
@@ -171,6 +181,12 @@ CREATE TABLE IF NOT EXISTS bf_meta (
       );
     }
   }
+
+  /// The `bf_meta` value for [key], or null.
+  String? readMeta(String key) => _readMeta(database, key);
+
+  /// Sets the `bf_meta` value for [key].
+  void writeMeta(String key, String value) => _writeMeta(database, key, value);
 
   static String? _readMeta(sq.Database database, String key) {
     final rows = database.select('SELECT value FROM bf_meta WHERE key = ?', [

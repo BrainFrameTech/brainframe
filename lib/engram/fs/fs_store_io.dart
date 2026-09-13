@@ -298,6 +298,7 @@ Future<Engram> createFileSystemEngram({
     displayName: metadata.displayName,
     readOnly: false,
     store: FileSystemEngramStore(location),
+    noteSizeCeilingBytes: metadata.noteSizeCeilingBytes,
   );
 }
 
@@ -377,12 +378,16 @@ Future<Engram> openFileSystemEngram(EngramLocation location) async {
   if (!await metaFile.exists()) {
     throw StateError('No engram marker at ${location.path}');
   }
+  // A ceiling this build cannot honour is refused inside decode, with the
+  // message that names the fix; nothing here rewrites the marker, so an
+  // engram with no recorded ceiling keeps having none.
   final metadata = EngramMetadata.decode(await metaFile.readAsString());
   return Engram(
     id: metadata.id,
     displayName: metadata.displayName,
     readOnly: false,
     store: FileSystemEngramStore(location),
+    noteSizeCeilingBytes: metadata.noteSizeCeilingBytes,
   );
 }
 

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
@@ -393,6 +394,98 @@ void main() {
         () => openFileSystemEngram(loc),
         throwsA(isA<EngramMetadataException>()),
       );
+    });
+
+    group('the note size ceiling', () {
+      // A marker as every engram created before the field existed has: no
+      // ceiling recorded. Written by hand, since create() now records one.
+      Future<File> legacyMarker(EngramLocation loc, {int? ceiling}) async {
+        final file = File('${loc.path}/.brainframe/engram.json');
+        await file.parent.create(recursive: true);
+        await file.writeAsString(
+          '{\n'
+          '  "schemaVersion": 1,\n'
+          '  "id": "01JAB2CD3EFGHJKMNPQRSTVWXY",\n'
+          '  "displayName": "Legacy",\n'
+          '  "createdUtc": "2026-05-01T09:00:00Z"'
+          '${ceiling == null ? '' : ',\n  "noteSizeCeilingBytes": $ceiling'}'
+          '\n}\n',
+        );
+        return file;
+      }
+
+      test('an engram with no recorded ceiling opens at 128 KiB', () async {
+        final loc = locFor('legacy');
+        await legacyMarker(loc);
+        final engram = await openFileSystemEngram(loc);
+        expect(engram.noteSizeCeilingBytes, 131072);
+      });
+
+      test('opening never writes the field into an old marker', () async {
+        // Decision 7: a newer build never raises — or even states — the
+        // value on open. Only an explicit change writes it.
+        final loc = locFor('legacy');
+        final file = await legacyMarker(loc);
+        final before = await file.readAsString();
+        await openFileSystemEngram(loc);
+        await openFileSystemEngram(loc);
+        expect(await file.readAsString(), before);
+        expect(before, isNot(contains('noteSizeCeilingBytes')));
+      });
+
+      test('a recorded ceiling is enforced as recorded', () async {
+        final loc = locFor('small');
+        await legacyMarker(loc, ceiling: 64 * 1024);
+        expect((await openFileSystemEngram(loc)).noteSizeCeilingBytes, 65536);
+      });
+
+      test('a ceiling above this build\'s capability is refused', () async {
+        final loc = locFor('raised');
+        await legacyMarker(loc, ceiling: noteSizeCapabilityBytes * 2);
+        await expectLater(
+          () => openFileSystemEngram(loc),
+          throwsA(
+            isA<EngramMetadataException>().having(
+              (e) => e.message,
+              'message',
+              contains('update BrainFrame'),
+            ),
+          ),
+        );
+      });
+
+      test('a created engram records the capability and reopens at it',
+          () async {
+        final loc = locFor('fresh');
+        final created = await createFileSystemEngram(
+          location: loc,
+          displayName: 'Fresh',
+        );
+        expect(created.noteSizeCeilingBytes, noteSizeCapabilityBytes);
+        final text =
+            await File('${loc.path}/.brainframe/engram.json').readAsString();
+        expect(text, contains('"noteSizeCeilingBytes": $noteSizeCapabilityBytes'));
+        expect(
+          (await openFileSystemEngram(loc)).noteSizeCeilingBytes,
+          noteSizeCapabilityBytes,
+        );
+      });
+
+      test('a rename preserves the marker\'s ceiling, recorded or not',
+          () async {
+        final loc = locFor('legacy');
+        final file = await legacyMarker(loc);
+        await FileSystemEngramStore(loc).setDisplayName('Renamed');
+        expect(await file.readAsString(), isNot(contains('noteSizeCeiling')));
+
+        final small = locFor('small');
+        final smallFile = await legacyMarker(small, ceiling: 65536);
+        await FileSystemEngramStore(small).setDisplayName('Renamed');
+        expect(
+          await smallFile.readAsString(),
+          contains('"noteSizeCeilingBytes": 65536'),
+        );
+      });
     });
   });
 

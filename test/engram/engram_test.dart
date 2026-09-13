@@ -87,4 +87,23 @@ void main() {
     expect(identical(renamed.store, store), isTrue);
   });
 
+  test('the note size ceiling defaults to 128 KiB and survives a rename', () {
+    final store = _FakeStore(const {});
+    final defaulted = Engram(
+      id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+      displayName: 'zettel',
+      readOnly: true,
+      store: store,
+    );
+    expect(defaulted.noteSizeCeilingBytes, 131072);
+
+    final small = Engram(
+      id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+      displayName: 'zettel',
+      readOnly: false,
+      store: store,
+      noteSizeCeilingBytes: 65536,
+    );
+    expect(small.withDisplayName('Renamed').noteSizeCeilingBytes, 65536);
+  });
 }

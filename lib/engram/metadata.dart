@@ -1,14 +1,27 @@
 /// The parsed contents of an engram's `.brainframe/engram.json`.
 ///
 /// This is the on-disk identity of a filesystem engram: a schema version, the
-/// stable [id], a [displayName], and a creation timestamp. Parsing is strict —
-/// a malformed or future-versioned file raises [EngramMetadataException]
+/// stable [id], a [displayName], a creation timestamp, and — since the note
+/// size ceiling design — the size limit every device enforces for its text
+/// notes. Parsing is strict: a malformed or future-versioned file, or one
+/// whose ceiling this build cannot honour, raises [EngramMetadataException]
 /// rather than silently producing a half-valid engram.
 library;
 
 import 'dart:convert';
 
+import 'crdt/catalog.dart';
 import 'id.dart';
+
+/// The ceiling an engram has when its `engram.json` records none: 128 KiB.
+///
+/// Every engram created before the field existed has this ceiling, because
+/// it is the number that was implicitly true of them — and a literal, not
+/// [noteSizeCapabilityBytes], because the capability may rise with a later
+/// build while what those engrams enforce must not move underneath them. It
+/// is written into a file only by an explicit change (the note size ceiling
+/// design, Decision 7); opening an engram never adds it.
+const int defaultNoteSizeCeilingBytes = 128 * 1024;
 
 /// Thrown when `engram.json` cannot be parsed into a valid [EngramMetadata].
 class EngramMetadataException implements Exception {
@@ -27,10 +40,14 @@ class EngramMetadata {
     required this.id,
     required this.displayName,
     required this.createdUtc,
+    this.recordedNoteSizeCeilingBytes,
   });
 
   /// Builds metadata for a freshly created engram, stamping the current schema
-  /// version and normalizing [createdUtc] (defaulting to now) to UTC.
+  /// version, normalizing [createdUtc] (defaulting to now) to UTC, and
+  /// recording this build's note size capability as the engram's ceiling —
+  /// a new engram starts at the largest note the build that made it can
+  /// hold, and says so in the file.
   factory EngramMetadata.create({
     required String id,
     required String displayName,
@@ -41,6 +58,7 @@ class EngramMetadata {
         id: id,
         displayName: displayName,
         createdUtc: (createdUtc ?? DateTime.now()).toUtc(),
+        recordedNoteSizeCeilingBytes: noteSizeCapabilityBytes,
       );
 
   /// Parses [source], the raw text of an `engram.json` file.
@@ -103,11 +121,34 @@ class EngramMetadata {
       );
     }
 
+    // Optional: absent means the default, and that absence is preserved so
+    // encoding does not invent the field. Present, it must be a size this
+    // build can honour — the ceiling is what every device enforces, and a
+    // device that cannot hold a note the engram allows must not open the
+    // engram and quietly treat such notes differently from its peers. The
+    // refusal is the same kind as an unknown schemaVersion: the file is
+    // from a newer build, and the fix is to update this one.
+    final ceilingRaw = json[_noteSizeCeilingKey];
+    if (ceilingRaw != null && (ceilingRaw is! int || ceilingRaw <= 0)) {
+      throw const EngramMetadataException(
+        '$_noteSizeCeilingKey must be a positive integer when present',
+      );
+    }
+    final ceiling = ceilingRaw as int?;
+    if (ceiling != null && ceiling > noteSizeCapabilityBytes) {
+      throw EngramMetadataException(
+        'this engram allows notes up to $ceiling bytes, more than this '
+        'version of BrainFrame can open ($noteSizeCapabilityBytes); update '
+        'BrainFrame on this device to open it',
+      );
+    }
+
     return EngramMetadata(
       schemaVersion: version,
       id: id,
       displayName: displayName,
       createdUtc: createdUtc,
+      recordedNoteSizeCeilingBytes: ceiling,
     );
   }
 
@@ -133,23 +174,66 @@ class EngramMetadata {
       id: id,
       displayName: trimmed,
       createdUtc: createdUtc,
+      recordedNoteSizeCeilingBytes: recordedNoteSizeCeilingBytes,
+    );
+  }
+
+  /// A copy of this metadata recording [bytes] as the note size ceiling.
+  ///
+  /// The one way the value changes, for the Housekeeping job that does so
+  /// deliberately (the note size ceiling design, Decision 7; plan step 23).
+  /// Never called on open. Throws [ArgumentError] if [bytes] is not positive
+  /// or exceeds this build's capability — an engram is never asked to allow
+  /// what the device raising it cannot itself open.
+  EngramMetadata withNoteSizeCeilingBytes(int bytes) {
+    if (bytes <= 0 || bytes > noteSizeCapabilityBytes) {
+      throw ArgumentError.value(
+        bytes,
+        'bytes',
+        'must be between 1 and $noteSizeCapabilityBytes',
+      );
+    }
+    return EngramMetadata(
+      schemaVersion: schemaVersion,
+      id: id,
+      displayName: displayName,
+      createdUtc: createdUtc,
+      recordedNoteSizeCeilingBytes: bytes,
     );
   }
 
   /// The schema version this build writes and is the newest it can read.
   static const int currentSchemaVersion = 1;
 
+  static const String _noteSizeCeilingKey = 'noteSizeCeilingBytes';
+
   final int schemaVersion;
   final String id;
   final String displayName;
   final DateTime createdUtc;
 
-  /// The JSON object form, with [createdUtc] rendered as a UTC ISO-8601 string.
+  /// The ceiling as written in the file, or null when the file has none.
+  ///
+  /// Kept distinct from [noteSizeCeilingBytes] so that encoding a file that
+  /// never had the field does not add it: a rename, which rewrites the file,
+  /// must not be the moment an old engram starts stating a limit.
+  final int? recordedNoteSizeCeilingBytes;
+
+  /// The largest text note this engram allows, in bytes on disk — what every
+  /// device opening it enforces. [defaultNoteSizeCeilingBytes] when the file
+  /// records none.
+  int get noteSizeCeilingBytes =>
+      recordedNoteSizeCeilingBytes ?? defaultNoteSizeCeilingBytes;
+
+  /// The JSON object form, with [createdUtc] rendered as a UTC ISO-8601 string
+  /// and the ceiling present only when it was recorded.
   Map<String, dynamic> toJson() => {
         'schemaVersion': schemaVersion,
         'id': id,
         'displayName': displayName,
         'createdUtc': createdUtc.toUtc().toIso8601String(),
+        if (recordedNoteSizeCeilingBytes != null)
+          _noteSizeCeilingKey: recordedNoteSizeCeilingBytes,
       };
 
   /// Serializes to the pretty-printed, newline-terminated text written to
@@ -162,13 +246,22 @@ class EngramMetadata {
       other.schemaVersion == schemaVersion &&
       other.id == id &&
       other.displayName == displayName &&
-      other.createdUtc == createdUtc;
+      other.createdUtc == createdUtc &&
+      other.recordedNoteSizeCeilingBytes == recordedNoteSizeCeilingBytes;
 
   @override
-  int get hashCode => Object.hash(schemaVersion, id, displayName, createdUtc);
+  int get hashCode => Object.hash(
+        schemaVersion,
+        id,
+        displayName,
+        createdUtc,
+        recordedNoteSizeCeilingBytes,
+      );
 
   @override
   String toString() =>
       'EngramMetadata(schemaVersion: $schemaVersion, id: $id, '
-      'displayName: $displayName, createdUtc: ${createdUtc.toIso8601String()})';
+      'displayName: $displayName, createdUtc: ${createdUtc.toIso8601String()}, '
+      'noteSizeCeilingBytes: $noteSizeCeilingBytes'
+      '${recordedNoteSizeCeilingBytes == null ? ' (default)' : ''})';
 }

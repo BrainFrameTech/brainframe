@@ -7,6 +7,8 @@ library;
 
 import '../engram_store.dart';
 import '../note_writer.dart';
+import 'blob_note_writer_io.dart';
+import 'catalog.dart';
 import 'identity_authorship_io.dart';
 import 'materializer_io.dart';
 import 'metadata_db_io.dart';
@@ -50,8 +52,27 @@ class CrdtNoteWriter implements NoteWriter {
   Future<void> write(String path, String text) =>
       lock.run(() => _write(path, text));
 
+  /// The other shape, for a note whose policy is `blobLww` — one the ceiling
+  /// converted or that arrived too large for a history, or a new file with a
+  /// blob's extension. Same store, same lock, same map: only the save differs.
+  BlobNoteWriter get _blob => BlobNoteWriter(
+    database: database,
+    engram: engram,
+    lock: lock,
+    identity: identity,
+  );
+
   Future<void> _write(String path, String text) async {
     final row = database.catalog.byPath(path);
+
+    // One shape per policy, decided here under the lock where the row is
+    // known — the editor asks for "the writer" and never learns which. A
+    // known row says what it is; an unknown path is what its extension
+    // says it will be minted as.
+    final policy = row?.mergePolicy ?? mergePolicyForPath(path);
+    if (policy != MergePolicy.fugueText) {
+      return _blob.writeHoldingLock(path, text);
+    }
 
     // A path the catalog has never seen is a note nobody has minted. Since
     // step 11 the scan and the before-open reconciliation bring a file in

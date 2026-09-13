@@ -769,7 +769,15 @@ Housekeeping job that changes it is step 23.
 `BlobNoteWriter`: write the file directly, then `BlobDocument.record` with
 its digest — whole-file last-writer-wins through the existing `NoteWriter`
 seam, so a `blobLww` note with a text extension is editable (Decision 3).
-The session hands the editor the writer the note's policy calls for.
+The session has one writer for the whole engram and the editor never
+learns which shape a note is, so the choice is made inside
+`CrdtNoteWriter`, under its lock, where the catalog row is known: a
+`blobLww` row — or an unknown path whose extension says blob — is handed
+to the blob writer, which writes the file *first* and then the claim that
+describes it, the reverse of the text order, because for a blob the file
+is the only copy and the register describes it rather than the other way
+round. Never normalized: a plain file keeps the terminators it was typed
+with.
 
 - **Tests that matter:** a save writes the file and one register claim;
   saving the same text again writes nothing; the editor opens a `.md` blob

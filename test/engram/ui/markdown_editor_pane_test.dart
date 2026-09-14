@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/commands/app_commands.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
@@ -669,6 +670,86 @@ void main() {
         expect(store.files['a.md'], 'short${'p' * 50}');
         final editable = tester.widget<EditableText>(find.byType(EditableText));
         expect(editable.controller.text, 'short${'p' * 50}');
+        expect(find.text('Saved'), findsOneWidget);
+      });
+
+      testWidgets('leaving asks the wall, and cancel keeps the buffer', (
+        tester,
+      ) async {
+        // What the window close, a file switch, and an engram switch all do:
+        // ask the registry, which asks the pane, which shows the wall.
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        final saves = PendingSaves();
+        await tester.pumpWidget(
+          localizedApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 1000,
+                height: 600,
+                child: MarkdownEditorPane(
+                  store: store,
+                  path: 'a.md',
+                  reconciler: reconciler,
+                  noteSizeCeilingBytes: 40,
+                  pendingSaves: saves,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(await saves.resolveWithheld(), isTrue, reason: 'nothing withheld');
+        await tester.enterText(find.byType(TextField), 'a' * 40);
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'a' * 41);
+        await tester.pump();
+        expect(saves.hasWithheld, isTrue);
+
+        bool? settled;
+        saves.resolveWithheld().then((v) => settled = v);
+        await tester.pumpAndSettle();
+        expect(find.text('This note is now 41 bytes; the limit for a note that keeps its history is 40. It cannot be saved as it is.\n\nRoll back to the last saved version to keep its history and its merging with other devices. Or convert it to a plain file: it keeps this text, drops its history, and from now on each save replaces the file whole — whatever the most recent writer saves is what other devices get.'), findsOneWidget);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(settled, isFalse);
+        expect(find.text('Too large to save'), findsOneWidget);
+
+        saves.resolveWithheld().then((v) => settled = v);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Roll back'));
+        await tester.pumpAndSettle();
+        expect(settled, isTrue);
+        expect(saves.hasWithheld, isFalse);
+        expect(find.text('Saved'), findsOneWidget);
+      });
+
+      testWidgets('a reload over a withheld buffer waits for the roll back', (
+        tester,
+      ) async {
+        // The file changed on disk while the wall was up. The buffer is the
+        // only copy of the typing; the reload is held until the user rolls
+        // back, at which point the file is what they asked for.
+        final store = _RwStore({'a.md': 'short'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(walled(store, reconciler));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'a' * 40);
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'a' * 41);
+        await tester.pump();
+
+        reconciler.reconciledElsewhere('a.md', 'changed outside');
+        await tester.pumpAndSettle();
+        expect(find.text('a' * 41), findsOneWidget, reason: 'buffer kept');
+        expect(find.text('changed outside'), findsNothing);
+
+        await tester.tap(find.text('Too large to save'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Roll back'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('changed outside'), findsOneWidget);
         expect(find.text('Saved'), findsOneWidget);
       });
 

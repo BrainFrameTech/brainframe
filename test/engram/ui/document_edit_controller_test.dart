@@ -492,6 +492,43 @@ void main() {
       });
     });
 
+    test('a withheld buffer is reported to the registry, and resolved through it',
+        () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final saves = PendingSaves();
+        final c = DocumentEditController(
+          writer: DirectNoteWriter(store),
+          observeLifecycle: false,
+          pendingSaves: saves,
+        )..sizeLimitBytes = 10;
+        c.openFile('a.md', 'short');
+        expect(saves.hasWithheld, isFalse);
+
+        c.edit('this is well over ten bytes');
+        expect(c.isWithheld, isTrue);
+        expect(saves.hasWithheld, isTrue);
+
+        // No resolver yet: it cannot be settled, so it cannot be left.
+        var settled = false;
+        saves.resolveWithheld().then((value) => settled = value);
+        async.flushMicrotasks();
+        expect(settled, isFalse);
+
+        // The pane's resolver rolls back; the registry sees it settled.
+        c.resolveWithheld = () async {
+          c.rollBack();
+          return true;
+        };
+        saves.resolveWithheld().then((value) => settled = value);
+        async.flushMicrotasks();
+        expect(settled, isTrue);
+        expect(saves.hasWithheld, isFalse);
+        c.dispose();
+        expect(saves.length, 0);
+      });
+    });
+
     test('the limit is measured in bytes on disk, not characters', () {
       fakeAsync((async) {
         final store = _RecordingStore();

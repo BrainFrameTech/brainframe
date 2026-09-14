@@ -211,6 +211,15 @@ class WindowStatePersister extends WindowListener {
     // ignore the re-entry so we save and destroy exactly once (see [_closing]).
     if (_closing) return;
     _closing = true;
+    // A buffer over the note size limit is not written by a flush, so a
+    // flush cannot protect it: the user decides — roll back or convert —
+    // or stays. Cancelling keeps the window open, and a later close asks
+    // again. Asked before the geometry debounce is cancelled, so a window
+    // that stays open keeps saving its geometry.
+    if (!await _pendingSaves.resolveWithheld()) {
+      _closing = false;
+      return;
+    }
     _debounce?.cancel();
     try {
       // Desktop gets no lifecycle warning before an exit, so the editor's

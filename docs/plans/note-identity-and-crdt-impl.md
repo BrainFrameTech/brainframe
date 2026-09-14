@@ -924,12 +924,24 @@ state under the reader, with **Reconstruct** (the reconciler's stream then
 reopens the note in the editor) or **Convert** (the pane reopens it as a
 plain file); the banner stays, pointing at both the bar and Housekeeping.
 
-One thing this step does not do: an over-limit buffer is dropped, not
-saved, when the user switches files or quits — the same as any buffer whose
-save cannot complete — because the only saves possible are the two the
-dialog offers, and neither may happen without the user choosing. Blocking
-navigation on it would be a new kind of guard the app does not have; the
-chip and the bar say "too large to save" until the user decides.
+**Leaving asks first** (added after review of the wall). As first built,
+an over-limit buffer was dropped when the user switched files or quit — the
+only saves possible are the two the dialog offers, and neither may happen
+without the user choosing — which made "nothing is lost until the user
+picks" false for exactly the two ways of not picking. Now every way of
+leaving a note asks: `PendingSaves`, which every editor controller already
+registers its flush with, also learns whether a registrant's work is
+*withheld* and how to *resolve* it, and `resolveWithheld` puts each
+withheld buffer's decision in front of the user — the pane's wall dialog —
+answering false the moment one is cancelled. The window close asks before
+it flushes and stays open on a no (a later close asks again); the browser
+asks before it changes the selected file and keeps the selection on a no;
+the engram scope asks before it switches and stays on a no. A withheld
+registrant with no way to ask cannot be left — the safe failure. And a
+reload from disk over a withheld buffer (an external edit while the wall is
+up) is held until the user rolls back, at which point the file is what they
+asked for. Crash and power loss still lose it, as they lose any unsaved
+text.
 
 - **Tests that matter:** a paste landing at 131,073 bytes is refused and the
   buffer is unchanged; typing to 131,073 leaves the buffer intact and the

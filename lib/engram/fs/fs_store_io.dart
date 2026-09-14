@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
-import '../crdt/catalog.dart';
 import '../engram.dart';
 import '../engram_paths.dart';
 import '../engram_store.dart';
@@ -345,22 +344,30 @@ Future<Engram> openOrCreateFileSystemEngram(
 ///
 /// Counts through the store's own listing with the scan's own filter, so the
 /// number the user is told is the number the scan will mint: nothing hidden,
-/// nothing under the marker. The rewrite count reads every text note once,
-/// which adoption is about to do anyway. A folder that does not exist counts
-/// as empty.
+/// nothing under the marker. The rewrite count is [countCrlfTextFiles]: each
+/// text note streamed to its first carriage return, never held whole. A
+/// folder that does not exist counts as empty.
+///
+/// [onProgress] hears each file of the second pass, and [isCancelled] is
+/// asked between them; a cancelled preview is returned with whatever it had
+/// counted, for the caller that cancelled to discard. The listing itself is
+/// one call with no count to report until it ends.
 Future<FolderAdoptionPreview> previewFolderAdoption(
-  EngramLocation location,
-) async {
+  EngramLocation location, {
+  FolderPreviewProgress? onProgress,
+  FolderPreviewCancelled? isCancelled,
+}) async {
   final store = FileSystemEngramStore(location);
   final files = [
     for (final path in await store.list())
       if (!isHiddenEngramPath(path)) path,
   ];
-  var crlf = 0;
-  for (final path in files) {
-    if (mergePolicyForPath(path) != MergePolicy.fugueText) continue;
-    if ((await store.readBytes(path)).contains(_carriageReturn)) crlf++;
-  }
+  final crlf = await countCrlfTextFiles(
+    store,
+    files,
+    onProgress: onProgress,
+    isCancelled: isCancelled,
+  );
   return FolderAdoptionPreview(
     path: location.path,
     name: _folderName(location.path),
@@ -371,8 +378,6 @@ Future<FolderAdoptionPreview> previewFolderAdoption(
     ).exists(),
   );
 }
-
-const int _carriageReturn = 0x0d;
 
 /// The last segment of [path], with a trailing separator ignored.
 String _folderName(String path) {

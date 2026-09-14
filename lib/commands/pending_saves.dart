@@ -63,6 +63,11 @@ class PendingSaves {
   /// decide. A withheld registrant with no [resolve] cannot be settled and
   /// answers false, which keeps the app from leaving work it cannot ask
   /// about; that is the safe failure.
+  ///
+  /// Today exactly one controller is ever registered — the one editor pane
+  /// — so this asks at most once. The loop is the registry's shape, the same
+  /// as [flushAll]'s, not an expectation of several; a second editor could
+  /// register without changing anything here.
   Future<bool> resolveWithheld() async {
     for (final registration in List.of(_registrations.values)) {
       if (!(registration.isWithheld?.call() ?? false)) continue;

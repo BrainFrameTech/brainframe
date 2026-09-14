@@ -39,6 +39,14 @@ class FolderAdoptionPreview {
   final bool isEngram;
 }
 
+/// The last segment of [path], with a trailing separator ignored: the name
+/// the preview reports and the dialog shows while the pass is still running.
+String folderNameOf(String path) {
+  final trimmed = path.replaceAll(r'\', '/').replaceAll(RegExp(r'/+$'), '');
+  final slash = trimmed.lastIndexOf('/');
+  return slash == -1 ? trimmed : trimmed.substring(slash + 1);
+}
+
 /// Told how far a preview's pass over a folder's files has come: [done] of
 /// [total] files looked at. The first call carries `done == 0` and the total,
 /// so a caller that had nothing to show while the folder was being listed can

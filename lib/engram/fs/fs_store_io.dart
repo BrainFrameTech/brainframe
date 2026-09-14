@@ -370,20 +370,13 @@ Future<FolderAdoptionPreview> previewFolderAdoption(
   );
   return FolderAdoptionPreview(
     path: location.path,
-    name: _folderName(location.path),
+    name: folderNameOf(location.path),
     fileCount: files.length,
     crlfCount: crlf,
     isEngram: await File(
       '${location.path}/$markerDirectoryName/$_metadataFileName',
     ).exists(),
   );
-}
-
-/// The last segment of [path], with a trailing separator ignored.
-String _folderName(String path) {
-  final trimmed = path.replaceAll(r'\', '/').replaceAll(RegExp(r'/+$'), '');
-  final slash = trimmed.lastIndexOf('/');
-  return slash == -1 ? trimmed : trimmed.substring(slash + 1);
 }
 
 /// Opens an existing engram at [location] by reading its marker.

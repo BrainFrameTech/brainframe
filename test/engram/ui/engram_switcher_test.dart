@@ -229,9 +229,12 @@ void main() {
       await tester.tap(find.text('Tutorial'));
       await tester.pumpAndSettle();
       // The preview lists the folder for real, so the tap and the I/O it
-      // starts run under real time rather than the test's fake clock.
+      // starts run under real time rather than the test's fake clock — and
+      // so does the frame that puts the dialog up, so that it is listening
+      // for the preview in the zone the preview completes in.
       await tester.runAsync(() async {
         await tester.tap(find.text('Open folder…'));
+        await tester.pump();
         await Future<void>.delayed(const Duration(milliseconds: 100));
       });
       await tester.pumpAndSettle();

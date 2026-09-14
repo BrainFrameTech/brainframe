@@ -66,6 +66,7 @@ import 'package:brainframe/engram/metadata.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/note_writer.dart';
 import 'package:brainframe/engram/repository_scope.dart';
+import 'package:brainframe/engram/ui/adopt_folder_dialog.dart';
 import 'package:brainframe/engram/ui/adoption_progress.dart';
 import 'package:brainframe/engram/ui/browser_preferences.dart';
 import 'package:brainframe/engram/ui/crdt_session_scope.dart';

@@ -205,15 +205,24 @@ class _EngramBrowserState extends State<EngramBrowser> {
 
   void _newFolderCommand() => unawaited(_newFolder());
 
-  void _preferencesCommand() => unawaited(openSettingsScreen(context));
+  void _preferencesCommand() => unawaited(_openSettings());
+
+  /// Settings, and — when Housekeeping's "Open" was used — the note it
+  /// named, selected on the way back.
+  Future<void> _openSettings({String? initialCategoryId}) async {
+    final path = await openSettingsScreen(
+      context,
+      initialCategoryId: initialCategoryId,
+    );
+    if (path != null && mounted) await _selectFile(path);
+  }
 
   void _helpCommand() =>
       unawaited(showHelpOverlay(context, builtInHelpEngram()));
 
   /// About is a Settings category, so the Help ▸ About item deep-links to it
   /// rather than duplicating the screen.
-  void _aboutCommand() =>
-      unawaited(openSettingsScreen(context, initialCategoryId: 'about'));
+  void _aboutCommand() => unawaited(_openSettings(initialCategoryId: 'about'));
 
   /// Re-issues the active engram's listing after a mutation, optionally moving
   /// the selection to [selectPath]. Invoked through [EngramBrowserController];
@@ -385,6 +394,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
       progress: AdoptionProgressBar(reconciler: _notes),
       onNewNote: engram.readOnly ? null : _newNote,
       onNewFolder: engram.readOnly ? null : _newFolder,
+      onOpenSettings: _openSettings,
     );
     final reader = _reader(
       l10n: l10n,
@@ -932,6 +942,7 @@ class _Sidebar extends StatelessWidget {
     required this.progress,
     this.onNewNote,
     this.onNewFolder,
+    required this.onOpenSettings,
   });
 
   final Engram engram;
@@ -945,6 +956,9 @@ class _Sidebar extends StatelessWidget {
   /// header. Both are null or both are set together.
   final VoidCallback? onNewNote;
   final VoidCallback? onNewFolder;
+
+  /// Opens Settings, and selects the note Housekeeping's "Open" names.
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -978,7 +992,7 @@ class _Sidebar extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.settings_outlined),
                   tooltip: AppLocalizations.of(context).settingsTooltip,
-                  onPressed: () => openSettingsScreen(context),
+                  onPressed: onOpenSettings,
                 ),
               ],
             ),

@@ -1726,6 +1726,88 @@ pasted paragraph of that size crosses it).
   another editor and switch back. The buffer is kept (not replaced by the
   file); after Roll back the note shows the other editor's version.
 
+### F35 — Housekeeping: raising the note size limit, and Open on a notice
+
+As of ceiling step 23, Housekeeping shows the engram's note size limit and
+this build's capability, and — when the limit is below the capability, as
+it is for an engram last changed by an older build — offers the one change
+there is a reason for: raising it to the capability, with a confirmation
+that says what will happen first. There is no lowering and no menu of
+values. And every notice that names a note carries an **Open** button that
+goes straight to it. Use the fixture engram, fresh (reset it, forget it in
+Housekeeping if this install has seen it, and launch with
+`--engram test/fixtures/engram`). Today's build cannot produce an engram
+below its own capability, so the probe stands in for the older build by
+hand.
+
+**Steps:**
+
+1. Open **Settings › Housekeeping** and read the **Note size limit** card.
+2. Open `daily/2026-05-02.md`, paste enough text to take it to about 70,000
+   bytes (the status bar shows the count), and let it save. Quit.
+3. **The older build, by hand:** edit `.brainframe/engram.json` to record
+   `"noteSizeCeilingBytes": 65536`. Relaunch; open Housekeeping and read the
+   pane.
+4. Tap **Open** on the awaiting card for `daily/2026-05-02.md`.
+5. Back in Housekeeping, tap **Raise to 131,072**. Read the dialog;
+   **Cancel**.
+6. Tap **Raise to 131,072** again; tap **Raise the limit**. Read the pane.
+   Look at `engram.json` in the file manager.
+7. On the newest scan card, tap the **Open** button naming the note.
+8. Quit and relaunch; open Housekeeping.
+9. **The other side:** with the app closed, edit `engram.json` to record
+   `"noteSizeCeilingBytes": 1000000` and relaunch (F26's probe).
+
+**Expected:**
+
+- Step 1: *Text notes up to 131,072 bytes keep their edit history on this
+  engram; every device that opens it enforces the same limit. This
+  BrainFrame can open notes up to 131,072 bytes.* — and **no button**: at
+  the capability there is nothing to change to.
+- Step 3: the card says *Text notes up to 65,536 bytes …* and *This
+  BrainFrame can open notes up to 131,072 bytes*, with one button, **Raise
+  to 131,072**; an **Awaiting your decision** section lists
+  `daily/2026-05-02.md` at its size with the limit 65,536; the launch scan's
+  card says "1 awaiting a decision" and names it.
+- Step 4: Settings closes and the note is open, read-only, with the bar's
+  **Over the size limit** (F34 step 9's surface). Nothing was changed.
+- Step 5: **Raise the limit to 131,072 bytes?** — *1 note waiting for your
+  decision will be editable again. Every device that opens this engram will
+  enforce the new limit; a device running a BrainFrame that cannot open
+  notes this large will refuse to open the engram until it is updated.*
+  Cancel changes nothing: the card still says 65,536 and still offers the
+  raise.
+- Step 6: a brief notice, *The note size limit is now 131,072 bytes.* The
+  awaiting section is gone (the note is back under the limit and live) —
+  without leaving the pane; a new scan card "*time* · by request" appears;
+  the card says 131,072 and the button is gone. `engram.json` now contains
+  `"noteSizeCeilingBytes": 131072`.
+- Step 7: Settings closes and the note opens in the **editor**, its text
+  intact, chip `Saved`.
+- Step 8: the limit is still 131,072 — it lives in the engram, not the
+  session — and the card is a statement again.
+- Step 9: refused as F26 describes — the reason the raise dialog warned of,
+  seen from the device that cannot follow.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓; steps 3 and 6 need a files app over the folder | as Android | as Android | ✓; the confirmation dialog is one push, the result another |
+
+- **Counted before, not after:** the number in the raise dialog is the
+  number of waiting notes that then go live. A waiting note larger than
+  131,072 itself is not counted and stays where it is. Report a mismatch.
+- **Never automatic:** nothing changes without **Raise the limit**; a
+  scan, a launch, or a rename must never alter the limit (F26's rename
+  probe) or invent the field. And never downward: no control on this card
+  lowers the limit.
+- **A11y:** the raise button is labeled *Raise the note size limit to
+  131,072 bytes*; each Open button *Open &lt;path&gt;*; the confirmation is an
+  adaptive dialog with Cancel first.
+- **Inspection point:** older scan cards state the limit as it is *now* —
+  after step 6, a card from step 3's launch reads "Larger than 131,072
+  bytes" for a note that was judged against 65,536. The record keeps no
+  per-scan limit. Known, not a defect.
+
 ---
 
 ## Bug-class deep-dives

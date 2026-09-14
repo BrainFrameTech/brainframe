@@ -1,9 +1,11 @@
+import 'package:brainframe/engram/built_in_engrams.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
 import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/repository_scope.dart';
+import 'package:brainframe/engram/ui/engram_browser.dart';
 import 'package:brainframe/engram/ui/crdt_session_scope.dart';
 import 'package:brainframe/settings/app_settings_controller.dart';
 import 'package:brainframe/settings/settings_scope.dart';
@@ -274,6 +276,101 @@ void main() {
       expect(find.textContaining('has no note catalog'), findsNothing);
     });
 
+    testWidgets('Open on a Housekeeping notice leaves Settings with the path',
+        (tester) async {
+      // Step 23: the route completes with the note's path, and whoever
+      // pushed Settings — the browser — selects it.
+      setSize(tester, 1000);
+      final engram = Engram(
+        id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+        displayName: 'zettel',
+        readOnly: false,
+        store: _FakeStore(),
+      );
+      String? result;
+      await tester.pumpWidget(
+        host(
+          EngramScope(
+            initialEngram: engram,
+            child: CrdtSessionScope.republish(
+              writer: null,
+              reconciler: _CountingReconciler(
+                scans: [
+                  ScanNotice(
+                    at: DateTime(2026, 9, 12, 14, 30),
+                    report: const DriftScanReport(oversized: ['big.md']),
+                  ),
+                ],
+              ),
+              child: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () async {
+                      result = await openSettingsScreen(context);
+                    },
+                    child: const Text('open settings'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open settings'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Housekeeping'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('big.md'));
+      await tester.pumpAndSettle();
+
+      expect(result, 'big.md');
+      expect(find.text('open settings'), findsOneWidget, reason: 'popped');
+    });
+
+    testWidgets('Open on a notice comes back to that note in the browser',
+        (tester) async {
+      // Step 23, end to end: the gear opens Settings; Housekeeping's "Open"
+      // pops it with the path; the browser selects the note.
+      setSize(tester, 1000);
+      final tutorial = builtInEngrams().firstWhere(
+        (e) => e.id == builtinTutorialId,
+      );
+      await tester.pumpWidget(
+        host(
+          EngramScope(
+            initialEngram: tutorial,
+            child: CrdtSessionScope.republish(
+              writer: null,
+              reconciler: _CountingReconciler(
+                scans: [
+                  ScanNotice(
+                    at: DateTime(2026, 9, 12, 14, 30),
+                    report: const DriftScanReport(
+                      oversized: ['notes/first-note.md'],
+                    ),
+                  ),
+                ],
+              ),
+              child: EngramBrowser(repository: repository),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('notes/first-note.md'), findsNothing);
+
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Housekeeping'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('notes/first-note.md'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Housekeeping'), findsNothing, reason: 'Settings popped');
+      expect(find.text('notes/first-note.md'), findsOneWidget); // breadcrumb
+    });
+
     testWidgets('is absent when there is no engram to describe', (
       tester,
     ) async {
@@ -293,6 +390,10 @@ void main() {
 /// A reconciler with one number to show, so the route's republish can be
 /// seen to have worked.
 class _CountingReconciler implements NoteReconciler {
+  _CountingReconciler({this.scans = const []});
+
+  final List<ScanNotice> scans;
+
   @override
   Future<NoteLedger> ledger() async => const NoteLedger(
     peers: 1,
@@ -303,7 +404,7 @@ class _CountingReconciler implements NoteReconciler {
   );
 
   @override
-  Future<List<ScanNotice>> recentScans({int limit = 20}) async => const [];
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async => scans;
 
   @override
   Future<void> dismissScan(int id) async {}
@@ -319,6 +420,9 @@ class _CountingReconciler implements NoteReconciler {
 
   @override
   Future<bool> isPlainFile(String path) async => false;
+
+  @override
+  Future<void> setNoteSizeCeiling(int bytes) async {}
 
   @override
   Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;

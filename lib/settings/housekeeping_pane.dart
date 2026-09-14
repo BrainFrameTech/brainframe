@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../engram/crdt/catalog.dart';
 import '../engram/engram.dart';
 import '../engram/engram_repository.dart';
 import '../engram/note_reconciler.dart';
@@ -16,6 +17,10 @@ typedef EngramForgetter = Future<void> Function(String id);
 /// `.brainframe/` tree and this device's store — and forgets it. Throws when
 /// a step fails; the entry is then still listed for a retry.
 typedef EngramCleaner = Future<void> Function(String id);
+
+/// Records [bytes] as the given engram's note size ceiling and returns the
+/// engram enforcing it (the note size ceiling design, Decision 7).
+typedef CeilingChanger = Future<Engram> Function(Engram engram, int bytes);
 
 /// The Housekeeping settings pane: what this device knows about the active
 /// engram's notes, and maintenance jobs on engrams.
@@ -55,6 +60,9 @@ class HousekeepingPane extends StatefulWidget {
     required this.cleanUp,
     this.engram,
     this.notes,
+    this.changeCeiling,
+    this.onCeilingChanged,
+    this.onOpenNote,
   });
 
   /// Wires the pane to a repository: `HousekeepingPane.forRepository(repo)`,
@@ -64,6 +72,8 @@ class HousekeepingPane extends StatefulWidget {
     Key? key,
     Engram? engram,
     NoteReconciler? notes,
+    void Function(Engram engram)? onCeilingChanged,
+    void Function(String path)? onOpenNote,
   }) : this(
          key: key,
          load: repository.registeredEngrams,
@@ -71,11 +81,27 @@ class HousekeepingPane extends StatefulWidget {
          cleanUp: repository.cleanUp,
          engram: engram,
          notes: notes,
+         changeCeiling: repository.setNoteSizeCeiling,
+         onCeilingChanged: onCeilingChanged,
+         onOpenNote: onOpenNote,
        );
 
   final ForgettableEngramsLoader load;
   final EngramForgetter forget;
   final EngramCleaner cleanUp;
+
+  /// Writes a new note size ceiling for the active engram, or null when the
+  /// pane cannot (no engram, or nowhere to write it).
+  final CeilingChanger? changeCeiling;
+
+  /// Told the engram as it now is after a ceiling change, so the caller can
+  /// push it back into the scope the way a rename is.
+  final void Function(Engram engram)? onCeilingChanged;
+
+  /// Opens the note at an engram-relative path in the editor — the way out
+  /// of a notice to the note it names (Decision 6). Null when the pane has
+  /// no editor to hand a note to.
+  final void Function(String path)? onOpenNote;
 
   /// The active engram, or null when no engram is open — in which case the
   /// ledger section is not shown at all.
@@ -92,6 +118,10 @@ class HousekeepingPane extends StatefulWidget {
 
 class _HousekeepingPaneState extends State<HousekeepingPane> {
   late Future<List<RegisteredEngram>> _engrams;
+
+  /// The active engram as this pane knows it: the widget's, until a ceiling
+  /// change hands back a copy enforcing the new value.
+  late Engram? _engram = widget.engram;
   Future<NoteLedger>? _ledger;
   Future<List<ScanNotice>>? _scans;
   Future<List<PendingNote>>? _pending;
@@ -123,6 +153,69 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
   Future<void> _convert(PendingNote note) async {
     await widget.notes?.convertToPlainFile(note.path);
     if (mounted) _reloadNotes();
+  }
+
+  /// The Housekeeping job that raises the engram's ceiling to this build's
+  /// capability (Decision 7): counted, confirmed, written to the marker,
+  /// pushed into the scope, and enforced by the reconciler at once, so a
+  /// waiting note the raised limit puts back under the line is live before
+  /// the pane is even reopened.
+  ///
+  /// Raising is the only direction offered. The one thing that ever calls
+  /// for a change is a newer build whose capability exceeds what the engram
+  /// recorded, and then there is exactly one value worth moving to. The
+  /// engine below the seam (`EngramRepository.setNoteSizeCeiling`,
+  /// `NoteReconciler.setNoteSizeCeiling`) takes any value, in either
+  /// direction; nothing in the UI hands it one that nobody measured.
+  Future<void> _raiseCeiling() async {
+    final engram = _engram;
+    final change = widget.changeCeiling;
+    final notes = widget.notes;
+    if (engram == null || change == null || notes == null) return;
+    const bytes = noteSizeCapabilityBytes;
+    final l10n = AppLocalizations.of(context);
+    // Counted before, not after: the waiting notes the new limit lets go
+    // live. One that arrived larger than the capability itself stays put.
+    final freed = (await notes.awaitingDecision())
+        .where((note) => note.sizeBytes <= bytes)
+        .length;
+    if (!mounted) return;
+    final limit = formatDecimal(context, bytes);
+    final confirmed = await showAdaptiveDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.housekeepingCeilingRaiseTitle(limit)),
+        content: Text(l10n.housekeepingCeilingRaiseBody(freed)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.housekeepingCeilingRaise),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final updated = await change(engram, bytes);
+      await notes.setNoteSizeCeiling(bytes);
+      if (!mounted) return;
+      widget.onCeilingChanged?.call(updated);
+      setState(() => _engram = updated);
+      _reloadNotes();
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.housekeepingCeilingChanged(limit))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.housekeepingCeilingFailed('$error'))),
+      );
+    }
   }
 
   Future<void> _dismiss(ScanNotice scan) async {
@@ -236,9 +329,9 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                if (widget.engram != null) ...[
+                if (_engram != null) ...[
                   _LedgerSection(
-                    engram: widget.engram!,
+                    engram: _engram!,
                     notes: widget.notes,
                     ledger: _ledger,
                     scans: _scans,
@@ -246,6 +339,10 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                     onDismiss: _dismiss,
                     onReconstruct: _reconstruct,
                     onConvert: _convert,
+                    onRaiseCeiling: widget.changeCeiling == null
+                        ? null
+                        : _raiseCeiling,
+                    onOpenNote: widget.onOpenNote,
                   ),
                   const SizedBox(height: 28),
                 ],
@@ -302,6 +399,8 @@ class _LedgerSection extends StatelessWidget {
     required this.onDismiss,
     required this.onReconstruct,
     required this.onConvert,
+    required this.onRaiseCeiling,
+    required this.onOpenNote,
   });
 
   final Engram engram;
@@ -312,6 +411,10 @@ class _LedgerSection extends StatelessWidget {
   final void Function(ScanNotice scan) onDismiss;
   final void Function(PendingNote note) onReconstruct;
   final void Function(PendingNote note) onConvert;
+
+  /// Null when the ceiling cannot be changed here.
+  final VoidCallback? onRaiseCeiling;
+  final void Function(String path)? onOpenNote;
 
   @override
   Widget build(BuildContext context) {
@@ -377,6 +480,18 @@ class _LedgerSection extends StatelessWidget {
               );
             },
           ),
+          if (onRaiseCeiling != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              l10n.housekeepingCeilingTitle,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            _CeilingCard(
+              ceilingBytes: engram.noteSizeCeilingBytes,
+              onRaise: onRaiseCeiling!,
+            ),
+          ],
           FutureBuilder<List<PendingNote>>(
             future: pending,
             builder: (context, snapshot) {
@@ -414,6 +529,9 @@ class _LedgerSection extends StatelessWidget {
                         ceilingBytes: engram.noteSizeCeilingBytes,
                         onReconstruct: () => onReconstruct(note),
                         onConvert: () => onConvert(note),
+                        onOpen: onOpenNote == null
+                            ? null
+                            : () => onOpenNote!(note.path),
                       ),
                     ),
                 ],
@@ -445,6 +563,7 @@ class _LedgerSection extends StatelessWidget {
                         onDismiss: scan.id == null
                             ? null
                             : () => onDismiss(scan),
+                        onOpenNote: onOpenNote,
                       ),
                     ),
                 ],
@@ -464,7 +583,24 @@ class _ScanCard extends StatelessWidget {
     required this.scan,
     required this.ceilingBytes,
     required this.onDismiss,
+    required this.onOpenNote,
   });
+
+  /// Opens a note the card names, or null when there is no editor to open
+  /// it in.
+  final void Function(String path)? onOpenNote;
+
+  /// The notes a reader of this card would want to go to: the ones the
+  /// ceiling touched. Created, moved, and deleted notes are not offered —
+  /// the first two are the ordinary case, the last cannot be opened.
+  List<String> get _openable => {
+    ...scan.report.oversized,
+    ...scan.report.awaitingDecision,
+    ...scan.report.converted,
+    ...scan.report.convertedElsewhere.keys,
+    ...scan.report.reconstructed.keys,
+    ...scan.report.reconstructed.values,
+  }.toList();
 
   final ScanNotice scan;
 
@@ -588,6 +724,90 @@ class _ScanCard extends StatelessWidget {
               ),
               emphasis: true,
             ),
+          if (onOpenNote != null && _openable.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  for (final path in _openable)
+                    _OpenNoteButton(
+                      path: path,
+                      onOpen: () => onOpenNote!(path),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small button that opens a note the pane names (Decision 6: one tap
+/// from the notice to the note).
+class _OpenNoteButton extends StatelessWidget {
+  const _OpenNoteButton({required this.path, required this.onOpen});
+
+  final String path;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Semantics(
+      button: true,
+      label: l10n.housekeepingOpenNote(path),
+      child: ExcludeSemantics(
+        child: TextButton.icon(
+          onPressed: onOpen,
+          icon: const Icon(Icons.open_in_new, size: 14),
+          label: Text(path, style: const TextStyle(fontSize: 12)),
+        ),
+      ),
+    );
+  }
+}
+
+/// The engram's note size ceiling and this build's capability — the
+/// Housekeeping job of Decision 7. The card states what the limit means and
+/// what this build can open; when the engram's limit is below the
+/// capability, it offers the one change there is a reason for, raising to
+/// the capability, and the confirmation [onRaise] shows states the
+/// consequence and the count. At the capability the card is a statement.
+class _CeilingCard extends StatelessWidget {
+  const _CeilingCard({required this.ceilingBytes, required this.onRaise});
+
+  final int ceilingBytes;
+  final VoidCallback onRaise;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final capability = formatDecimal(context, noteSizeCapabilityBytes);
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Line(
+            l10n.housekeepingCeilingCurrent(
+              formatDecimal(context, ceilingBytes),
+              capability,
+            ),
+          ),
+          if (ceilingBytes < noteSizeCapabilityBytes) ...[
+            const SizedBox(height: 4),
+            Semantics(
+              button: true,
+              label: l10n.housekeepingCeilingRaiseToLabel(capability),
+              child: ExcludeSemantics(
+                child: OutlinedButton(
+                  onPressed: onRaise,
+                  child: Text(l10n.housekeepingCeilingRaiseTo(capability)),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -605,12 +825,17 @@ class _PendingCard extends StatelessWidget {
     required this.ceilingBytes,
     required this.onReconstruct,
     required this.onConvert,
+    required this.onOpen,
   });
 
   final PendingNote note;
   final int ceilingBytes;
   final VoidCallback onReconstruct;
   final VoidCallback onConvert;
+
+  /// Opens the note read-only, where the same two verbs are on the status
+  /// bar; null when there is no editor to open it in.
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -656,6 +881,8 @@ class _PendingCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onOpen != null)
+                _OpenNoteButton(path: note.path, onOpen: onOpen!),
             ],
           ),
         ],

@@ -892,6 +892,67 @@
     }
   },
 
+  "housekeepingCeilingTitle": "Note size limit",
+  "@housekeepingCeilingTitle": {
+    "description": "Heading of the Housekeeping section showing and changing the engram's note size ceiling."
+  },
+
+  "housekeepingCeilingCurrent": "Text notes up to {limit} bytes keep their edit history on this engram; every device that opens it enforces the same limit. This BrainFrame can open notes up to {capability} bytes.",
+  "@housekeepingCeilingCurrent": {
+    "description": "Line stating the engram's current note size ceiling and this build's capability, both formatted with separators.",
+    "placeholders": {
+      "limit": { "type": "String", "example": "131,072" },
+      "capability": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "housekeepingCeilingRaiseTo": "Raise to {limit}",
+  "@housekeepingCeilingRaiseTo": {
+    "description": "Button offering to raise the engram's note size limit to this build's capability, formatted with separators.",
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
+  },
+
+  "housekeepingCeilingRaiseToLabel": "Raise the note size limit to {limit} bytes",
+  "@housekeepingCeilingRaiseToLabel": {
+    "description": "Accessibility label of the raise-the-limit button.",
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
+  },
+
+  "housekeepingCeilingRaiseTitle": "Raise the limit to {limit} bytes?",
+  "@housekeepingCeilingRaiseTitle": {
+    "description": "Confirmation title when raising the note size ceiling.",
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
+  },
+
+  "housekeepingCeilingRaiseBody": "{count, plural, =0{Every device that opens this engram will enforce the new limit. A device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.} =1{1 note waiting for your decision will be editable again. Every device that opens this engram will enforce the new limit; a device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.} other{{count} notes waiting for your decision will be editable again. Every device that opens this engram will enforce the new limit; a device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.}}",
+  "@housekeepingCeilingRaiseBody": {
+    "description": "Confirmation body when raising the note size ceiling: how many waiting notes go live, and the consequence for older devices.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingCeilingRaise": "Raise the limit",
+  "@housekeepingCeilingRaise": {
+    "description": "Confirmation button that applies the raise."
+  },
+
+  "housekeepingCeilingChanged": "The note size limit is now {limit} bytes.",
+  "@housekeepingCeilingChanged": {
+    "description": "Transient confirmation after the ceiling changed.",
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
+  },
+
+  "housekeepingCeilingFailed": "The limit could not be changed: {error}",
+  "@housekeepingCeilingFailed": {
+    "description": "Transient message when writing the new ceiling failed.",
+    "placeholders": { "error": { "type": "String", "example": "permission denied" } }
+  },
+
+  "housekeepingOpenNote": "Open {path}",
+  "@housekeepingOpenNote": {
+    "description": "Button (and its accessibility label) on a scan card or a pending card that opens the named note in the editor.",
+    "placeholders": { "path": { "type": "String", "example": "journal/2025.md" } }
+  },
+
   "housekeepingPendingTitle": "Awaiting your decision",
   "@housekeepingPendingTitle": {
     "description": "Heading of the Housekeeping section listing text notes that grew past the note size ceiling outside the app and are read-only until the user chooses."

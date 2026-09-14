@@ -1,7 +1,8 @@
 # The note size ceiling
 
 - **Status:** accepted (2026-09-13) — the decisions were taken in the review
-  thread of **#124**, and this is their single coherent statement
+  thread of **#124**, and this is their single coherent statement; Decision 7
+  amended 2026-09-13, when the job was built: it raises only
 - **Author:** Claude
 - **Date:** 2026-09-13
 - **Companion to:** [note-identity-and-crdt.md](note-identity-and-crdt.md),
@@ -288,13 +289,28 @@ does the same in mirror. So:
   no value** — everything created before this lands — means 128 KiB, the
   number that was implicitly true, and nothing writes the field until an
   explicit change.
-- **Changing it is a Housekeeping job**, deliberate and counted, in either
-  direction: *Raise this engram's note size limit to 256 KiB — devices
-  running BrainFrame older than X will no longer open it* / *Lower it to
-  64 KiB — N notes are over that and will be asked to reconstruct or
-  convert.* The confirmation states the consequence before anything happens.
-  Same shape as forget and the planned garbage collection and peer
+- **Changing it is a Housekeeping job**, deliberate and counted, and it
+  **raises only, to the running build's capability**: *Raise this engram's
+  note size limit to 256 KiB — N notes waiting for a decision will be
+  editable again; devices running BrainFrame older than X will no longer
+  open it.* The confirmation states the consequence before anything
+  happens. Same shape as forget and the planned garbage collection and peer
   retirement: a maintenance action, never a side effect of opening.
+- **Why one direction, one value.** The only event that calls for a change
+  is a newer build whose capability has passed what the engram recorded,
+  and then exactly one value is worth moving to. Nothing calls for
+  lowering: no user has a smaller number to prefer, and a menu of them
+  would be a menu of values nobody has measured — so the job offers none,
+  and an engram at the capability sees a statement, not a control. The
+  engine underneath (the marker write, the reconciler's re-scan) takes any
+  value in either direction, so a reason to lower, if one appears, adds a
+  caller, not a mechanism. The one candidate on the horizon is a capability
+  that goes *down* — the Zero 2 W measurement of **#156** coming back
+  worse. That would leave every engram recording the old value refused by
+  the new build, and the place to lower is then the refusal itself, which
+  can offer to lower to this build's capability, counted — not
+  Housekeeping, which a refused engram never reaches. Not built until the
+  measurement asks for it.
 
 ## What this asks of the implementation
 
@@ -304,7 +320,7 @@ Recorded here so the steps that build it do not re-derive it.
   one size helper used by the scan (on the `stat`) and the editor (on the
   buffer).
 - The `engram.json` field, its default, the refusal at open, and the
-  Housekeeping job that changes it.
+  Housekeeping job that raises it.
 - A writer for plain-file notes — write the file, record one register claim
   — so a converted note stays editable through the existing `NoteWriter`
   seam.

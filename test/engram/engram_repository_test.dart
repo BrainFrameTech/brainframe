@@ -468,6 +468,42 @@ void main() {
     });
   });
 
+  group('setNoteSizeCeiling (ceiling step 23)', () {
+    test('writes the marker and returns the engram enforcing it', () async {
+      final repo = repoWith();
+      final engram = await repo.create('zettel');
+      expect(engram.noteSizeCeilingBytes, 131072);
+
+      final lowered = await repo.setNoteSizeCeiling(engram, 65536);
+
+      expect(lowered.noteSizeCeilingBytes, 65536);
+      expect(lowered.id, engram.id);
+      expect(lowered.displayName, 'zettel');
+      // Re-read from disk on discovery: the write landed.
+      final discovery = await repo.discover();
+      expect(
+        discovery.available
+            .firstWhere((e) => e.id == engram.id)
+            .noteSizeCeilingBytes,
+        65536,
+      );
+      // And back up.
+      final raised = await repo.setNoteSizeCeiling(lowered, 131072);
+      expect(raised.noteSizeCeilingBytes, 131072);
+    });
+
+    test('refuses a read-only engram', () async {
+      final repo = repoWith();
+      final tutorial = (await repo.discover()).available.firstWhere(
+        (e) => e.readOnly,
+      );
+      expect(
+        () => repo.setNoteSizeCeiling(tutorial, 65536),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('rename', () {
     test('rewrites the marker so the new name survives a reopen', () async {
       final repo = repoWith();

@@ -50,6 +50,17 @@ class Engram {
     noteSizeCeilingBytes: noteSizeCeilingBytes,
   );
 
+  /// A copy of this engram enforcing [bytes] as its note size ceiling — the
+  /// in-memory half of the Housekeeping job that changes it, over the same
+  /// [store] and the same [id].
+  Engram withNoteSizeCeilingBytes(int bytes) => Engram(
+    id: id,
+    displayName: displayName,
+    readOnly: readOnly,
+    store: store,
+    noteSizeCeilingBytes: bytes,
+  );
+
   @override
   String toString() =>
       'Engram(id: $id, displayName: $displayName, readOnly: $readOnly)';

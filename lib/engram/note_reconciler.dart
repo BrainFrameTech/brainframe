@@ -405,6 +405,14 @@ abstract class NoteReconciler {
   /// Throws [StateError] if the note is not awaiting a decision.
   Future<String> reconstruct(String path);
 
+  /// Enforces [bytes] as the engram's ceiling from now on and scans, so a
+  /// note the new limit puts over the line enters the awaiting-decision
+  /// state now rather than at the next launch, and one a raised limit puts
+  /// back under leaves it. The marker is the caller's to write first.
+  /// Either direction is honoured; the Housekeeping job only ever raises
+  /// (the note size ceiling design, Decision 7).
+  Future<void> setNoteSizeCeiling(int bytes);
+
   /// Whether the note at [path] is a plain file — `blobLww` at a text path,
   /// keeping no history and saving whole — so the editor can say so (the
   /// note size ceiling design, Decision 5). False for a text note, a path

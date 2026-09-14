@@ -210,6 +210,22 @@ class EngramRepository {
     return engram.withDisplayName(metadata.displayName);
   }
 
+  /// Records [bytes] as [engram]'s note size ceiling — the limit every device
+  /// enforces for its text notes — and returns the engram enforcing it (the
+  /// note size ceiling design, Decision 7). The marker is the only place it
+  /// lives; the registry carries nothing about it.
+  Future<Engram> setNoteSizeCeiling(Engram engram, int bytes) async {
+    if (engram.readOnly) {
+      throw ArgumentError.value(
+        engram.id,
+        'engram',
+        'read-only engrams have no note size ceiling to change',
+      );
+    }
+    final metadata = await engram.store.setNoteSizeCeilingBytes(bytes);
+    return engram.withNoteSizeCeilingBytes(metadata.noteSizeCeilingBytes);
+  }
+
   /// Drops a registered (Location B) engram from the registry, leaving its
   /// files on disk. Built-in engrams cannot be forgotten (Decision 5);
   /// container engrams are removed by deleting their folder, not through here.

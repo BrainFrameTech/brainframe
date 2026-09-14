@@ -200,6 +200,20 @@ class FileSystemEngramStore extends EngramStore {
   }
 
   @override
+  Future<EngramMetadata> setNoteSizeCeilingBytes(int bytes) async {
+    final current = await readMetadata();
+    if (current == null) {
+      throw StateError('No engram marker at $_rootPath');
+    }
+    final updated = current.withNoteSizeCeilingBytes(bytes);
+    await _atomicWrite(
+      _metadataFile,
+      Uint8List.fromList(utf8.encode(updated.encode())),
+    );
+    return updated;
+  }
+
+  @override
   String? get locationDescription => _rootPath;
 
   /// Writes [bytes] to [file] atomically (Decision 5): write a sibling temp

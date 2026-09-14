@@ -1032,6 +1032,48 @@ void main() {
       expect(await engram.statFile('journal (oversized).md'), isNull);
     });
 
+    group('the ceiling job (step 23)', () {
+      test('lowering puts exactly the notes between the limits in the door',
+          () async {
+        final d = await device(ceiling: ceiling);
+        await d.writer.write('small.md', 'x' * 100);
+        await d.writer.write('mid.md', 'x' * 600);
+        await d.writer.write('big.md', 'x' * 1200);
+        await d.reconciler.scan();
+        expect(await d.reconciler.awaitingDecision(), isEmpty);
+
+        await d.reconciler.setNoteSizeCeiling(1000);
+
+        expect(
+          (await d.reconciler.awaitingDecision()).map((n) => n.path),
+          ['big.md'],
+        );
+        expect(d.store.catalog.byPath('big.md')!.state, NoteState.oversized);
+        expect(d.store.catalog.byPath('mid.md')!.state, NoteState.live);
+        // Recorded, so Housekeeping's card says what the job did.
+        final notice = (await d.reconciler.recentScans()).first;
+        expect(notice.report.awaitingDecision, ['big.md']);
+        expect(notice.trigger, ScanTrigger.manual);
+        // A file arriving later is judged by the new limit.
+        await engram.writeString('later.md', 'x' * 1100);
+        expect((await d.reconciler.scan()).oversized, ['later.md']);
+      });
+
+      test('raising lets a waiting note back under the line go live', () async {
+        final d = await device(ceiling: ceiling);
+        await d.writer.write('big.md', 'x' * 1200);
+        await d.reconciler.scan();
+        await d.reconciler.setNoteSizeCeiling(1000);
+        expect(await d.reconciler.awaitingDecision(), hasLength(1));
+
+        await d.reconciler.setNoteSizeCeiling(ceiling);
+
+        expect(await d.reconciler.awaitingDecision(), isEmpty);
+        expect(d.store.catalog.byPath('big.md')!.state, NoteState.live);
+        expect(d.valueOf('big.md'), 'x' * 1200, reason: 'history intact');
+      });
+    });
+
     test('asidePathFor spells the kept name', () {
       expect(asidePathFor('journal.md'), 'journal (oversized).md');
       expect(asidePathFor('a/b/journal.md'), 'a/b/journal (oversized).md');

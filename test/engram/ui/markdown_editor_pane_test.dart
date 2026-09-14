@@ -163,6 +163,9 @@ class _FakeReconciler implements NoteReconciler {
   @override
   Future<bool> isPlainFile(String path) async => plainFiles.contains(path);
 
+  @override
+  Future<void> setNoteSizeCeiling(int bytes) async {}
+
   /// Housekeeping reconstructed the note: it is no longer waiting, the file
   /// is back to [text], and the reconciler says so on its stream.
   void reconstructedElsewhere(String path, String text) {

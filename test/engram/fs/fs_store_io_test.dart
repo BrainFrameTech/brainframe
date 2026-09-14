@@ -471,6 +471,31 @@ void main() {
         );
       });
 
+      test('setNoteSizeCeilingBytes records the value and nothing else',
+          () async {
+        // Step 23: the one way the field changes. Written whole and atomic
+        // like a rename; identity, name, and creation stamp untouched.
+        final loc = locFor('job');
+        await legacyMarker(loc);
+        final store = FileSystemEngramStore(loc);
+
+        final updated = await store.setNoteSizeCeilingBytes(65536);
+
+        expect(updated.noteSizeCeilingBytes, 65536);
+        expect(updated.displayName, 'Legacy');
+        expect(updated.id, '01JAB2CD3EFGHJKMNPQRSTVWXY');
+        expect((await openFileSystemEngram(loc)).noteSizeCeilingBytes, 65536);
+        expect(
+          await File('${loc.path}/.brainframe/engram.json').readAsString(),
+          contains('"noteSizeCeilingBytes": 65536'),
+        );
+        expect(
+          () => store.setNoteSizeCeilingBytes(noteSizeCapabilityBytes + 1),
+          throwsArgumentError,
+          reason: 'never raised past what this device can open',
+        );
+      });
+
       test('a rename preserves the marker\'s ceiling, recorded or not',
           () async {
         final loc = locFor('legacy');

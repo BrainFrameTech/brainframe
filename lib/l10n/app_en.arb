@@ -906,28 +906,16 @@
     }
   },
 
-  "housekeepingCeilingChangeTo": "Change to {limit}",
-  "@housekeepingCeilingChangeTo": {
-    "description": "Button offering one of the preset note size limits, formatted with separators.",
-    "placeholders": { "limit": { "type": "String", "example": "65,536" } }
+  "housekeepingCeilingRaiseTo": "Raise to {limit}",
+  "@housekeepingCeilingRaiseTo": {
+    "description": "Button offering to raise the engram's note size limit to this build's capability, formatted with separators.",
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
   },
 
-  "housekeepingCeilingChangeToLabel": "Change the note size limit to {limit} bytes",
-  "@housekeepingCeilingChangeToLabel": {
-    "description": "Accessibility label of a preset note size limit button.",
-    "placeholders": { "limit": { "type": "String", "example": "65,536" } }
-  },
-
-  "housekeepingCeilingLowerTitle": "Lower the limit to {limit} bytes?",
-  "@housekeepingCeilingLowerTitle": {
-    "description": "Confirmation title when lowering the note size ceiling.",
-    "placeholders": { "limit": { "type": "String", "example": "65,536" } }
-  },
-
-  "housekeepingCeilingLowerBody": "{count, plural, =0{No note is over that size. Every device that opens this engram will enforce the new limit.} =1{1 note is over that size. It will be read-only and wait for you to reconstruct or convert it, and every device that opens this engram will enforce the new limit.} other{{count} notes are over that size. They will be read-only and wait for you to reconstruct or convert each one, and every device that opens this engram will enforce the new limit.}}",
-  "@housekeepingCeilingLowerBody": {
-    "description": "Confirmation body when lowering the note size ceiling: the consequence, counted.",
-    "placeholders": { "count": { "type": "int", "example": "3" } }
+  "housekeepingCeilingRaiseToLabel": "Raise the note size limit to {limit} bytes",
+  "@housekeepingCeilingRaiseToLabel": {
+    "description": "Accessibility label of the raise-the-limit button.",
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
   },
 
   "housekeepingCeilingRaiseTitle": "Raise the limit to {limit} bytes?",
@@ -936,20 +924,21 @@
     "placeholders": { "limit": { "type": "String", "example": "131,072" } }
   },
 
-  "housekeepingCeilingRaiseBody": "Every device that opens this engram will enforce the new limit. A device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.",
+  "housekeepingCeilingRaiseBody": "{count, plural, =0{Every device that opens this engram will enforce the new limit. A device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.} =1{1 note waiting for your decision will be editable again. Every device that opens this engram will enforce the new limit; a device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.} other{{count} notes waiting for your decision will be editable again. Every device that opens this engram will enforce the new limit; a device running a BrainFrame that cannot open notes this large will refuse to open the engram until it is updated.}}",
   "@housekeepingCeilingRaiseBody": {
-    "description": "Confirmation body when raising the note size ceiling: the consequence for older devices."
+    "description": "Confirmation body when raising the note size ceiling: how many waiting notes go live, and the consequence for older devices.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
   },
 
-  "housekeepingCeilingChange": "Change the limit",
-  "@housekeepingCeilingChange": {
-    "description": "Confirmation button that applies a note size ceiling change."
+  "housekeepingCeilingRaise": "Raise the limit",
+  "@housekeepingCeilingRaise": {
+    "description": "Confirmation button that applies the raise."
   },
 
   "housekeepingCeilingChanged": "The note size limit is now {limit} bytes.",
   "@housekeepingCeilingChanged": {
     "description": "Transient confirmation after the ceiling changed.",
-    "placeholders": { "limit": { "type": "String", "example": "65,536" } }
+    "placeholders": { "limit": { "type": "String", "example": "131,072" } }
   },
 
   "housekeepingCeilingFailed": "The limit could not be changed: {error}",

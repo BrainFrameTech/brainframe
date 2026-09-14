@@ -155,33 +155,37 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
     if (mounted) _reloadNotes();
   }
 
-  /// The Housekeeping job that changes the engram's ceiling (Decision 7):
-  /// counted, confirmed, written to the marker, pushed into the scope, and
-  /// enforced by the reconciler at once, so a note the new limit puts over
-  /// the line is listed above before the pane is even reopened.
-  Future<void> _changeCeiling(int bytes) async {
+  /// The Housekeeping job that raises the engram's ceiling to this build's
+  /// capability (Decision 7): counted, confirmed, written to the marker,
+  /// pushed into the scope, and enforced by the reconciler at once, so a
+  /// waiting note the raised limit puts back under the line is live before
+  /// the pane is even reopened.
+  ///
+  /// Raising is the only direction offered. The one thing that ever calls
+  /// for a change is a newer build whose capability exceeds what the engram
+  /// recorded, and then there is exactly one value worth moving to. The
+  /// engine below the seam (`EngramRepository.setNoteSizeCeiling`,
+  /// `NoteReconciler.setNoteSizeCeiling`) takes any value, in either
+  /// direction; nothing in the UI hands it one that nobody measured.
+  Future<void> _raiseCeiling() async {
     final engram = _engram;
     final change = widget.changeCeiling;
     final notes = widget.notes;
     if (engram == null || change == null || notes == null) return;
+    const bytes = noteSizeCapabilityBytes;
     final l10n = AppLocalizations.of(context);
-    final lowering = bytes < engram.noteSizeCeilingBytes;
-    final over = lowering ? await notes.countTextNotesOver(bytes) : 0;
+    // Counted before, not after: the waiting notes the new limit lets go
+    // live. One that arrived larger than the capability itself stays put.
+    final freed = (await notes.awaitingDecision())
+        .where((note) => note.sizeBytes <= bytes)
+        .length;
     if (!mounted) return;
     final limit = formatDecimal(context, bytes);
     final confirmed = await showAdaptiveDialog<bool>(
       context: context,
       builder: (context) => AlertDialog.adaptive(
-        title: Text(
-          lowering
-              ? l10n.housekeepingCeilingLowerTitle(limit)
-              : l10n.housekeepingCeilingRaiseTitle(limit),
-        ),
-        content: Text(
-          lowering
-              ? l10n.housekeepingCeilingLowerBody(over)
-              : l10n.housekeepingCeilingRaiseBody,
-        ),
+        title: Text(l10n.housekeepingCeilingRaiseTitle(limit)),
+        content: Text(l10n.housekeepingCeilingRaiseBody(freed)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -189,7 +193,7 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(l10n.housekeepingCeilingChange),
+            child: Text(l10n.housekeepingCeilingRaise),
           ),
         ],
       ),
@@ -335,9 +339,9 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                     onDismiss: _dismiss,
                     onReconstruct: _reconstruct,
                     onConvert: _convert,
-                    onChangeCeiling: widget.changeCeiling == null
+                    onRaiseCeiling: widget.changeCeiling == null
                         ? null
-                        : _changeCeiling,
+                        : _raiseCeiling,
                     onOpenNote: widget.onOpenNote,
                   ),
                   const SizedBox(height: 28),
@@ -395,7 +399,7 @@ class _LedgerSection extends StatelessWidget {
     required this.onDismiss,
     required this.onReconstruct,
     required this.onConvert,
-    required this.onChangeCeiling,
+    required this.onRaiseCeiling,
     required this.onOpenNote,
   });
 
@@ -409,7 +413,7 @@ class _LedgerSection extends StatelessWidget {
   final void Function(PendingNote note) onConvert;
 
   /// Null when the ceiling cannot be changed here.
-  final void Function(int bytes)? onChangeCeiling;
+  final VoidCallback? onRaiseCeiling;
   final void Function(String path)? onOpenNote;
 
   @override
@@ -476,7 +480,7 @@ class _LedgerSection extends StatelessWidget {
               );
             },
           ),
-          if (onChangeCeiling != null) ...[
+          if (onRaiseCeiling != null) ...[
             const SizedBox(height: 16),
             Text(
               l10n.housekeepingCeilingTitle,
@@ -485,7 +489,7 @@ class _LedgerSection extends StatelessWidget {
             const SizedBox(height: 8),
             _CeilingCard(
               ceilingBytes: engram.noteSizeCeilingBytes,
-              onChange: onChangeCeiling!,
+              onRaise: onRaiseCeiling!,
             ),
           ],
           FutureBuilder<List<PendingNote>>(
@@ -765,28 +769,22 @@ class _OpenNoteButton extends StatelessWidget {
   }
 }
 
-/// The engram's note size ceiling and the presets it can be changed to —
-/// the Housekeeping job of Decision 7. The card states what the limit means
-/// and what this build can open; the confirmation, which [onChange] shows,
-/// states the consequence of the particular change and its count.
+/// The engram's note size ceiling and this build's capability — the
+/// Housekeeping job of Decision 7. The card states what the limit means and
+/// what this build can open; when the engram's limit is below the
+/// capability, it offers the one change there is a reason for, raising to
+/// the capability, and the confirmation [onRaise] shows states the
+/// consequence and the count. At the capability the card is a statement.
 class _CeilingCard extends StatelessWidget {
-  const _CeilingCard({required this.ceilingBytes, required this.onChange});
-
-  /// The values offered: the capability and the two halvings below it.
-  /// Enough to lower an engram for a small device and raise it back; a free
-  /// number would invite values nobody has measured.
-  static const List<int> presets = [
-    noteSizeCapabilityBytes ~/ 4,
-    noteSizeCapabilityBytes ~/ 2,
-    noteSizeCapabilityBytes,
-  ];
+  const _CeilingCard({required this.ceilingBytes, required this.onRaise});
 
   final int ceilingBytes;
-  final void Function(int bytes) onChange;
+  final VoidCallback onRaise;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final capability = formatDecimal(context, noteSizeCapabilityBytes);
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -794,33 +792,22 @@ class _CeilingCard extends StatelessWidget {
           _Line(
             l10n.housekeepingCeilingCurrent(
               formatDecimal(context, ceilingBytes),
-              formatDecimal(context, noteSizeCapabilityBytes),
+              capability,
             ),
           ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final bytes in presets)
-                if (bytes != ceilingBytes)
-                  Semantics(
-                    button: true,
-                    label: l10n.housekeepingCeilingChangeToLabel(
-                      formatDecimal(context, bytes),
-                    ),
-                    child: ExcludeSemantics(
-                      child: OutlinedButton(
-                        onPressed: () => onChange(bytes),
-                        child: Text(
-                          l10n.housekeepingCeilingChangeTo(
-                            formatDecimal(context, bytes),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-            ],
-          ),
+          if (ceilingBytes < noteSizeCapabilityBytes) ...[
+            const SizedBox(height: 4),
+            Semantics(
+              button: true,
+              label: l10n.housekeepingCeilingRaiseToLabel(capability),
+              child: ExcludeSemantics(
+                child: OutlinedButton(
+                  onPressed: onRaise,
+                  child: Text(l10n.housekeepingCeilingRaiseTo(capability)),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -1033,19 +1033,6 @@ void main() {
     });
 
     group('the ceiling job (step 23)', () {
-      test('counts the text notes a lower limit would put over', () async {
-        final d = await device(ceiling: ceiling);
-        await d.writer.write('small.md', 'x' * 100);
-        await d.writer.write('mid.md', 'x' * 600);
-        await d.writer.write('big.md', 'x' * 1200);
-        await engram.writeBytes('pic.png', Uint8List(2000));
-        await d.reconciler.scan();
-
-        expect(await d.reconciler.countTextNotesOver(500), 2);
-        expect(await d.reconciler.countTextNotesOver(1000), 1);
-        expect(await d.reconciler.countTextNotesOver(5000), 0);
-      });
-
       test('lowering puts exactly the notes between the limits in the door',
           () async {
         final d = await device(ceiling: ceiling);

@@ -253,19 +253,6 @@ class DriftReconciler implements NoteReconciler {
   }
 
   @override
-  Future<int> countTextNotesOver(int bytes) async {
-    var count = 0;
-    for (final row in database.catalog.findable()) {
-      if (row.mergePolicy != MergePolicy.fugueText) continue;
-      if (row.state != NoteState.live && row.state != NoteState.oversized) {
-        continue;
-      }
-      if ((row.size ?? 0) > bytes) count++;
-    }
-    return count;
-  }
-
-  @override
   Future<void> setNoteSizeCeiling(int bytes) async {
     noteSizeCeilingBytes = bytes;
     await scan(trigger: ScanTrigger.manual);

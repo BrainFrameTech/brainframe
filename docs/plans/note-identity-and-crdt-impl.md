@@ -958,31 +958,36 @@ the consequence before anything happens (Decisions 6, 7). Manual test plan:
 the job, and the engram-open refusal from step 16 seen from the other side.
 
 As built: a *Note size limit* card in Housekeeping's ledger section states
-the engram's ceiling and this build's capability and offers the presets it
-can be changed to — a quarter and a half of the capability, and the
-capability itself, never the current value; a free number would invite
-values nobody has measured. Lowering counts the live text notes over the
-new limit (`NoteReconciler.countTextNotesOver`, by the sizes the catalog
-last observed) and the confirmation says how many will wait for a
-decision; raising says an older BrainFrame that cannot open notes that
-large will refuse the engram. On confirm the marker is written
+the engram's ceiling and this build's capability. The job **raises only**,
+to the capability — Decision 7 as amended when this was built: the one
+event that calls for a change is a newer build whose capability has passed
+what the engram recorded, and then one value is worth moving to; nothing
+calls for lowering, and a menu of smaller values would be a menu nobody
+has measured. So an engram below the capability sees one button, *Raise to
+131,072*, and one at the capability sees a statement. The confirmation
+counts the waiting notes the raise frees (those of `awaitingDecision()` at
+or under the capability) and says an older BrainFrame that cannot open
+notes that large will refuse the engram. On confirm the marker is written
 (`EngramStore.setNoteSizeCeilingBytes`, the `setDisplayName` pattern, via
 `EngramRepository.setNoteSizeCeiling`), the engram enforcing the new value
 is pushed into the scope as a rename is, and the reconciler is told
-(`setNoteSizeCeiling`) and scans at once — so a note the new limit puts
-over the line is listed as awaiting a decision before the pane is even
-reopened, and one a raised limit puts back under goes live. Every scan
-card and every pending card carries an *Open* button per path the ceiling
-touched (oversized, awaiting, converted, reconstructed — not created,
-moved, or deleted); `openSettingsScreen` completes with the chosen path and
-the browser selects it, through the leave guard. A card's stated limit is
-the engram's *current* one, not the one at the time of the scan, which the
-scan record does not keep; after a change, old cards read with the new
-number.
+(`setNoteSizeCeiling`) and scans at once — so a waiting note the raised
+limit puts back under the line is live before the pane is even reopened.
+The engine takes either direction (the repository and the reconciler are
+tested lowering too — that is how the raise path's starting state is
+made), only the UI does not offer it. Every scan card and every pending
+card carries an *Open* button per path the ceiling touched (oversized,
+awaiting, converted, reconstructed — not created, moved, or deleted);
+`openSettingsScreen` completes with the chosen path and the browser
+selects it, through the leave guard. A card's stated limit is the engram's
+*current* one, not the one at the time of the scan, which the scan record
+does not keep; after a change, old cards read with the new number.
 
-- **Tests that matter:** lowering counts exactly the notes between the
-  limits and puts them in step 20's state; raising writes the field and
-  nothing else; the confirmation's numbers match what the job then does.
+- **Tests that matter:** lowering through the engine puts exactly the
+  notes between the limits in step 20's state; raising writes the field
+  and nothing else, and a waiting note under the new limit goes live with
+  its history intact; the confirmation's count matches what the job then
+  frees.
 
 ## Rules that apply to every step
 

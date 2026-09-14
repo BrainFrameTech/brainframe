@@ -88,6 +88,9 @@ void main() {
     store: _InertStore(),
   );
 
+  /// The same engram, recording a ceiling below this build's capability.
+  Engram at(int ceilingBytes) => field.withNoteSizeCeilingBytes(ceilingBytes);
+
   testWidgets('lists an engram with its path and a Forget button', (
     tester,
   ) async {
@@ -708,11 +711,11 @@ void main() {
       );
     });
 
-    testWidgets('the ceiling card states the limit and offers the presets', (
+    testWidgets('the ceiling card at the capability is a statement', (
       tester,
     ) async {
-      // Step 23. What the limit means, what this build can open, and the
-      // other values it can be changed to — never the current one.
+      // Step 23. What the limit means and what this build can open. At the
+      // capability there is nothing to change to, so nothing is offered.
       final notes = _Notes.named(ledgerValue: emptyLedger);
       await tester.pumpWidget(
         host(engram: field, notes: notes, changeCeiling: (e, b) async => e),
@@ -727,31 +730,63 @@ void main() {
       );
       expect(find.textContaining('can open notes up to 131,072 bytes'),
           findsOneWidget);
-      expect(find.text('Change to 32,768'), findsOneWidget);
-      expect(find.text('Change to 65,536'), findsOneWidget);
-      expect(find.text('Change to 131,072'), findsNothing, reason: 'current');
+      expect(find.textContaining('Raise to'), findsNothing);
+      expect(find.byType(OutlinedButton), findsNothing);
+    });
+
+    testWidgets('below the capability, the card offers the one raise', (
+      tester,
+    ) async {
+      final notes = _Notes.named(ledgerValue: emptyLedger);
+      await tester.pumpWidget(
+        host(
+          engram: at(65536),
+          notes: notes,
+          changeCeiling: (e, b) async => e,
+        ),
+      );
+      await tester.pumpAndSettle();
+
       expect(
-        tester.getSemantics(find.text('Change to 65,536')).label,
-        contains('Change the note size limit to 65,536 bytes'),
+        find.textContaining('Text notes up to 65,536 bytes keep their edit '
+            'history on this engram'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('can open notes up to 131,072 bytes'),
+          findsOneWidget);
+      expect(find.text('Raise to 131,072'), findsOneWidget);
+      expect(find.byType(OutlinedButton), findsOneWidget, reason: 'no other');
+      expect(
+        tester.getSemantics(find.text('Raise to 131,072')).label,
+        contains('Raise the note size limit to 131,072 bytes'),
       );
     });
 
     testWidgets('without a way to change it, there is no card', (tester) async {
       final notes = _Notes.named(ledgerValue: emptyLedger);
-      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpWidget(host(engram: at(65536), notes: notes));
       await tester.pumpAndSettle();
       expect(find.text('Note size limit'), findsNothing);
+      expect(find.text('Raise to 131,072'), findsNothing);
     });
 
-    testWidgets('lowering is counted, confirmed, written, and enforced', (
+    testWidgets('raising is counted, confirmed, written, and enforced', (
       tester,
     ) async {
-      final notes = _Notes.named(ledgerValue: emptyLedger)..over = 3;
+      // Two notes wait: one the raise frees, one that arrived larger than
+      // the capability itself and stays where it is.
+      final notes = _Notes.named(
+        ledgerValue: emptyLedger,
+        pending: const [
+          PendingNote(path: 'daily/big.md', sizeBytes: 70000),
+          PendingNote(path: 'daily/huge.md', sizeBytes: 140000),
+        ],
+      );
       final written = <int>[];
       Engram? pushed;
       await tester.pumpWidget(
         host(
-          engram: field,
+          engram: at(65536),
           notes: notes,
           changeCeiling: (e, b) async {
             written.add(b);
@@ -762,65 +797,68 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Change to 65,536'));
+      await tester.tap(find.text('Raise to 131,072'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Lower the limit to 65,536 bytes?'), findsOneWidget);
+      expect(find.text('Raise the limit to 131,072 bytes?'), findsOneWidget);
       expect(
-        find.textContaining('3 notes are over that size. They will be '
-            'read-only and wait for you to reconstruct or convert each one'),
+        find.textContaining('1 note waiting for your decision will be '
+            'editable again. Every device that opens this engram will enforce '
+            'the new limit; a device running a BrainFrame that cannot open '
+            'notes this large will refuse to open the engram until it is '
+            'updated.'),
         findsOneWidget,
       );
-      expect(notes.countedAt, [65536]);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(written, isEmpty);
       expect(notes.ceilingsSet, isEmpty);
+      expect(find.text('Raise to 131,072'), findsOneWidget, reason: 'unchanged');
 
-      await tester.tap(find.text('Change to 65,536'));
+      await tester.tap(find.text('Raise to 131,072'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Change the limit'));
+      await tester.tap(find.text('Raise the limit'));
       await tester.pumpAndSettle();
 
-      expect(written, [65536]);
-      expect(notes.ceilingsSet, [65536], reason: 'enforced at once');
-      expect(pushed!.noteSizeCeilingBytes, 65536);
-      expect(find.text('The note size limit is now 65,536 bytes.'), findsOneWidget);
-      // The card follows: 65,536 is now current, 131,072 is offered.
-      expect(find.text('Change to 65,536'), findsNothing);
-      expect(find.text('Change to 131,072'), findsOneWidget);
+      expect(written, [131072]);
+      expect(notes.ceilingsSet, [131072], reason: 'enforced at once');
+      expect(pushed!.noteSizeCeilingBytes, 131072);
+      expect(
+        find.text('The note size limit is now 131,072 bytes.'),
+        findsOneWidget,
+      );
+      // The card follows: at the capability, nothing is offered.
+      expect(
+        find.textContaining('Text notes up to 131,072 bytes keep their edit '
+            'history on this engram'),
+        findsOneWidget,
+      );
+      expect(find.text('Raise to 131,072'), findsNothing);
     });
 
-    testWidgets('raising states the consequence for older devices', (
-      tester,
-    ) async {
+    testWidgets('with nothing waiting, the raise states only the consequence',
+        (tester) async {
       final notes = _Notes.named(ledgerValue: emptyLedger);
-      final small = Engram(
-        id: field.id,
-        displayName: field.displayName,
-        readOnly: false,
-        store: _InertStore(),
-        noteSizeCeilingBytes: 65536,
-      );
       await tester.pumpWidget(
         host(
-          engram: small,
+          engram: at(65536),
           notes: notes,
           changeCeiling: (e, b) async => e.withNoteSizeCeilingBytes(b),
         ),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Change to 131,072'));
+      await tester.tap(find.text('Raise to 131,072'));
       await tester.pumpAndSettle();
 
       expect(find.text('Raise the limit to 131,072 bytes?'), findsOneWidget);
       expect(
-        find.textContaining('A device running a BrainFrame that cannot open '
-            'notes this large will refuse to open the engram'),
+        find.text('Every device that opens this engram will enforce the new '
+            'limit. A device running a BrainFrame that cannot open notes this '
+            'large will refuse to open the engram until it is updated.'),
         findsOneWidget,
       );
-      expect(notes.countedAt, isEmpty, reason: 'nothing to count on a raise');
+      expect(find.textContaining('waiting for your decision'), findsNothing);
     });
 
     testWidgets('a failed write is reported and nothing is enforced', (
@@ -829,20 +867,20 @@ void main() {
       final notes = _Notes.named(ledgerValue: emptyLedger);
       await tester.pumpWidget(
         host(
-          engram: field,
+          engram: at(65536),
           notes: notes,
           changeCeiling: (e, b) async => throw StateError('read-only disk'),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Change to 65,536'));
+      await tester.tap(find.text('Raise to 131,072'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Change the limit'));
+      await tester.tap(find.text('Raise the limit'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('The limit could not be changed:'), findsOneWidget);
       expect(notes.ceilingsSet, isEmpty);
-      expect(find.text('Change to 65,536'), findsOneWidget, reason: 'unchanged');
+      expect(find.text('Raise to 131,072'), findsOneWidget, reason: 'unchanged');
     });
 
     testWidgets('a notice\'s paths open the note, and a pending card\'s too', (
@@ -916,14 +954,7 @@ void main() {
           plainFiles: 1,
         ),
       );
-      final small = Engram(
-        id: field.id,
-        displayName: field.displayName,
-        readOnly: false,
-        store: _InertStore(),
-        noteSizeCeilingBytes: 65536,
-      );
-      await tester.pumpWidget(host(engram: small, notes: notes));
+      await tester.pumpWidget(host(engram: at(65536), notes: notes));
       await tester.pumpAndSettle();
 
       expect(
@@ -1010,10 +1041,6 @@ class _Notes implements NoteReconciler {
   final List<ScanNotice> scans;
   final List<PendingNote> pending;
 
-  /// What [countTextNotesOver] answers, and the limits it was asked about.
-  int over = 0;
-  final List<int> countedAt = [];
-
   /// Every ceiling handed to [setNoteSizeCeiling].
   final List<int> ceilingsSet = [];
   final List<int> dismissed = [];
@@ -1051,12 +1078,6 @@ class _Notes implements NoteReconciler {
 
   @override
   Future<bool> isPlainFile(String path) async => false;
-
-  @override
-  Future<int> countTextNotesOver(int bytes) async {
-    countedAt.add(bytes);
-    return over;
-  }
 
   @override
   Future<void> setNoteSizeCeiling(int bytes) async => ceilingsSet.add(bytes);

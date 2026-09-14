@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/commands/app_commands.dart';
 import 'package:brainframe/engram/built_in_engrams.dart';
 import 'package:brainframe/engram/crdt/crdt_session.dart';
@@ -133,6 +134,70 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('notes/first-note.md'), findsOneWidget); // breadcrumb
+  });
+
+  testWidgets('re-selecting the open file just closes the drawer', (
+    tester,
+  ) async {
+    // Nothing to leave, so nothing to ask; the drawer still goes away.
+    setWidth(tester, 400);
+    await tester.pumpWidget(harness(repo()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Open file browser'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('first-note.md'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Open file browser'));
+    await tester.pumpAndSettle();
+    // The name appears twice now — the tree row and the pane's title — so
+    // aim at the last one, which is the drawer's, drawn over the pane.
+    await tester.tap(find.text('first-note.md').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('notes/first-note.md'), findsOneWidget);
+    expect(find.byTooltip('Open file browser'), findsOneWidget, reason: 'closed');
+  });
+
+  testWidgets('selecting another file asks the registry first', (tester) async {
+    // A withheld buffer — over the note size limit — would be dropped by
+    // the switch of file; the user decides, or the selection stays.
+    setWidth(tester, 400);
+    final saves = PendingSaves();
+    var answer = false;
+    saves.register(
+      'editor',
+      () async {},
+      isWithheld: () => !answer,
+      resolve: () async => answer,
+    );
+    await tester.pumpWidget(
+      AppSettings(
+        designOverride: DesignLanguage.material,
+        child: localizedApp(
+          home: EngramScope(
+            initialEngram: tutorial(),
+            child: EngramBrowser(repository: repo(), pendingSaves: saves),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Open file browser'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('first-note.md'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('notes/first-note.md'), findsNothing, reason: 'stayed');
+
+    answer = true;
+    await tester.tap(find.byTooltip('Open file browser'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('first-note.md'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('notes/first-note.md'), findsOneWidget);
   });
 
   testWidgets('wide layout renders the reader content top-aligned',

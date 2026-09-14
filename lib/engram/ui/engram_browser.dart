@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../commands/app_commands.dart';
+import '../../commands/pending_saves.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../settings/settings_screen.dart';
 import '../../settings/settings_store.dart';
@@ -100,7 +101,13 @@ class EngramBrowser extends StatefulWidget {
     required this.repository,
     this.preferences,
     this.controller,
+    this.pendingSaves,
   });
+
+  /// Asked before a file is selected whether the open note holds a buffer a
+  /// flush will not write. Null means the app-wide registry; a test injects
+  /// its own.
+  final PendingSaves? pendingSaves;
 
   /// Supplies the engram switcher its list of engrams and create/adopt actions.
   final EngramRepository repository;
@@ -458,7 +465,17 @@ class _EngramBrowserState extends State<EngramBrowser> {
     );
   }
 
-  void _selectFile(String path) {
+  Future<void> _selectFile(String path) async {
+    if (path == _selectedPath) {
+      if (_drawerOpen) setState(() => _drawerOpen = false);
+      return;
+    }
+    // Leaving a note whose buffer is over the size limit would drop that
+    // buffer — a flush does not write it — so the user decides first, or
+    // stays (the note size ceiling design, Decisions 4 and 5).
+    final saves = widget.pendingSaves ?? PendingSaves.instance;
+    if (!await saves.resolveWithheld()) return;
+    if (!mounted) return;
     setState(() {
       _selectedPath = path;
       _drawerOpen = false;

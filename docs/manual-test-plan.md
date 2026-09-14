@@ -1651,8 +1651,13 @@ pasted paragraph of that size crosses it).
 5. Type past the limit again; this time choose **Convert to a plain file**.
    Check the file in another editor; open Housekeeping.
 6. Reset the fixture. Type past the limit; without choosing, select another
-   note in the tree; then come back.
-7. Grow `about.md` past the limit outside the app as in F32 step 2; relaunch;
+   note in the tree. **Cancel.** Then select it again and **Roll back**.
+7. Type past the limit again; without choosing, quit — once each way: the
+   close button, Ctrl/Cmd+Q, File › Exit. **Cancel** each time. Then quit
+   again and **Convert to a plain file**; relaunch and open the note.
+8. Type past the limit again; open the engram switcher and pick another
+   engram. **Cancel.**
+9. Grow `about.md` past the limit outside the app as in F32 step 2; relaunch;
    select `about.md`; tap **Over the size limit** on the bar. Choose
    **Reconstruct**. Then repeat with `gear/checklist.md` and choose
    **Convert to a plain file** from the bar's dialog.
@@ -1681,11 +1686,16 @@ pasted paragraph of that size crosses it).
   other editor holds the typed text, the bar shows the plain-file line, and
   Housekeeping's newest card reads "*time* · by request — 1 made a plain
   file".
-- Step 6: **the typed run is lost.** Switching away with the save withheld
-  drops the buffer, as any save that cannot complete would; the note
-  reopens at its last saved text. This is the documented gap (plan step 22),
-  not a defect — report it only if the file on disk changed.
-- Step 7: for `about.md` the dialog says *This note grew to N bytes outside
+- Step 6: the **Over the size limit** dialog opens *before* the selection
+  changes; after Cancel the same note is still open with the typed run
+  intact and the chip still red. The second time, Roll back closes the
+  dialog and the other note opens. Nothing was written either time.
+- Step 7: each quit opens the same dialog and **Cancel keeps the window
+  open** — the app is still running, the note still on screen, the typed
+  run still there. Convert closes the dialog, the app quits, and after the
+  relaunch the note holds the typed text as a plain file (the bar says so).
+- Step 8: the dialog opens and Cancel leaves the engram where it was.
+- Step 9: for `about.md` the dialog says *This note grew to N bytes outside
   BrainFrame … Reconstruct restores … "about (oversized).md" … Convert keeps
   this file as it is …* with **Cancel**, **Reconstruct**, **Convert to a
   plain file**. Reconstruct: the note opens in the **editor** at its saved
@@ -1695,7 +1705,7 @@ pasted paragraph of that size crosses it).
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓; step 7 needs a second app over the folder | as Android | as Android | ✓ with the file edited over SSH for step 7; the chip and bar update on the next push |
+| ✓ | ✓ | ✓ | step 7 **N/A** — no quit gesture; step 9 needs a second app over the folder | as Android | as Android | step 7 via the menu bar only; step 9 with the file edited over SSH; the chip and bar update on the next push |
 
 - **Paste vs typing:** a paste is "more than one character at once, crossing
   the line". A hardware key held down crosses one character at a time and
@@ -1708,6 +1718,13 @@ pasted paragraph of that size crosses it).
   a live region, so the moment of crossing is announced.
 - **Declarative-trap probe:** after Roll back, the field's text must actually
   change (the typed run disappears), not just the chip.
+- **Nothing lost without a choice:** the only ways to lose an over-limit
+  buffer are a crash and a power cut. A file switch, an engram switch, or a
+  quit that happens without the dialog — or with it, after Cancel — is a
+  defect.
+- **External edit under the wall:** with the wall up, change the same file in
+  another editor and switch back. The buffer is kept (not replaced by the
+  file); after Roll back the note shows the other editor's version.
 
 ---
 

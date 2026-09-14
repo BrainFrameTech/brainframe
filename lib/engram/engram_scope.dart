@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import '../commands/pending_saves.dart';
 
 import 'engram.dart';
 
@@ -53,7 +54,13 @@ class EngramScope extends StatefulWidget {
     required this.initialEngram,
     required this.child,
     this.onSwitched,
+    this.pendingSaves,
   });
+
+  /// Asked before a switch whether any open note holds a buffer a flush
+  /// will not write. Null means the app-wide registry; a test injects its
+  /// own.
+  final PendingSaves? pendingSaves;
 
   /// The engram open when the scope is first built (resolved at startup).
   final Engram initialEngram;
@@ -85,6 +92,12 @@ class _EngramScopeState extends State<EngramScope> {
 
   Future<void> _switchTo(Engram next) async {
     if (next.id == _engram.id) return; // already open — nothing to swap/release
+    // Switching engrams rebuilds the editor, which would drop a buffer that
+    // is over the note size limit and so cannot be flushed; the user decides
+    // first, or stays (the note size ceiling design, Decisions 4 and 5).
+    final saves = widget.pendingSaves ?? PendingSaves.instance;
+    if (!await saves.resolveWithheld()) return;
+    if (!mounted) return;
     final previous = _engram;
     // Swap first so the new (already-resolved) engram renders immediately, then
     // free the outgoing store. For v1's stateless stores release is a no-op;

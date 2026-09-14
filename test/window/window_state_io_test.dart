@@ -118,6 +118,39 @@ void main() {
     expect(calls, contains('destroy'));
   });
 
+  test('a withheld buffer the user keeps stops the close', () async {
+    // Over the note size limit a flush writes nothing, so the close asks;
+    // a cancel keeps the window, and a later close asks again.
+    final saves = PendingSaves();
+    var answer = false;
+    var asked = 0;
+    final order = <String>[];
+    saves.register(
+      'editor',
+      () async => order.add('flush'),
+      isWithheld: () => !answer,
+      resolve: () async {
+        asked++;
+        return answer;
+      },
+    );
+    final persister = WindowStatePersister(
+      storeWith(_MapBackend()),
+      pendingSaves: saves,
+    );
+
+    await persister.onWindowClose();
+    expect(asked, 1);
+    expect(calls, isNot(contains('destroy')));
+    expect(order, isEmpty, reason: 'nothing flushed on a cancelled close');
+
+    answer = true;
+    await persister.onWindowClose();
+    expect(asked, 1, reason: 'settled now: not withheld, so not asked');
+    expect(order, ['flush']);
+    expect(calls, contains('destroy'));
+  });
+
   test('a failing flush still lets the window close', () async {
     final saves = PendingSaves();
     saves.register('editor', () async => throw StateError('disk full'));

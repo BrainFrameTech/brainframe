@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
@@ -107,6 +108,49 @@ void main() {
     expect(storeB.releaseCount, 0);
     // The switch is local to the scope: the widget above it never rebuilt.
     expect(rootBuilds, 1);
+  });
+
+  testWidgets('a switch asks the registry first, and stays put on a no', (
+    tester,
+  ) async {
+    // A withheld buffer — one over the note size limit — would be dropped
+    // by the rebuild; the user decides, or the switch does not happen.
+    final storeA = _RecordingStore();
+    final storeB = _RecordingStore();
+    final b = _engram('b', storeB);
+    final saves = PendingSaves();
+    var answer = false;
+    var asked = 0;
+    saves.register(
+      'editor',
+      () async {},
+      isWithheld: () => !answer,
+      resolve: () async {
+        asked++;
+        return answer;
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EngramScope(
+          initialEngram: _engram('a', storeA),
+          pendingSaves: saves,
+          child: _EngramProbe(target: b),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('switch'));
+    await tester.pumpAndSettle();
+    expect(asked, 1);
+    expect(find.text('active: a'), findsOneWidget, reason: 'stayed');
+    expect(storeA.releaseCount, 0);
+
+    answer = true;
+    await tester.tap(find.text('switch'));
+    await tester.pumpAndSettle();
+    expect(find.text('active: b'), findsOneWidget);
   });
 
   testWidgets('switching to the already-active engram is a no-op', (tester) async {

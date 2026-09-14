@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../commands/app_commands.dart';
+import '../../commands/pending_saves.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../crdt/catalog.dart';
 import '../metadata.dart';
@@ -52,7 +53,12 @@ class MarkdownEditorPane extends StatefulWidget {
     this.availablePaths = const {},
     this.onNavigateToFile,
     this.noteSizeCeilingBytes = defaultNoteSizeCeilingBytes,
+    this.pendingSaves,
   });
+
+  /// The registry the controller reports unwritten and withheld work to.
+  /// Null means the app-wide one; a test injects its own.
+  final PendingSaves? pendingSaves;
 
   final EngramStore store;
   final String path;
@@ -81,6 +87,7 @@ class MarkdownEditorPane extends StatefulWidget {
 class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   late final DocumentEditController _controller = DocumentEditController(
     writer: widget.writer ?? DirectNoteWriter(widget.store),
+    pendingSaves: widget.pendingSaves,
   );
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -138,7 +145,23 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
     _controller.addListener(_onControllerChanged);
     _focusNode.addListener(_onFocusChanged);
     _reconciled = widget.reconciler?.reconciled.listen(_onReconciled);
+    // Anything that would leave this note — closing the window, selecting
+    // another file, switching engrams — asks the registry first, and the
+    // registry asks here: the wall's own dialog, and whether it settled.
+    _controller.resolveWithheld = _resolveWall;
     _open(widget.path);
+  }
+
+  /// A file that changed on disk while the buffer was over the limit: the
+  /// reload is held back rather than dropping the buffer, and applied once
+  /// the user rolls back — which is the moment the file is what they want.
+  bool _reloadDeferred = false;
+
+  Future<bool> _resolveWall() async {
+    if (!_controller.isWithheld) return true;
+    if (!mounted) return false;
+    await _askAboutWall();
+    return !_controller.isWithheld;
   }
 
   @override
@@ -264,6 +287,13 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       unawaited(_open(path));
       return;
     }
+    // Over the limit the buffer is the only copy of what the user typed;
+    // a reload would replace it with the file. Held back until they roll
+    // back, when the file is exactly what they asked for.
+    if (_controller.isWithheld) {
+      _reloadDeferred = true;
+      return;
+    }
     unawaited(_reload(path));
   }
 
@@ -380,6 +410,10 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       case _WallChoice.rollBack:
         _controller.rollBack();
         _editor.replaceText(_controller.text);
+        if (_reloadDeferred) {
+          _reloadDeferred = false;
+          await _reload(widget.path);
+        }
       case _WallChoice.convert:
         await _convert();
         if (!mounted) return;

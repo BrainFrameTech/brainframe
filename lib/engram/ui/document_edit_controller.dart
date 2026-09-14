@@ -52,9 +52,25 @@ class DocumentEditController extends ChangeNotifier
     if (observeLifecycle) WidgetsBinding.instance.addObserver(this);
     // Desktop exits without a lifecycle event, so the close path asks every
     // live controller to flush rather than waiting to be told (see
-    // [PendingSaves]).
-    _pendingSaves.register(this, flush);
+    // [PendingSaves]) — and, for a buffer a flush will not write, to put the
+    // decision in front of the user before anything leaves it.
+    _pendingSaves.register(
+      this,
+      flush,
+      isWithheld: () => isWithheld,
+      resolve: () async => await resolveWithheld?.call() ?? false,
+    );
   }
+
+  /// Asks the user to settle a withheld buffer — the pane's wall dialog —
+  /// and returns whether it is settled. Set by the pane that owns the
+  /// dialog; unset, a withheld buffer cannot be settled and nothing may
+  /// leave it.
+  Future<bool> Function()? resolveWithheld;
+
+  /// Whether the buffer is over the size limit and so will not be written
+  /// by any flush (the note size ceiling design, Decisions 4 and 5).
+  bool get isWithheld => _status == SaveStatus.overLimit;
 
   final NoteWriter writer;
   final Duration idleDebounce;

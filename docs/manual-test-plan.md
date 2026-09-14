@@ -1726,6 +1726,79 @@ pasted paragraph of that size crosses it).
   another editor and switch back. The buffer is kept (not replaced by the
   file); after Roll back the note shows the other editor's version.
 
+### F35 — Housekeeping: changing the note size limit, and Open on a notice
+
+As of ceiling step 23, Housekeeping shows the engram's note size limit and
+lets it be changed — lowered or raised, among a few preset values — with a
+confirmation that says what will happen first. And every notice that names
+a note carries an **Open** button that goes straight to it. Use the fixture
+engram, fresh (reset it, forget it in Housekeeping if this install has seen
+it, and launch with `--engram test/fixtures/engram`).
+
+**Steps:**
+
+1. Open **Settings › Housekeeping** and read the **Note size limit** card.
+2. Tap **Change to 65,536**. Read the dialog; **Cancel**.
+3. Open `daily/2026-05-02.md`, paste enough text to take it to about 70,000
+   bytes (the status bar shows the count), let it save, and return to
+   Housekeeping. Tap **Change to 65,536** again; read the dialog; tap
+   **Change the limit**.
+4. Read the pane. Look at `.brainframe/engram.json` in the file manager.
+5. Tap **Open** on the awaiting card for `daily/2026-05-02.md`.
+6. Back in Housekeeping, tap **Change to 131,072**; read the dialog; confirm.
+7. On the newest scan card, tap the **Open** button naming the note.
+8. Quit and relaunch; open Housekeeping.
+9. **The other side:** with the app closed, edit `engram.json` to record
+   `"noteSizeCeilingBytes": 1000000` and relaunch (F26's probe).
+
+**Expected:**
+
+- Step 1: *Text notes up to 131,072 bytes keep their edit history on this
+  engram; every device that opens it enforces the same limit. This
+  BrainFrame can open notes up to 131,072 bytes.* — with **Change to
+  32,768** and **Change to 65,536**, and no button for the current value.
+- Step 2: **Lower the limit to 65,536 bytes?** — *No note is over that size.
+  Every device that opens this engram will enforce the new limit.* Cancel
+  changes nothing: the card still says 131,072.
+- Step 3: the dialog now says *1 note is over that size. It will be
+  read-only and wait for you to reconstruct or convert it …* After
+  confirming, a brief notice: *The note size limit is now 65,536 bytes.*
+- Step 4: the card says 65,536 and offers 32,768 and 131,072; an **Awaiting
+  your decision** section lists `daily/2026-05-02.md` at its size with the
+  limit 65,536 — without leaving the pane; a new scan card "*time* · by
+  request — 1 awaiting a decision" names it. `engram.json` now contains
+  `"noteSizeCeilingBytes": 65536`.
+- Step 5: Settings closes and the note is open, read-only, with the bar's
+  **Over the size limit** (F34 step 9's surface). Nothing was changed.
+- Step 6: **Raise the limit to 131,072 bytes?** — *… A device running a
+  BrainFrame that cannot open notes this large will refuse to open the
+  engram until it is updated.* After confirming: the awaiting section is
+  gone (the note is back under the limit and live), the card says 131,072
+  again, `engram.json` says `131072`.
+- Step 7: Settings closes and the note opens in the **editor**, its text
+  intact, chip `Saved`.
+- Step 8: the limit is still what step 6 set — it lives in the engram, not
+  the session.
+- Step 9: refused as F26 describes — the reason the raise dialog warned of,
+  seen from the device that cannot follow.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ | ✓ | ✓ | ✓; step 4's file check needs a files app over the folder | as Android | as Android | ✓; the confirmation dialog is one push, the result another |
+
+- **Counted before, not after:** the number in the lowering dialog is the
+  number of notes that then wait. Report a mismatch.
+- **Never automatic:** nothing changes without **Change the limit**; a
+  scan, a launch, or a rename must never alter the limit (F26's rename
+  probe) or invent the field.
+- **A11y:** each preset button is labeled *Change the note size limit to N
+  bytes*; each Open button *Open &lt;path&gt;*; the confirmation is an adaptive
+  dialog with Cancel first.
+- **Inspection point:** older scan cards state the limit as it is *now* —
+  "Larger than 65,536 bytes on arrival" after a lowering, even for a note
+  that arrived under the old 131,072. The record keeps no per-scan limit.
+  Known, not a defect.
+
 ---
 
 ## Bug-class deep-dives

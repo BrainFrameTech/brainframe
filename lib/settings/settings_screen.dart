@@ -18,15 +18,18 @@ import 'settings_shell.dart';
 /// Engram pane's rename — still reach the real scope underneath. The engram's
 /// op-log session is captured and re-published the same way, so Housekeeping
 /// can ask the reconciler what it knows about the notes.
-Future<void> openSettingsScreen(
+/// Completes with the engram-relative path of a note the user asked to
+/// open from inside Settings — Housekeeping's "Open" on a notice — or null
+/// when Settings was simply closed. The caller, the browser, selects it.
+Future<String?> openSettingsScreen(
   BuildContext context, {
   String? initialCategoryId,
 }) {
   final engramScope = EngramScope.maybeOf(context);
   final writer = CrdtSessionScope.maybeOf(context);
   final reconciler = CrdtSessionScope.maybeReconcilerOf(context);
-  return Navigator.of(context).push(
-    MaterialPageRoute<void>(
+  return Navigator.of(context).push<String?>(
+    MaterialPageRoute<String?>(
       builder: (_) {
         Widget screen = SettingsScreen(initialCategoryId: initialCategoryId);
         if (writer != null || reconciler != null) {

@@ -105,5 +105,9 @@ void main() {
       noteSizeCeilingBytes: 65536,
     );
     expect(small.withDisplayName('Renamed').noteSizeCeilingBytes, 65536);
+    final changed = small.withNoteSizeCeilingBytes(32768);
+    expect(changed.noteSizeCeilingBytes, 32768);
+    expect(changed.id, small.id);
+    expect(identical(changed.store, store), isTrue);
   });
 }

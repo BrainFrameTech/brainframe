@@ -52,7 +52,13 @@ void main() {
     cleanUpError = null;
   });
 
-  Widget host({Engram? engram, NoteReconciler? notes}) => localizedApp(
+  Widget host({
+    Engram? engram,
+    NoteReconciler? notes,
+    CeilingChanger? changeCeiling,
+    void Function(Engram engram)? onCeilingChanged,
+    void Function(String path)? onOpenNote,
+  }) => localizedApp(
     home: Scaffold(
       body: HousekeepingPane(
         load: load,
@@ -60,8 +66,19 @@ void main() {
         cleanUp: cleanUp,
         engram: engram,
         notes: notes,
+        changeCeiling: changeCeiling,
+        onCeilingChanged: onCeilingChanged,
+        onOpenNote: onOpenNote,
       ),
     ),
+  );
+
+  const emptyLedger = NoteLedger(
+    peers: 1,
+    minted: 0,
+    adopted: 0,
+    unclaimed: 0,
+    tombstoned: 0,
   );
 
   final field = Engram(
@@ -691,6 +708,201 @@ void main() {
       );
     });
 
+    testWidgets('the ceiling card states the limit and offers the presets', (
+      tester,
+    ) async {
+      // Step 23. What the limit means, what this build can open, and the
+      // other values it can be changed to — never the current one.
+      final notes = _Notes.named(ledgerValue: emptyLedger);
+      await tester.pumpWidget(
+        host(engram: field, notes: notes, changeCeiling: (e, b) async => e),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Note size limit'), findsOneWidget);
+      expect(
+        find.textContaining('Text notes up to 131,072 bytes keep their edit '
+            'history on this engram'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('can open notes up to 131,072 bytes'),
+          findsOneWidget);
+      expect(find.text('Change to 32,768'), findsOneWidget);
+      expect(find.text('Change to 65,536'), findsOneWidget);
+      expect(find.text('Change to 131,072'), findsNothing, reason: 'current');
+      expect(
+        tester.getSemantics(find.text('Change to 65,536')).label,
+        contains('Change the note size limit to 65,536 bytes'),
+      );
+    });
+
+    testWidgets('without a way to change it, there is no card', (tester) async {
+      final notes = _Notes.named(ledgerValue: emptyLedger);
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+      expect(find.text('Note size limit'), findsNothing);
+    });
+
+    testWidgets('lowering is counted, confirmed, written, and enforced', (
+      tester,
+    ) async {
+      final notes = _Notes.named(ledgerValue: emptyLedger)..over = 3;
+      final written = <int>[];
+      Engram? pushed;
+      await tester.pumpWidget(
+        host(
+          engram: field,
+          notes: notes,
+          changeCeiling: (e, b) async {
+            written.add(b);
+            return e.withNoteSizeCeilingBytes(b);
+          },
+          onCeilingChanged: (e) => pushed = e,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Change to 65,536'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Lower the limit to 65,536 bytes?'), findsOneWidget);
+      expect(
+        find.textContaining('3 notes are over that size. They will be '
+            'read-only and wait for you to reconstruct or convert each one'),
+        findsOneWidget,
+      );
+      expect(notes.countedAt, [65536]);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(written, isEmpty);
+      expect(notes.ceilingsSet, isEmpty);
+
+      await tester.tap(find.text('Change to 65,536'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change the limit'));
+      await tester.pumpAndSettle();
+
+      expect(written, [65536]);
+      expect(notes.ceilingsSet, [65536], reason: 'enforced at once');
+      expect(pushed!.noteSizeCeilingBytes, 65536);
+      expect(find.text('The note size limit is now 65,536 bytes.'), findsOneWidget);
+      // The card follows: 65,536 is now current, 131,072 is offered.
+      expect(find.text('Change to 65,536'), findsNothing);
+      expect(find.text('Change to 131,072'), findsOneWidget);
+    });
+
+    testWidgets('raising states the consequence for older devices', (
+      tester,
+    ) async {
+      final notes = _Notes.named(ledgerValue: emptyLedger);
+      final small = Engram(
+        id: field.id,
+        displayName: field.displayName,
+        readOnly: false,
+        store: _InertStore(),
+        noteSizeCeilingBytes: 65536,
+      );
+      await tester.pumpWidget(
+        host(
+          engram: small,
+          notes: notes,
+          changeCeiling: (e, b) async => e.withNoteSizeCeilingBytes(b),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Change to 131,072'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Raise the limit to 131,072 bytes?'), findsOneWidget);
+      expect(
+        find.textContaining('A device running a BrainFrame that cannot open '
+            'notes this large will refuse to open the engram'),
+        findsOneWidget,
+      );
+      expect(notes.countedAt, isEmpty, reason: 'nothing to count on a raise');
+    });
+
+    testWidgets('a failed write is reported and nothing is enforced', (
+      tester,
+    ) async {
+      final notes = _Notes.named(ledgerValue: emptyLedger);
+      await tester.pumpWidget(
+        host(
+          engram: field,
+          notes: notes,
+          changeCeiling: (e, b) async => throw StateError('read-only disk'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change to 65,536'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change the limit'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('The limit could not be changed:'), findsOneWidget);
+      expect(notes.ceilingsSet, isEmpty);
+      expect(find.text('Change to 65,536'), findsOneWidget, reason: 'unchanged');
+    });
+
+    testWidgets('a notice\'s paths open the note, and a pending card\'s too', (
+      tester,
+    ) async {
+      // Tall enough that every card is on screen: the ListView's children
+      // are built lazily, so a scroll-into-view cannot reach an unbuilt one.
+      tester.view.physicalSize = const Size(1000, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final opened = <String>[];
+      final notes = _Notes.named(
+        ledgerValue: emptyLedger,
+        pending: [const PendingNote(path: 'grown.md', sizeBytes: 140000)],
+        scans: [
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(
+              created: ['plain.md'],
+              oversized: ['big.md'],
+              reconstructed: {'fixed.md': 'fixed (oversized).md'},
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        host(engram: field, notes: notes, onOpenNote: opened.add),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('big.md'), findsOneWidget);
+      expect(find.text('fixed.md'), findsOneWidget);
+      expect(find.text('fixed (oversized).md'), findsOneWidget);
+      expect(find.text('plain.md'), findsNothing, reason: 'created: not offered');
+      expect(
+        tester.getSemantics(find.text('big.md')).label,
+        contains('Open big.md'),
+      );
+      await tester.tap(find.text('big.md'));
+      await tester.tap(find.text('grown.md'));
+      expect(opened, ['big.md', 'grown.md']);
+    });
+
+    testWidgets('without an editor to open in, no Open buttons', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: emptyLedger,
+        scans: [
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(oversized: ['big.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.open_in_new), findsNothing);
+    });
+
     testWidgets('the ledger line states the engram\'s own ceiling', (
       tester,
     ) async {
@@ -797,6 +1009,13 @@ class _Notes implements NoteReconciler {
   final NoteLedger ledgerValue;
   final List<ScanNotice> scans;
   final List<PendingNote> pending;
+
+  /// What [countTextNotesOver] answers, and the limits it was asked about.
+  int over = 0;
+  final List<int> countedAt = [];
+
+  /// Every ceiling handed to [setNoteSizeCeiling].
+  final List<int> ceilingsSet = [];
   final List<int> dismissed = [];
   final List<String> reconstructed = [];
   final List<String> converted = [];
@@ -832,6 +1051,15 @@ class _Notes implements NoteReconciler {
 
   @override
   Future<bool> isPlainFile(String path) async => false;
+
+  @override
+  Future<int> countTextNotesOver(int bytes) async {
+    countedAt.add(bytes);
+    return over;
+  }
+
+  @override
+  Future<void> setNoteSizeCeiling(int bytes) async => ceilingsSet.add(bytes);
 
   @override
   Future<DriftScanReport> scan({

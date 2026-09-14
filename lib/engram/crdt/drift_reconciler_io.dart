@@ -93,7 +93,7 @@ class DriftReconciler implements NoteReconciler {
   /// ceiling design, Decision 7). A text file arriving larger than this is
   /// minted as a plain file (Decision 6); the decision is made from a
   /// `stat`, before any read, so the file is never loaded to find out.
-  final int noteSizeCeilingBytes;
+  int noteSizeCeilingBytes;
 
   final StreamController<String> _reconciled =
       StreamController<String>.broadcast();
@@ -250,6 +250,25 @@ class DriftReconciler implements NoteReconciler {
       startedAt: started,
       stampLastScan: false,
     );
+  }
+
+  @override
+  Future<int> countTextNotesOver(int bytes) async {
+    var count = 0;
+    for (final row in database.catalog.findable()) {
+      if (row.mergePolicy != MergePolicy.fugueText) continue;
+      if (row.state != NoteState.live && row.state != NoteState.oversized) {
+        continue;
+      }
+      if ((row.size ?? 0) > bytes) count++;
+    }
+    return count;
+  }
+
+  @override
+  Future<void> setNoteSizeCeiling(int bytes) async {
+    noteSizeCeilingBytes = bytes;
+    await scan(trigger: ScanTrigger.manual);
   }
 
   @override

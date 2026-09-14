@@ -1684,5 +1684,11 @@ class _RecordingReconciler implements NoteReconciler {
   Future<bool> isPlainFile(String path) async => false;
 
   @override
+  Future<int> countTextNotesOver(int bytes) async => 0;
+
+  @override
+  Future<void> setNoteSizeCeiling(int bytes) async {}
+
+  @override
   Stream<String> get reconciled => const Stream<String>.empty();
 }

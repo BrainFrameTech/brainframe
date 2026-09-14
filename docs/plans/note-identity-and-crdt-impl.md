@@ -957,6 +957,29 @@ longer open it* / *N notes are over that and will be asked* — that states
 the consequence before anything happens (Decisions 6, 7). Manual test plan:
 the job, and the engram-open refusal from step 16 seen from the other side.
 
+As built: a *Note size limit* card in Housekeeping's ledger section states
+the engram's ceiling and this build's capability and offers the presets it
+can be changed to — a quarter and a half of the capability, and the
+capability itself, never the current value; a free number would invite
+values nobody has measured. Lowering counts the live text notes over the
+new limit (`NoteReconciler.countTextNotesOver`, by the sizes the catalog
+last observed) and the confirmation says how many will wait for a
+decision; raising says an older BrainFrame that cannot open notes that
+large will refuse the engram. On confirm the marker is written
+(`EngramStore.setNoteSizeCeilingBytes`, the `setDisplayName` pattern, via
+`EngramRepository.setNoteSizeCeiling`), the engram enforcing the new value
+is pushed into the scope as a rename is, and the reconciler is told
+(`setNoteSizeCeiling`) and scans at once — so a note the new limit puts
+over the line is listed as awaiting a decision before the pane is even
+reopened, and one a raised limit puts back under goes live. Every scan
+card and every pending card carries an *Open* button per path the ceiling
+touched (oversized, awaiting, converted, reconstructed — not created,
+moved, or deleted); `openSettingsScreen` completes with the chosen path and
+the browser selects it, through the leave guard. A card's stated limit is
+the engram's *current* one, not the one at the time of the scan, which the
+scan record does not keep; after a change, old cards read with the new
+number.
+
 - **Tests that matter:** lowering counts exactly the notes between the
   limits and puts them in step 20's state; raising writes the field and
   nothing else; the confirmation's numbers match what the job then does.

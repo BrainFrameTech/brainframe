@@ -217,6 +217,16 @@ abstract class EngramStore {
   Future<EngramMetadata> setDisplayName(String displayName) =>
       throw UnsupportedError('This store is read-only; cannot be renamed.');
 
+  /// Records [bytes] as the engram's note size ceiling in its marker — the
+  /// limit every device enforces for its text notes (the note size ceiling
+  /// design, Decision 7). The one way the value changes; opening never
+  /// writes it. Everything else in the marker is preserved.
+  ///
+  /// Read-only stores throw [UnsupportedError]; callers gate on
+  /// `Engram.readOnly` rather than catching it.
+  Future<EngramMetadata> setNoteSizeCeilingBytes(int bytes) =>
+      throw UnsupportedError('This store is read-only; cannot be changed.');
+
   /// Where this engram lives, in whatever terms the backend has — a filesystem
   /// path for an on-disk engram — or null for a backend with no meaningful
   /// location (the asset bundle).

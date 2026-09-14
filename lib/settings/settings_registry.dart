@@ -231,6 +231,12 @@ List<SettingsGroup> buildCoreGroups(BuildContext context) {
             RepositoryScope.of(ctx),
             engram: engramScope?.engram,
             notes: CrdtSessionScope.maybeReconcilerOf(ctx),
+            // A changed ceiling is pushed back down into the real scope, as
+            // a rename is, so the editor behind this route enforces it.
+            onCeilingChanged: engramScope?.updateActive,
+            // "Open" on a notice leaves Settings with the path as its
+            // result; the browser that pushed it selects the note.
+            onOpenNote: (path) => Navigator.of(ctx).pop(path),
           ),
         ),
         SettingsCategory(

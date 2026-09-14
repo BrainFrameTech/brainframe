@@ -1010,6 +1010,68 @@
     }
   },
 
+  "statusOverLimit": "Over the size limit",
+  "@statusOverLimit": {
+    "description": "Editor status bar button, shown once a note is past the size limit (the wall). Opens the decision dialog."
+  },
+
+  "statusOverLimitLabel": "Over the size limit: {count} of {limit} bytes. Opens the choices.",
+  "@statusOverLimitLabel": {
+    "description": "Accessibility label of the over-limit button.",
+    "placeholders": {
+      "count": { "type": "String", "example": "131,400" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "saveStatusOverLimit": "Too large to save",
+  "@saveStatusOverLimit": {
+    "description": "Save-status chip when the buffer is over the note size limit and the save is withheld. Tapping opens the decision dialog."
+  },
+
+  "wallTitle": "Over the size limit",
+  "@wallTitle": {
+    "description": "Title of the dialog shown when a note is past the size limit, whichever way it got there."
+  },
+
+  "wallBodyTyping": "This note is now {count} bytes; the limit for a note that keeps its history is {limit}. It cannot be saved as it is.\n\nRoll back to the last saved version to keep its history and its merging with other devices. Or convert it to a plain file: it keeps this text, drops its history, and from now on each save replaces the file whole — whatever the most recent writer saves is what other devices get.",
+  "@wallBodyTyping": {
+    "description": "Wall dialog body when typing took the note past the limit.",
+    "placeholders": {
+      "count": { "type": "String", "example": "131,400" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "wallBodyPaste": "The pasted text would make this note {count} bytes; the limit for a note that keeps its history is {limit}. The paste has not been applied.\n\nUndo the paste to keep the note's history and its merging with other devices. Or convert the note to a plain file: it keeps the pasted text, drops its history, and from now on each save replaces the file whole — whatever the most recent writer saves is what other devices get.",
+  "@wallBodyPaste": {
+    "description": "Wall dialog body when a paste would take the note past the limit; the paste was taken back out before the dialog opened.",
+    "placeholders": {
+      "count": { "type": "String", "example": "131,400" },
+      "limit": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "wallBodyExternal": "This note grew to {count} bytes outside BrainFrame; the limit for a note that keeps its history is {limit}. It is read-only until you choose.\n\nReconstruct restores the last version BrainFrame saved and keeps this larger file beside it as “{aside}”, tracked as a plain file. Convert keeps this file as it is, drops the note's history, and from now on each save replaces the file whole.",
+  "@wallBodyExternal": {
+    "description": "Wall dialog body for a note that grew past the limit outside the app (the external-edit door).",
+    "placeholders": {
+      "count": { "type": "String", "example": "134,935" },
+      "limit": { "type": "String", "example": "131,072" },
+      "aside": { "type": "String", "example": "about (oversized).md" }
+    }
+  },
+
+  "wallRollBack": "Roll back",
+  "@wallRollBack": {
+    "description": "Wall dialog button: discard the over-limit buffer for the last saved version."
+  },
+
+  "wallUndoPaste": "Undo the paste",
+  "@wallUndoPaste": {
+    "description": "Wall dialog button: keep the note as it was before the paste."
+  },
+
   "statusPlainFile": "Plain file — edits are saved whole; no history or merging.",
   "@statusPlainFile": {
     "description": "Editor status bar line for a note that is a plain file (blobLww): its saves replace the file whole, it keeps no edit history, and concurrent edits do not merge."
@@ -1029,7 +1091,7 @@
     }
   },
 
-  "editorAwaitingDecision": "This note grew past the size limit outside BrainFrame and is read-only until you decide what to do with it in Settings › Housekeeping.",
+  "editorAwaitingDecision": "This note grew past the size limit outside BrainFrame and is read-only until you decide what to do with it: use “Over the size limit” below, or Settings › Housekeeping.",
   "@editorAwaitingDecision": {
     "description": "Banner over a read-only note that is awaiting the user's decision in Housekeeping."
   },

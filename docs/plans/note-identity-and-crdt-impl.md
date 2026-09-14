@@ -904,6 +904,33 @@ opens on the same surface with reconstruct or convert (Decisions 4, 5).
 Conversion calls step 19. Manual test plan: the wall by paste and by typing,
 and the external door.
 
+As built: the edit controller carries a `sizeLimitBytes` — the engram's
+ceiling for a text note with a catalog behind it, null for a plain file or
+an engram with none — and a buffer over it takes a fifth `SaveStatus`,
+`overLimit`: dirty, timers stopped, `flush` a no-op, the buffer kept
+exactly as typed. The chip reads *Too large to save* and is a button to the
+decision, as is the bar's *Over the size limit*; both open one dialog
+whose verbs are **Roll back** (`rollBack`: the buffer returns to the last
+saved text and the field is put back through the source editor's new
+`replaceText`, which sets text without reporting a change) or **Convert**
+(step 19, then the limit is cleared — which turns the withheld save into a
+pending one — and a flush writes the buffer through the plain-file writer).
+A paste is told from typing by its shape: more than one character arriving
+at once *and* crossing the line. It is refused at the paste — the field is
+put back before the text is ever the buffer — and the dialog's verbs are
+**Undo the paste** (already done) or **Convert** (the paste is then applied
+and saved). The external-edit door of step 20 gets the same bar in its wall
+state under the reader, with **Reconstruct** (the reconciler's stream then
+reopens the note in the editor) or **Convert** (the pane reopens it as a
+plain file); the banner stays, pointing at both the bar and Housekeeping.
+
+One thing this step does not do: an over-limit buffer is dropped, not
+saved, when the user switches files or quits — the same as any buffer whose
+save cannot complete — because the only saves possible are the two the
+dialog offers, and neither may happen without the user choosing. Blocking
+navigation on it would be a new kind of guard the app does not have; the
+chip and the bar say "too large to save" until the user decides.
+
 - **Tests that matter:** a paste landing at 131,073 bytes is refused and the
   buffer is unchanged; typing to 131,073 leaves the buffer intact and the
   file unsaved; roll back restores the last saved text; convert saves the

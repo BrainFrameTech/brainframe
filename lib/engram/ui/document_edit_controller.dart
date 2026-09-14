@@ -3,10 +3,22 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../commands/pending_saves.dart';
+import '../crdt/catalog.dart';
 import '../note_writer.dart';
 
 /// The save state surfaced to the header status indicator.
-enum SaveStatus { saved, dirty, saving, error }
+enum SaveStatus {
+  saved,
+  dirty,
+  saving,
+  error,
+
+  /// The buffer is over the note's size limit and the save is withheld
+  /// (the note size ceiling design, Decisions 4 and 5): nothing is written
+  /// until the user rolls back to the last saved version or converts the
+  /// note to a plain file. Dirty, but not saveable.
+  overLimit,
+}
 
 /// Owns the edit buffer and save pipeline for the one Markdown file currently
 /// open in the editor (design: "The save model").
@@ -59,6 +71,32 @@ class DocumentEditController extends ChangeNotifier
   String _buffer = '';
   String _savedText = '';
   SaveStatus _status = SaveStatus.saved;
+  int? _sizeLimitBytes;
+
+  /// The largest buffer this file may be saved at, in bytes on disk, or null
+  /// for no limit — a plain-file note, or an engram with no catalog to
+  /// protect. Set by the pane when it opens a note. Lowering it below the
+  /// buffer withholds the save; raising it, or clearing it, over a withheld
+  /// buffer lets the pending edit save on the next flush.
+  int? get sizeLimitBytes => _sizeLimitBytes;
+  set sizeLimitBytes(int? bytes) {
+    _sizeLimitBytes = bytes;
+    if (_path == null) return;
+    final over = _overLimit(_buffer);
+    if (over && _status != SaveStatus.overLimit) {
+      _cancelTimers();
+      _setStatus(SaveStatus.overLimit);
+    } else if (!over && _status == SaveStatus.overLimit) {
+      _idleTimer = Timer(idleDebounce, _flushFromTimer);
+      _maxWaitTimer ??= Timer(maxWait, _flushFromTimer);
+      _setStatus(SaveStatus.dirty);
+    }
+  }
+
+  bool _overLimit(String text) {
+    final limit = _sizeLimitBytes;
+    return limit != null && noteSizeInBytes(text) > limit;
+  }
 
   Timer? _idleTimer;
   Timer? _maxWaitTimer;
@@ -118,6 +156,20 @@ class DocumentEditController extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Discards the buffer in favour of the last saved text — the way back
+  /// from over the limit that keeps the note's history (the note size
+  /// ceiling design, Decision 4). Clean afterwards. A no-op before a file
+  /// is open.
+  void rollBack() {
+    if (_path == null) return;
+    _cancelTimers();
+    _buffer = _savedText;
+    // Always, not only on a transition: the buffer changed, and the pane
+    // puts it back into the field on notification.
+    _status = SaveStatus.saved;
+    notifyListeners();
+  }
+
   /// Records an edit to the open file: updates the buffer, (re)arms the idle
   /// debounce, and ensures the max-wait cap is ticking. Editing back to the
   /// saved content cancels the pending write and returns to `saved`.
@@ -125,7 +177,14 @@ class DocumentEditController extends ChangeNotifier
     if (_path == null) return;
     _buffer = text;
     final before = _status;
-    if (isDirty) {
+    if (_overLimit(text)) {
+      // Typing past the limit is allowed — the app never fights the
+      // keyboard — but the save is withheld, and the timers that would
+      // make one are stopped. The way out is rollBack, or a conversion
+      // that clears the limit.
+      _cancelTimers();
+      _setStatus(SaveStatus.overLimit);
+    } else if (isDirty) {
       _idleTimer?.cancel();
       _idleTimer = Timer(idleDebounce, _flushFromTimer);
       _maxWaitTimer ??= Timer(maxWait, _flushFromTimer);
@@ -152,6 +211,9 @@ class DocumentEditController extends ChangeNotifier
     final inFlight = _writing;
     if (inFlight != null) await inFlight;
     if (!isDirty || _path == null) return;
+    // Withheld: over the limit there is nothing that may be written. The
+    // buffer stays as the user left it, for them to roll back or convert.
+    if (_status == SaveStatus.overLimit) return;
 
     final targetPath = _path!;
     final pending = _buffer;

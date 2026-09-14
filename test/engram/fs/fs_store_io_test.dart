@@ -911,5 +911,54 @@ void main() {
       );
       expect(preview.name, 'Trail');
     });
+
+    test('a CRLF file larger than dart:io\'s chunk is counted from disk',
+        () async {
+      // #152, end to end: the only \r is in the last of several chunks of
+      // File.openRead, and the file is still counted; the streaming path
+      // agrees with what a whole read would have said.
+      final loc = locFor('Big');
+      await Directory(loc.path).create(recursive: true);
+      final bytes = Uint8List.fromList(List.filled(200 * 1024, 0x61))
+        ..[200 * 1024 - 1] = 0x0d;
+      await File('${loc.path}/log.txt').writeAsBytes(bytes);
+      await File('${loc.path}/lf.txt').writeAsBytes(bytes.sublist(0, 1000));
+
+      final preview = await previewFolderAdoption(loc);
+
+      expect(preview.fileCount, 2);
+      expect(preview.crlfCount, 1);
+    });
+
+    test('reports each file and stops when told to', () async {
+      final loc = locFor('Walk');
+      await Directory(loc.path).create(recursive: true);
+      for (final name in ['a.md', 'b.md', 'c.md']) {
+        await File('${loc.path}/$name').writeAsString('x\r\n');
+      }
+      final steps = <(int, int)>[];
+      var seen = 0;
+
+      final preview = await previewFolderAdoption(
+        loc,
+        onProgress: (done, total) => steps.add((seen = done, total)),
+        isCancelled: () => seen == 1,
+      );
+
+      expect(steps, [(0, 3), (1, 3)]);
+      expect(preview.crlfCount, 1, reason: 'what it had counted so far');
+      expect(preview.fileCount, 3, reason: 'the listing was complete');
+    });
+
+    test('the manual-testing fixture previews as it did', () async {
+      // The count the fixture's F30 run states, pinned so a change to how
+      // files are judged shows up here before it shows up in the dialog.
+      final preview = await previewFolderAdoption(
+        EngramLocation('test/fixtures/engram'),
+      );
+      expect(preview.isEngram, isTrue);
+      expect(preview.fileCount, greaterThan(0));
+      expect(preview.crlfCount, 0);
+    });
   });
 }

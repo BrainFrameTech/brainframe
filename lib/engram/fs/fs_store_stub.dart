@@ -27,7 +27,11 @@ Future<Engram> openOrCreateFileSystemEngram(
 }) =>
     throw UnsupportedError(_unsupported);
 
-Future<FolderAdoptionPreview> previewFolderAdoption(EngramLocation location) =>
+Future<FolderAdoptionPreview> previewFolderAdoption(
+  EngramLocation location, {
+  FolderPreviewProgress? onProgress,
+  FolderPreviewCancelled? isCancelled,
+}) =>
     throw UnsupportedError(_unsupported);
 
 Future<bool> removeFileSystemEngramMarker(EngramLocation location) =>

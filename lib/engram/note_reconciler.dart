@@ -147,7 +147,12 @@ class DriftScanReport {
 /// drift half of a scan is a stat per note and reports nothing: a bar that
 /// flashed on every resume would be noise, and on e-ink a repaint for nothing.
 class AdoptionProgress {
-  const AdoptionProgress({required this.done, required this.total});
+  const AdoptionProgress({
+    required this.done,
+    required this.total,
+    this.doneBytes = 0,
+    this.totalBytes = 0,
+  });
 
   /// Files brought in so far, including ones found already present.
   final int done;
@@ -155,18 +160,49 @@ class AdoptionProgress {
   /// Files the scan set out to bring in.
   final int total;
 
+  /// Bytes read so far, advancing within a file as it is streamed.
+  ///
+  /// The scan's cost is in bytes, not files: every blob is digested over a
+  /// stream and every text note read whole, so a folder where a few large
+  /// files carry most of the bytes spends most of its time on a handful of
+  /// ticks of [done]. This is what the bar's length follows; the caption
+  /// keeps the file count, which is the number the confirmation showed.
+  final int doneBytes;
+
+  /// Bytes the scan set out to read, from a stat of every file before the
+  /// first is opened. Zero when nothing had a size — an empty folder, or a
+  /// reporter that only counts files — in which case [fraction] falls back
+  /// to the file counts.
+  final int totalBytes;
+
   /// Whether there is still work to show.
   bool get isRunning => done < total;
 
+  /// How far along, in `0..1`: by bytes when there are any, else by files.
+  ///
+  /// Clamped, because a file whose size changed between the stat and the
+  /// read is counted by what was actually read, so the bytes can run past
+  /// the total.
+  double get fraction {
+    if (totalBytes > 0) return (doneBytes / totalBytes).clamp(0, 1);
+    if (total > 0) return (done / total).clamp(0, 1);
+    return 1;
+  }
+
   @override
   bool operator ==(Object other) =>
-      other is AdoptionProgress && other.done == done && other.total == total;
+      other is AdoptionProgress &&
+      other.done == done &&
+      other.total == total &&
+      other.doneBytes == doneBytes &&
+      other.totalBytes == totalBytes;
 
   @override
-  int get hashCode => Object.hash(done, total);
+  int get hashCode => Object.hash(done, total, doneBytes, totalBytes);
 
   @override
-  String toString() => 'AdoptionProgress($done of $total)';
+  String toString() =>
+      'AdoptionProgress($done of $total, $doneBytes of $totalBytes bytes)';
 }
 
 /// What this device knows about the notes in an engram, for the Housekeeping

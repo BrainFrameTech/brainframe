@@ -71,12 +71,21 @@ class ContentDigest {
 /// like any other, and the targets this app runs on cannot hold one in
 /// memory. `crypto` folds each chunk into the running SHA-256 as it arrives,
 /// so the cost is the read, and the memory is a chunk.
-Future<ContentDigest> digestStream(Stream<List<int>> chunks) async {
+///
+/// [onRead] is told the length of each chunk as it is folded in, so a caller
+/// showing progress can advance *during* a file that takes minutes rather
+/// than only after it. It is called once per chunk, which is once per 64 KiB
+/// from the filesystem; whoever paints on it is expected to coalesce.
+Future<ContentDigest> digestStream(
+  Stream<List<int>> chunks, {
+  void Function(int bytes)? onRead,
+}) async {
   var size = 0;
   final digest = await sha256
       .bind(
         chunks.map((chunk) {
           size += chunk.length;
+          onRead?.call(chunk.length);
           return chunk;
         }),
       )
@@ -85,8 +94,13 @@ Future<ContentDigest> digestStream(Stream<List<int>> chunks) async {
 }
 
 /// The digest of the file at engram-relative [path], streamed from [store].
-Future<ContentDigest> digestFile(EngramStore store, String path) =>
-    digestStream(store.openRead(path));
+///
+/// [onRead] as for [digestStream].
+Future<ContentDigest> digestFile(
+  EngramStore store,
+  String path, {
+  void Function(int bytes)? onRead,
+}) => digestStream(store.openRead(path), onRead: onRead);
 
 /// Whether [current] *might* differ from what this device last wrote — the
 /// cheap pre-filter that decides whether hashing is worth it.

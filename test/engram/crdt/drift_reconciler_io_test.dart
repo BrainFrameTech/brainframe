@@ -655,8 +655,14 @@ void main() {
 
         expect(report.created, ['at.md']);
         expect(report.oversized, ['over.md']);
-        expect(d.store.catalog.byPath('at.md')!.mergePolicy, MergePolicy.fugueText);
-        expect(d.store.catalog.byPath('over.md')!.mergePolicy, MergePolicy.blobLww);
+        expect(
+          d.store.catalog.byPath('at.md')!.mergePolicy,
+          MergePolicy.fugueText,
+        );
+        expect(
+          d.store.catalog.byPath('over.md')!.mergePolicy,
+          MergePolicy.blobLww,
+        );
       });
 
       test('the size is decided from a stat, never a read', () async {
@@ -684,7 +690,10 @@ void main() {
 
         expect(await d.reconciler.reconcile('journal.md'), isTrue);
 
-        expect(d.store.catalog.byPath('journal.md')!.mergePolicy, MergePolicy.blobLww);
+        expect(
+          d.store.catalog.byPath('journal.md')!.mergePolicy,
+          MergePolicy.blobLww,
+        );
         expect((await d.reconciler.scan()).isClean, isTrue);
       });
 
@@ -698,7 +707,11 @@ void main() {
 
         expect(await d.reconciler.isPlainFile('journal.md'), isTrue);
         expect(await d.reconciler.isPlainFile('note.md'), isFalse);
-        expect(await d.reconciler.isPlainFile('pic.png'), isFalse, reason: 'a blob at its own extension is not a plain-file note');
+        expect(
+          await d.reconciler.isPlainFile('pic.png'),
+          isFalse,
+          reason: 'a blob at its own extension is not a plain-file note',
+        );
         expect(await d.reconciler.isPlainFile('unknown.md'), isFalse);
       });
 
@@ -711,7 +724,11 @@ void main() {
 
         final ledger = await d.reconciler.ledger();
 
-        expect(ledger.plainFiles, 1, reason: 'a png is a blob, not a plain file');
+        expect(
+          ledger.plainFiles,
+          1,
+          reason: 'a png is a blob, not a plain file',
+        );
         expect(ledger.minted, 3);
       });
 
@@ -736,7 +753,11 @@ void main() {
 
         expect(await engram.readString('journal.md'), 'trimmed\n');
         final row = d.store.catalog.byPath('journal.md')!;
-        expect(row.mergePolicy, MergePolicy.blobLww, reason: 'still a plain file');
+        expect(
+          row.mergePolicy,
+          MergePolicy.blobLww,
+          reason: 'still a plain file',
+        );
         expect(changesOf(d, 'journal.md'), 2, reason: 'the seed and one claim');
         expect((await d.reconciler.scan()).isClean, isTrue);
       });
@@ -839,7 +860,10 @@ void main() {
       for (final forbidden in ['materialized_hash', 'mtime', 'sketch']) {
         expect(text, isNot(contains(forbidden)));
       }
-      expect(text, isNot(contains(d.store.catalog.byPath('new.md')!.materializedHash!)));
+      expect(
+        text,
+        isNot(contains(d.store.catalog.byPath('new.md')!.materializedHash!)),
+      );
     });
   });
 
@@ -870,7 +894,11 @@ void main() {
       expect(row.state, NoteState.oversized);
       expect(row.mergePolicy, MergePolicy.fugueText, reason: 'not converted');
       expect(await engram.readString('journal.md'), 'kept\n${filler(ceiling)}');
-      expect(d.valueOf('journal.md'), 'kept\n', reason: 'the history is intact');
+      expect(
+        d.valueOf('journal.md'),
+        'kept\n',
+        reason: 'the history is intact',
+      );
       expect(await d.reconciler.awaitingDecision(), [
         PendingNote(path: 'journal.md', sizeBytes: 5 + ceiling),
       ]);
@@ -931,56 +959,73 @@ void main() {
       expect(await engram.readString('journal.md'), 'kept\n${filler(ceiling)}');
     });
 
-    test('trimmed back under the line outside the app, it comes back as drift',
-        () async {
-      final d = await grown();
-      await d.reconciler.scan();
-      await engram.writeString('journal.md', 'kept\ntrimmed\n');
-
-      final report = await d.reconciler.scan();
-
-      expect(report.reconciled, ['journal.md']);
-      expect(report.awaitingDecision, isEmpty);
-      expect(d.store.catalog.byPath('journal.md')!.state, NoteState.live);
-      expect(d.valueOf('journal.md'), 'kept\ntrimmed\n');
-      expect(await d.reconciler.awaitingDecision(), isEmpty);
-    });
-
-    group('reconstruct', () {
-      test('restores the last saved version and keeps the file beside it',
-          () async {
+    test(
+      'trimmed back under the line outside the app, it comes back as drift',
+      () async {
         final d = await grown();
         await d.reconciler.scan();
-        final external = await engram.readBytes('journal.md');
-
-        final kept = await d.reconciler.reconstruct('journal.md');
-
-        expect(kept, 'journal (oversized).md');
-        expect(await engram.readString('journal.md'), 'kept\n');
-        expect(await engram.readBytes(kept), external, reason: 'byte-identical');
-        final row = d.store.catalog.byPath('journal.md')!;
-        expect(row.state, NoteState.live);
-        expect(row.mergePolicy, MergePolicy.fugueText);
-        expect(row.materializedHash, contentHashOfString('kept\n'));
-        expect(await d.reconciler.awaitingDecision(), isEmpty);
-        final notice = (await d.reconciler.recentScans()).first;
-        expect(notice.report.reconstructed, {'journal.md': kept});
-        expect(notice.trigger, ScanTrigger.manual);
-      });
-
-      test('the kept copy is tracked as a plain file on the next scan',
-          () async {
-        final d = await grown();
-        await d.reconciler.scan();
-        final kept = await d.reconciler.reconstruct('journal.md');
+        await engram.writeString('journal.md', 'kept\ntrimmed\n');
 
         final report = await d.reconciler.scan();
 
-        expect(report.oversized, [kept]);
-        expect(report.reconciled, isEmpty, reason: 'the note itself is clean');
-        expect(d.store.catalog.byPath(kept)!.mergePolicy, MergePolicy.blobLww);
-        expect((await d.reconciler.ledger()).plainFiles, 1);
-      });
+        expect(report.reconciled, ['journal.md']);
+        expect(report.awaitingDecision, isEmpty);
+        expect(d.store.catalog.byPath('journal.md')!.state, NoteState.live);
+        expect(d.valueOf('journal.md'), 'kept\ntrimmed\n');
+        expect(await d.reconciler.awaitingDecision(), isEmpty);
+      },
+    );
+
+    group('reconstruct', () {
+      test(
+        'restores the last saved version and keeps the file beside it',
+        () async {
+          final d = await grown();
+          await d.reconciler.scan();
+          final external = await engram.readBytes('journal.md');
+
+          final kept = await d.reconciler.reconstruct('journal.md');
+
+          expect(kept, 'journal (oversized).md');
+          expect(await engram.readString('journal.md'), 'kept\n');
+          expect(
+            await engram.readBytes(kept),
+            external,
+            reason: 'byte-identical',
+          );
+          final row = d.store.catalog.byPath('journal.md')!;
+          expect(row.state, NoteState.live);
+          expect(row.mergePolicy, MergePolicy.fugueText);
+          expect(row.materializedHash, contentHashOfString('kept\n'));
+          expect(await d.reconciler.awaitingDecision(), isEmpty);
+          final notice = (await d.reconciler.recentScans()).first;
+          expect(notice.report.reconstructed, {'journal.md': kept});
+          expect(notice.trigger, ScanTrigger.manual);
+        },
+      );
+
+      test(
+        'the kept copy is tracked as a plain file on the next scan',
+        () async {
+          final d = await grown();
+          await d.reconciler.scan();
+          final kept = await d.reconciler.reconstruct('journal.md');
+
+          final report = await d.reconciler.scan();
+
+          expect(report.oversized, [kept]);
+          expect(
+            report.reconciled,
+            isEmpty,
+            reason: 'the note itself is clean',
+          );
+          expect(
+            d.store.catalog.byPath(kept)!.mergePolicy,
+            MergePolicy.blobLww,
+          );
+          expect((await d.reconciler.ledger()).plainFiles, 1);
+        },
+      );
 
       test('never overwrites an existing aside file', () async {
         final d = await grown();
@@ -1015,49 +1060,52 @@ void main() {
       });
     });
 
-    test('convert leaves the file as found, and the note is live again',
-        () async {
-      final d = await grown();
-      await d.reconciler.scan();
-      final external = await engram.readBytes('journal.md');
+    test(
+      'convert leaves the file as found, and the note is live again',
+      () async {
+        final d = await grown();
+        await d.reconciler.scan();
+        final external = await engram.readBytes('journal.md');
 
-      await d.reconciler.convertToPlainFile('journal.md');
+        await d.reconciler.convertToPlainFile('journal.md');
 
-      expect(await engram.readBytes('journal.md'), external);
-      final row = d.store.catalog.byPath('journal.md')!;
-      expect(row.state, NoteState.live);
-      expect(row.mergePolicy, MergePolicy.blobLww);
-      expect(await d.reconciler.awaitingDecision(), isEmpty);
-      expect((await d.reconciler.scan()).isClean, isTrue);
-      expect(await engram.statFile('journal (oversized).md'), isNull);
-    });
+        expect(await engram.readBytes('journal.md'), external);
+        final row = d.store.catalog.byPath('journal.md')!;
+        expect(row.state, NoteState.live);
+        expect(row.mergePolicy, MergePolicy.blobLww);
+        expect(await d.reconciler.awaitingDecision(), isEmpty);
+        expect((await d.reconciler.scan()).isClean, isTrue);
+        expect(await engram.statFile('journal (oversized).md'), isNull);
+      },
+    );
 
     group('the ceiling job (step 23)', () {
-      test('lowering puts exactly the notes between the limits in the door',
-          () async {
-        final d = await device(ceiling: ceiling);
-        await d.writer.write('small.md', 'x' * 100);
-        await d.writer.write('mid.md', 'x' * 600);
-        await d.writer.write('big.md', 'x' * 1200);
-        await d.reconciler.scan();
-        expect(await d.reconciler.awaitingDecision(), isEmpty);
+      test(
+        'lowering puts exactly the notes between the limits in the door',
+        () async {
+          final d = await device(ceiling: ceiling);
+          await d.writer.write('small.md', 'x' * 100);
+          await d.writer.write('mid.md', 'x' * 600);
+          await d.writer.write('big.md', 'x' * 1200);
+          await d.reconciler.scan();
+          expect(await d.reconciler.awaitingDecision(), isEmpty);
 
-        await d.reconciler.setNoteSizeCeiling(1000);
+          await d.reconciler.setNoteSizeCeiling(1000);
 
-        expect(
-          (await d.reconciler.awaitingDecision()).map((n) => n.path),
-          ['big.md'],
-        );
-        expect(d.store.catalog.byPath('big.md')!.state, NoteState.oversized);
-        expect(d.store.catalog.byPath('mid.md')!.state, NoteState.live);
-        // Recorded, so Housekeeping's card says what the job did.
-        final notice = (await d.reconciler.recentScans()).first;
-        expect(notice.report.awaitingDecision, ['big.md']);
-        expect(notice.trigger, ScanTrigger.manual);
-        // A file arriving later is judged by the new limit.
-        await engram.writeString('later.md', 'x' * 1100);
-        expect((await d.reconciler.scan()).oversized, ['later.md']);
-      });
+          expect((await d.reconciler.awaitingDecision()).map((n) => n.path), [
+            'big.md',
+          ]);
+          expect(d.store.catalog.byPath('big.md')!.state, NoteState.oversized);
+          expect(d.store.catalog.byPath('mid.md')!.state, NoteState.live);
+          // Recorded, so Housekeeping's card says what the job did.
+          final notice = (await d.reconciler.recentScans()).first;
+          expect(notice.report.awaitingDecision, ['big.md']);
+          expect(notice.trigger, ScanTrigger.manual);
+          // A file arriving later is judged by the new limit.
+          await engram.writeString('later.md', 'x' * 1100);
+          expect((await d.reconciler.scan()).oversized, ['later.md']);
+        },
+      );
 
       test('raising lets a waiting note back under the line go live', () async {
         final d = await device(ceiling: ceiling);
@@ -1077,7 +1125,10 @@ void main() {
     test('asidePathFor spells the kept name', () {
       expect(asidePathFor('journal.md'), 'journal (oversized).md');
       expect(asidePathFor('a/b/journal.md'), 'a/b/journal (oversized).md');
-      expect(asidePathFor('journal.md', ordinal: 3), 'journal (oversized 3).md');
+      expect(
+        asidePathFor('journal.md', ordinal: 3),
+        'journal (oversized 3).md',
+      );
       expect(asidePathFor('LICENSE'), 'LICENSE (oversized)');
       expect(asidePathFor('notes/.hidden'), 'notes/.hidden (oversized)');
       expect(asidePathFor('a.tar.gz'), 'a.tar (oversized).gz');
@@ -1158,12 +1209,19 @@ void main() {
 
       expect(d.store.catalog.byPath('pic.png'), before);
       expect(changesOf(d, 'pic.png'), 1);
-      expect(await d.reconciler.recentScans(), hasLength(1), reason: 'the mint');
+      expect(
+        await d.reconciler.recentScans(),
+        hasLength(1),
+        reason: 'the mint',
+      );
     });
 
     test('an unknown path is refused', () async {
       final d = await device();
-      expect(() => d.reconciler.convertToPlainFile('nope.md'), throwsStateError);
+      expect(
+        () => d.reconciler.convertToPlainFile('nope.md'),
+        throwsStateError,
+      );
     });
 
     test('an adopted note can be converted: the epoch is a new seed', () async {
@@ -1178,9 +1236,11 @@ void main() {
       final ulid = a.store.catalog.byPath('shared.md')!.ulid;
       final b = await device();
       await b.reconciler.scan();
-      b.store.crdt.changeStorageForDocument(ulid).saveChanges(
-        a.store.crdt.changeStorageForDocument(ulid).getChanges(),
-      );
+      b.store.crdt
+          .changeStorageForDocument(ulid)
+          .saveChanges(
+            a.store.crdt.changeStorageForDocument(ulid).getChanges(),
+          );
       expect(b.store.catalog.byUlid(ulid)!.seededBy, a.store.peerId);
 
       await b.reconciler.convertToPlainFile('shared.md');
@@ -1272,49 +1332,52 @@ void main() {
       expect(await d.reconciler.reconcile('.DS_Store'), isFalse);
     });
 
-    test('a row at a hidden path is never reconciled, and the scan retires it',
-        () async {
-      // No path in the app creates one; if one exists it is a mistake, and
-      // both entry points must give the same answer rather than one keeping
-      // it alive. The scan treats it as a file renamed into a dot-directory.
-      final d = await device();
-      await engram.writeString('.obsidian/note.md', 'hidden\n');
-      final note = NoteDocument.mint(
-        store: d.store,
-        path: '.obsidian/note.md',
-        content: 'stale\n',
-      );
-      note.dispose();
-      final before = changesOf(d, '.obsidian/note.md');
+    test(
+      'a row at a hidden path is never reconciled, and the scan retires it',
+      () async {
+        // No path in the app creates one; if one exists it is a mistake, and
+        // both entry points must give the same answer rather than one keeping
+        // it alive. The scan treats it as a file renamed into a dot-directory.
+        final d = await device();
+        await engram.writeString('.obsidian/note.md', 'hidden\n');
+        final note = NoteDocument.mint(
+          store: d.store,
+          path: '.obsidian/note.md',
+          content: 'stale\n',
+        );
+        note.dispose();
+        final before = changesOf(d, '.obsidian/note.md');
 
-      expect(await d.reconciler.reconcile('.obsidian/note.md'), isFalse);
-      expect(changesOf(d, '.obsidian/note.md'), before, reason: 'not diffed');
+        expect(await d.reconciler.reconcile('.obsidian/note.md'), isFalse);
+        expect(changesOf(d, '.obsidian/note.md'), before, reason: 'not diffed');
 
-      final report = await d.reconciler.scan();
+        final report = await d.reconciler.scan();
 
-      expect(report.tombstoned, ['.obsidian/note.md']);
-      expect(report.reconciled, isEmpty);
-      expect(d.store.catalog.byPath('.obsidian/note.md'), isNull);
-      expect(await engram.readString('.obsidian/note.md'), 'hidden\n');
-    });
+        expect(report.tombstoned, ['.obsidian/note.md']);
+        expect(report.reconciled, isEmpty);
+        expect(d.store.catalog.byPath('.obsidian/note.md'), isNull);
+        expect(await engram.readString('.obsidian/note.md'), 'hidden\n');
+      },
+    );
 
-    test('a file renamed into a dot-directory is a deletion, not a move',
-        () async {
-      final d = await device();
-      await d.writer.write('a.md', 'content that would match exactly\n');
-      await engram.move('a.md', '.trash/a.md');
+    test(
+      'a file renamed into a dot-directory is a deletion, not a move',
+      () async {
+        final d = await device();
+        await d.writer.write('a.md', 'content that would match exactly\n');
+        await engram.move('a.md', '.trash/a.md');
 
-      final report = await d.reconciler.scan();
+        final report = await d.reconciler.scan();
 
-      expect(report.tombstoned, ['a.md']);
-      expect(report.moved, isEmpty);
-      expect(d.store.catalog.byPath('.trash/a.md'), isNull);
-    });
+        expect(report.tombstoned, ['a.md']);
+        expect(report.moved, isEmpty);
+        expect(d.store.catalog.byPath('.trash/a.md'), isNull);
+      },
+    );
   });
 
   group('moves (Decision 7)', () {
-    test('a gone path and a new one with the same content is a move',
-        () async {
+    test('a gone path and a new one with the same content is a move', () async {
       // Exactly how git detects a rename: keep the id and the history.
       final d = await device();
       await d.writer.write('old.md', 'one\ntwo\n');
@@ -1373,30 +1436,32 @@ void main() {
       expect((await d.reconciler.scan()).isClean, isTrue);
     });
 
-    test('below the cutoff is a delete plus a create, and is surfaced',
-        () async {
-      // The honest price of rejecting a frontmatter id: the history stays
-      // with the tombstone, and the report says so with both halves.
-      final d = await device();
-      await d.writer.write(
-        'old.md',
-        List.generate(20, (i) => 'original line number $i here').join('\n'),
-      );
-      final ulid = d.store.catalog.byPath('old.md')!.ulid;
-      await engram.delete('old.md');
-      await engram.writeString(
-        'new.md',
-        List.generate(20, (i) => 'completely different text $i').join('\n'),
-      );
+    test(
+      'below the cutoff is a delete plus a create, and is surfaced',
+      () async {
+        // The honest price of rejecting a frontmatter id: the history stays
+        // with the tombstone, and the report says so with both halves.
+        final d = await device();
+        await d.writer.write(
+          'old.md',
+          List.generate(20, (i) => 'original line number $i here').join('\n'),
+        );
+        final ulid = d.store.catalog.byPath('old.md')!.ulid;
+        await engram.delete('old.md');
+        await engram.writeString(
+          'new.md',
+          List.generate(20, (i) => 'completely different text $i').join('\n'),
+        );
 
-      final report = await d.reconciler.scan();
+        final report = await d.reconciler.scan();
 
-      expect(report.moved, isEmpty);
-      expect(report.tombstoned, ['old.md']);
-      expect(report.created, ['new.md']);
-      expect(d.store.catalog.byUlid(ulid)!.state, NoteState.tombstoned);
-      expect(d.store.catalog.byPath('new.md')!.ulid, isNot(ulid));
-    });
+        expect(report.moved, isEmpty);
+        expect(report.tombstoned, ['old.md']);
+        expect(report.created, ['new.md']);
+        expect(d.store.catalog.byUlid(ulid)!.state, NoteState.tombstoned);
+        expect(d.store.catalog.byPath('new.md')!.ulid, isNot(ulid));
+      },
+    );
 
     test('a tie between two candidates matches neither', () async {
       // Re-associating with the wrong one merges two histories; a miss for
@@ -1442,23 +1507,25 @@ void main() {
   });
 
   group('deletions (Decision 7)', () {
-    test('a gone path with no candidate is tombstoned, and the map told',
-        () async {
-      final d = await device();
-      await d.writer.write('a.md', 'one\n');
-      final ulid = d.store.catalog.byPath('a.md')!.ulid;
-      await engram.delete('a.md');
+    test(
+      'a gone path with no candidate is tombstoned, and the map told',
+      () async {
+        final d = await device();
+        await d.writer.write('a.md', 'one\n');
+        final ulid = d.store.catalog.byPath('a.md')!.ulid;
+        await engram.delete('a.md');
 
-      final report = await d.reconciler.scan();
+        final report = await d.reconciler.scan();
 
-      expect(report.tombstoned, ['a.md']);
-      expect(d.store.catalog.byPath('a.md'), isNull);
-      expect(d.store.catalog.byUlid(ulid)!.state, NoteState.tombstoned);
-      await d.publish();
-      final row = d.identity.rows[ulid]!;
-      expect(row.deleted, isTrue);
-      expect(row.path, 'a.md');
-    });
+        expect(report.tombstoned, ['a.md']);
+        expect(d.store.catalog.byPath('a.md'), isNull);
+        expect(d.store.catalog.byUlid(ulid)!.state, NoteState.tombstoned);
+        await d.publish();
+        final row = d.identity.rows[ulid]!;
+        expect(row.deleted, isTrue);
+        expect(row.path, 'a.md');
+      },
+    );
 
     test('a freed path does not resurrect a dead note', () async {
       final d = await device();
@@ -1512,8 +1579,7 @@ void main() {
       expect(d.store.catalog.byPath('b.md')!.state, NoteState.live);
     });
 
-    test('an incomplete scan still reconciles the drift it can see',
-        () async {
+    test('an incomplete scan still reconciles the drift it can see', () async {
       // The folder replaced by a file: the store lists nothing, and the
       // notes it cannot stat stay as they were.
       final d = await device();
@@ -1577,21 +1643,23 @@ void main() {
       expect((await b.reconciler.scan()).isClean, isTrue);
     });
 
-    test('an adopted note is edited as a file, and the minter sees drift',
-        () async {
-      final a = await device();
-      await engram.writeString('note.md', 'from A\n');
-      await a.reconciler.scan();
-      await a.publish();
-      final b = await device();
-      await b.reconciler.scan();
+    test(
+      'an adopted note is edited as a file, and the minter sees drift',
+      () async {
+        final a = await device();
+        await engram.writeString('note.md', 'from A\n');
+        await a.reconciler.scan();
+        await a.publish();
+        final b = await device();
+        await b.reconciler.scan();
 
-      await b.writer.write('note.md', 'from A\nfrom B, directly\n');
-      expect(changesOf(b, 'note.md'), 0, reason: 'a direct write, no ops');
+        await b.writer.write('note.md', 'from A\nfrom B, directly\n');
+        expect(changesOf(b, 'note.md'), 0, reason: 'a direct write, no ops');
 
-      expect((await a.reconciler.scan()).reconciled, ['note.md']);
-      expect(a.valueOf('note.md'), 'from A\nfrom B, directly\n');
-    });
+        expect((await a.reconciler.scan()).reconciled, ['note.md']);
+        expect(a.valueOf('note.md'), 'from A\nfrom B, directly\n');
+      },
+    );
 
     test('with the map deleted, a cold copy mints fresh ULIDs', () async {
       final a = await device();
@@ -1635,44 +1703,54 @@ void main() {
       expect(c.store.catalog.byPath('journal/cedar.md')!.ulid, ulid);
     });
 
-    test('deleting metadata.db loses history, not content or identity',
-        () async {
-      final id = newUlid();
-      final a = await device(engramId: id);
-      await engram.writeString('note.md', 'the content\n');
-      await a.reconciler.scan();
-      await a.writer.write('note.md', 'the content\nand an edit\n');
-      await a.publish();
-      final ulid = a.store.catalog.byPath('note.md')!.ulid;
-      final peer = a.store.peerId;
-      await a.close();
-      File('${await engramStorePath(id, resolveRoot: resolveRoot)}/metadata.db')
-          .deleteSync();
+    test(
+      'deleting metadata.db loses history, not content or identity',
+      () async {
+        final id = newUlid();
+        final a = await device(engramId: id);
+        await engram.writeString('note.md', 'the content\n');
+        await a.reconciler.scan();
+        await a.writer.write('note.md', 'the content\nand an edit\n');
+        await a.publish();
+        final ulid = a.store.catalog.byPath('note.md')!.ulid;
+        final peer = a.store.peerId;
+        await a.close();
+        File(
+          '${await engramStorePath(id, resolveRoot: resolveRoot)}/metadata.db',
+        ).deleteSync();
 
-      // The same device, reopened: a fresh database, the same map file.
-      final store = await MetadataDatabase.open(id, resolveRoot: resolveRoot);
-      addTearDown(store.close);
-      expect(store.peerId, isNot(peer), reason: 'the peer id went with the db');
-      final map = IdentityMap(engramRoot: engramRoot, peerId: store.peerId);
-      final identity = await AuthoredIdentity.load(map);
-      addTearDown(identity.dispose);
-      final lock = NoteDocumentLock();
-      final reconciler = DriftReconciler(
-        database: store,
-        engram: engram,
-        lock: lock,
-        identity: identity,
-      );
-      addTearDown(reconciler.close);
+        // The same device, reopened: a fresh database, the same map file.
+        final store = await MetadataDatabase.open(id, resolveRoot: resolveRoot);
+        addTearDown(store.close);
+        expect(
+          store.peerId,
+          isNot(peer),
+          reason: 'the peer id went with the db',
+        );
+        final map = IdentityMap(engramRoot: engramRoot, peerId: store.peerId);
+        final identity = await AuthoredIdentity.load(map);
+        addTearDown(identity.dispose);
+        final lock = NoteDocumentLock();
+        final reconciler = DriftReconciler(
+          database: store,
+          engram: engram,
+          lock: lock,
+          identity: identity,
+        );
+        addTearDown(reconciler.close);
 
-      final report = await reconciler.scan();
+        final report = await reconciler.scan();
 
-      expect(report.adopted, ['note.md']);
-      final row = store.catalog.byPath('note.md')!;
-      expect(row.ulid, ulid, reason: 'identity survives');
-      expect(row.state, NoteState.historyPending, reason: 'history does not');
-      expect(await engram.readString('note.md'), 'the content\nand an edit\n');
-    });
+        expect(report.adopted, ['note.md']);
+        final row = store.catalog.byPath('note.md')!;
+        expect(row.ulid, ulid, reason: 'identity survives');
+        expect(row.state, NoteState.historyPending, reason: 'history does not');
+        expect(
+          await engram.readString('note.md'),
+          'the content\nand an edit\n',
+        );
+      },
+    );
 
     test('our own map with no local row recovers the note as ours', () async {
       // The peer id survived (the map names it) but the catalog row did not:
@@ -1698,8 +1776,7 @@ void main() {
       expect(a.valueOf('note.md'), 'the content\n');
     });
 
-    test('two devices that both minted converge on the lowest ULID',
-        () async {
+    test('two devices that both minted converge on the lowest ULID', () async {
       // Both saved the file before either could see the other's map — the
       // writer mints without asking, which is this case exactly. The loser
       // retires its document rather than re-keying it.
@@ -1745,21 +1822,23 @@ void main() {
       expect(await d.mapRowFor('new.md'), isNotNull);
     });
 
-    test('a moved note keeps its identity and the map records the path',
-        () async {
-      final d = await device();
-      await d.writer.write('a.md', 'content\n');
-      final ulid = d.store.catalog.byPath('a.md')!.ulid;
-      await engram.move('a.md', 'b/c.md');
+    test(
+      'a moved note keeps its identity and the map records the path',
+      () async {
+        final d = await device();
+        await d.writer.write('a.md', 'content\n');
+        final ulid = d.store.catalog.byPath('a.md')!.ulid;
+        await engram.move('a.md', 'b/c.md');
 
-      await d.reconciler.noteMoved('a.md', 'b/c.md');
+        await d.reconciler.noteMoved('a.md', 'b/c.md');
 
-      expect(d.store.catalog.byPath('b/c.md')!.ulid, ulid);
-      expect(d.store.catalog.byPath('a.md'), isNull);
-      expect((await d.reconciler.scan()).isClean, isTrue);
-      await d.publish();
-      expect((await d.mapRowFor('b/c.md'))!.ulid, ulid);
-    });
+        expect(d.store.catalog.byPath('b/c.md')!.ulid, ulid);
+        expect(d.store.catalog.byPath('a.md'), isNull);
+        expect((await d.reconciler.scan()).isClean, isTrue);
+        await d.publish();
+        expect((await d.mapRowFor('b/c.md'))!.ulid, ulid);
+      },
+    );
 
     test('a moved history-pending note keeps the adopted identity', () async {
       // The reason the app reports rather than letting the scan infer.
@@ -1818,10 +1897,10 @@ void main() {
   });
 
   group('adoption (step 12)', () {
-    test('progress is reported per file, then cleared', () async {
+    test('progress is reported per file and per read, then cleared', () async {
       final d = await device();
       for (final name in ['a', 'b', 'c']) {
-        await engram.writeString('$name.md', 'note $name\n');
+        await engram.writeString('$name.md', 'note $name\n'); // 7 bytes
       }
       final seen = <AdoptionProgress?>[];
       final subscription = d.reconciler.adoption.listen(seen.add);
@@ -1832,12 +1911,129 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(seen, [
+        // Up at once, by files; then the total in bytes from the stats.
         const AdoptionProgress(done: 0, total: 3),
-        const AdoptionProgress(done: 1, total: 3),
-        const AdoptionProgress(done: 2, total: 3),
-        const AdoptionProgress(done: 3, total: 3),
+        const AdoptionProgress(done: 0, total: 3, totalBytes: 21),
+        // Each note: its bytes as it is read, then the file as brought in.
+        const AdoptionProgress(done: 0, total: 3, doneBytes: 7, totalBytes: 21),
+        const AdoptionProgress(done: 1, total: 3, doneBytes: 7, totalBytes: 21),
+        const AdoptionProgress(
+          done: 1,
+          total: 3,
+          doneBytes: 14,
+          totalBytes: 21,
+        ),
+        const AdoptionProgress(
+          done: 2,
+          total: 3,
+          doneBytes: 14,
+          totalBytes: 21,
+        ),
+        const AdoptionProgress(
+          done: 2,
+          total: 3,
+          doneBytes: 21,
+          totalBytes: 21,
+        ),
+        const AdoptionProgress(
+          done: 3,
+          total: 3,
+          doneBytes: 21,
+          totalBytes: 21,
+        ),
         null,
       ]);
+      expect(d.reconciler.currentAdoption, isNull);
+    });
+
+    test(
+      'the bar is weighted by bytes and advances within a large blob',
+      () async {
+        // A folder where one file carries most of the bytes: the bar used to
+        // sit on one tick for the whole of it and read as hung. Now it moves
+        // chunk by chunk through the blob, and the small notes after it are
+        // the sliver they cost.
+        final d = await device();
+        const big = 300 * 1024; // five chunks from the filesystem
+        await engram.writeBytes('big.bin', Uint8List(big));
+        for (var i = 0; i < 5; i++) {
+          await engram.writeString('n$i.md', 'note $i\n');
+        }
+        final seen = <AdoptionProgress>[];
+        final subscription = d.reconciler.adoption.listen((p) {
+          if (p != null) seen.add(p);
+        });
+        addTearDown(subscription.cancel);
+
+        await d.reconciler.scan();
+        await Future<void>.delayed(Duration.zero);
+
+        const total = big + 5 * 7;
+        expect(seen.skip(1).map((p) => p.totalBytes).toSet(), {total});
+        for (var i = 1; i < seen.length; i++) {
+          expect(
+            seen[i].doneBytes,
+            greaterThanOrEqualTo(seen[i - 1].doneBytes),
+          );
+          expect(seen[i].done, greaterThanOrEqualTo(seen[i - 1].done));
+        }
+        expect(
+          seen.last,
+          const AdoptionProgress(
+            done: 6,
+            total: 6,
+            doneBytes: total,
+            totalBytes: total,
+          ),
+        );
+        final withinBlob = seen
+            .where((p) => p.done == 0 && p.doneBytes > 0 && p.doneBytes < big)
+            .map((p) => p.fraction)
+            .toList();
+        expect(
+          withinBlob.length,
+          greaterThanOrEqualTo(3),
+          reason: 'the bar moved during big.bin, not only after it',
+        );
+        expect(
+          withinBlob.last,
+          greaterThan(0.8),
+          reason: 'four chunks of five',
+        );
+      },
+    );
+
+    test('a file that vanishes between its stat and its read does not stall '
+        'the bar', () async {
+      // Counted by what was actually read — nothing — so the bar ends short
+      // of its total, and the files after it still advance it.
+      final vanishing = _VanishingStore(engram, vanish: 'gone.bin');
+      final d = await device(over: vanishing);
+      await engram.writeString('a.md', 'note a\n');
+      await engram.writeBytes('gone.bin', Uint8List(4096));
+      await engram.writeString('z.md', 'note z\n');
+      final seen = <AdoptionProgress>[];
+      final subscription = d.reconciler.adoption.listen((p) {
+        if (p != null) seen.add(p);
+      });
+      addTearDown(subscription.cancel);
+
+      final report = await d.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(report.failed.keys, ['gone.bin']);
+      expect(report.created, ['a.md', 'z.md']);
+      expect(
+        seen.last,
+        const AdoptionProgress(
+          done: 3,
+          total: 3,
+          doneBytes: 14,
+          totalBytes: 4096 + 14,
+        ),
+      );
+      final afterGone = seen.where((p) => p.done == 2).map((p) => p.doneBytes);
+      expect(afterGone, contains(14), reason: 'z.md still moved the bar');
       expect(d.reconciler.currentAdoption, isNull);
     });
 
@@ -1869,7 +2065,9 @@ void main() {
 
       expect(
         d.reconciler.currentAdoption,
-        const AdoptionProgress(done: 0, total: 1),
+        // The note is read before the lock, so its bytes are in; the mint
+        // behind the lock is what the file count waits on.
+        const AdoptionProgress(done: 0, total: 1, doneBytes: 5, totalBytes: 5),
       );
 
       gate.complete();
@@ -1878,77 +2076,84 @@ void main() {
       expect(d.reconciler.currentAdoption, isNull);
     });
 
-    test('a note the editor opens mid-scan is brought in exactly once',
-        () async {
-      // The scan runs behind the UI, so the user can reach a note the scan
-      // has listed but not yet minted. Both go through the lock; whichever
-      // gets there first mints, and the other finds the note present and
-      // says so — never a second seed.
-      final d = await device();
-      await engram.writeString('a.md', 'note a\n');
-      await engram.writeString('b.md', 'note b\n');
-      final gate = Completer<void>();
-      final held = d.reconciler.lock.run(() => gate.future);
-      final scanning = d.reconciler.scan();
-      final opened = d.reconciler.reconcile('a.md');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      gate.complete();
-      await held;
+    test(
+      'a note the editor opens mid-scan is brought in exactly once',
+      () async {
+        // The scan runs behind the UI, so the user can reach a note the scan
+        // has listed but not yet minted. Both go through the lock; whichever
+        // gets there first mints, and the other finds the note present and
+        // says so — never a second seed.
+        final d = await device();
+        await engram.writeString('a.md', 'note a\n');
+        await engram.writeString('b.md', 'note b\n');
+        final gate = Completer<void>();
+        final held = d.reconciler.lock.run(() => gate.future);
+        final scanning = d.reconciler.scan();
+        final opened = d.reconciler.reconcile('a.md');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        gate.complete();
+        await held;
 
-      final openedIt = await opened;
-      final report = await scanning;
+        final openedIt = await opened;
+        final report = await scanning;
 
-      expect(report.created, contains('b.md'));
-      expect(report.created.contains('a.md'), !openedIt,
-          reason: 'exactly one of them brought a.md in');
-      expect(report.failed, isEmpty);
-      expect(changesOf(d, 'a.md'), 1, reason: 'seeded exactly once');
-      expect((await d.reconciler.scan()).isClean, isTrue);
-    });
+        expect(report.created, contains('b.md'));
+        expect(
+          report.created.contains('a.md'),
+          !openedIt,
+          reason: 'exactly one of them brought a.md in',
+        );
+        expect(report.failed, isEmpty);
+        expect(changesOf(d, 'a.md'), 1, reason: 'seeded exactly once');
+        expect((await d.reconciler.scan()).isClean, isTrue);
+      },
+    );
 
-    test('closing the session stops the scan, and the next one resumes',
-        () async {
-      // Adoption is resumable by construction: a path with no catalog row is
-      // simply a new note next time. An engram switch mid-adoption is the
-      // ordinary way a scan is cut short.
-      final d = await device();
-      for (var i = 0; i < 6; i++) {
-        await engram.writeString('n$i.md', 'note $i\n');
-      }
-      final gate = Completer<void>();
-      final held = d.reconciler.lock.run(() => gate.future);
-      final scanning = d.reconciler.scan();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+    test(
+      'closing the session stops the scan, and the next one resumes',
+      () async {
+        // Adoption is resumable by construction: a path with no catalog row is
+        // simply a new note next time. An engram switch mid-adoption is the
+        // ordinary way a scan is cut short.
+        final d = await device();
+        for (var i = 0; i < 6; i++) {
+          await engram.writeString('n$i.md', 'note $i\n');
+        }
+        final gate = Completer<void>();
+        final held = d.reconciler.lock.run(() => gate.future);
+        final scanning = d.reconciler.scan();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      // Close while the scan is parked before its first mint. The lock is
-      // released after, so the scan wakes to find itself closed.
-      final closing = d.reconciler.close();
-      gate.complete();
-      await held;
-      await closing;
-      final cut = await scanning;
+        // Close while the scan is parked before its first mint. The lock is
+        // released after, so the scan wakes to find itself closed.
+        final closing = d.reconciler.close();
+        gate.complete();
+        await held;
+        await closing;
+        final cut = await scanning;
 
-      expect(cut.created.length, lessThan(6));
-      expect(cut.tombstoned, isEmpty, reason: 'never after a cut-short pass');
-      expect(d.reconciler.currentAdoption, isNull);
+        expect(cut.created.length, lessThan(6));
+        expect(cut.tombstoned, isEmpty, reason: 'never after a cut-short pass');
+        expect(d.reconciler.currentAdoption, isNull);
 
-      // The same database, a fresh reconciler: what was minted stays minted,
-      // the rest is minted now, nothing twice.
-      final resumed = DriftReconciler(
-        database: d.store,
-        engram: engram,
-        lock: NoteDocumentLock(),
-        identity: d.identity,
-      );
-      addTearDown(resumed.close);
-      final rest = await resumed.scan();
-      expect(rest.created.length + cut.created.length, 6);
-      expect(rest.failed, isEmpty);
-      for (var i = 0; i < 6; i++) {
-        expect(changesOf(d, 'n$i.md'), 1, reason: 'n$i seeded once');
-      }
-      expect((await resumed.scan()).isClean, isTrue);
-    });
+        // The same database, a fresh reconciler: what was minted stays minted,
+        // the rest is minted now, nothing twice.
+        final resumed = DriftReconciler(
+          database: d.store,
+          engram: engram,
+          lock: NoteDocumentLock(),
+          identity: d.identity,
+        );
+        addTearDown(resumed.close);
+        final rest = await resumed.scan();
+        expect(rest.created.length + cut.created.length, 6);
+        expect(rest.failed, isEmpty);
+        for (var i = 0; i < 6; i++) {
+          expect(changesOf(d, 'n$i.md'), 1, reason: 'n$i seeded once');
+        }
+        expect((await resumed.scan()).isClean, isTrue);
+      },
+    );
 
     test('adopting rewrites CRLF text files LF in the one sweep', () async {
       // Decision 10 lands on disk here, once, for the whole folder — not as a
@@ -1958,25 +2163,32 @@ void main() {
       final d = await device();
       await engram.writeString('win.md', 'one\r\ntwo\r\n');
       await engram.writeString('unix.md', 'one\ntwo\n');
-      await engram.writeBytes('pic.png', Uint8List.fromList([0x0d, 0x0a, 0x0d]));
+      await engram.writeBytes(
+        'pic.png',
+        Uint8List.fromList([0x0d, 0x0a, 0x0d]),
+      );
       final unixBefore = (await engram.statFile('unix.md'))!.mtimeUtc;
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       await d.reconciler.scan();
 
       expect(d.valueOf('win.md'), 'one\ntwo\n', reason: 'LF sequence');
-      expect(await engram.readString('win.md'), 'one\ntwo\n', reason: 'LF file');
+      expect(
+        await engram.readString('win.md'),
+        'one\ntwo\n',
+        reason: 'LF file',
+      );
       expect(await engram.readString('unix.md'), 'one\ntwo\n');
       expect(
         (await engram.statFile('unix.md'))!.mtimeUtc,
         unixBefore,
         reason: 'an LF file is not rewritten',
       );
-      expect(
-        await engram.readBytes('pic.png'),
-        [0x0d, 0x0a, 0x0d],
-        reason: 'a blob is never normalized',
-      );
+      expect(await engram.readBytes('pic.png'), [
+        0x0d,
+        0x0a,
+        0x0d,
+      ], reason: 'a blob is never normalized');
       expect((await d.reconciler.scan()).isClean, isTrue);
     });
   });
@@ -2021,11 +2233,13 @@ void main() {
       expect(ledgerB.tombstoned, 0);
     });
 
-    test('this device counts as a peer before it has written its file',
-        () async {
-      final d = await device();
-      expect((await d.reconciler.ledger()).peers, 1);
-    });
+    test(
+      'this device counts as a peer before it has written its file',
+      () async {
+        final d = await device();
+        expect((await d.reconciler.ledger()).peers, 1);
+      },
+    );
 
     test('without a map, this device is the only peer', () async {
       final store = MetadataDatabase.openInMemory();
@@ -2050,33 +2264,42 @@ void main() {
 
       await d.reconciler.scan();
 
-      expect(await d.reconciler.recentScans(), isEmpty, reason: 'nothing to say');
+      expect(
+        await d.reconciler.recentScans(),
+        isEmpty,
+        reason: 'nothing to say',
+      );
       expect(d.store.scans.count(), 0);
       final at = (await d.reconciler.ledger()).lastScanAt;
       expect(at, isNotNull);
-      expect(at!.isBefore(before.subtract(const Duration(seconds: 1))), isFalse);
+      expect(
+        at!.isBefore(before.subtract(const Duration(seconds: 1))),
+        isFalse,
+      );
     });
 
-    test('a scan that changed something is recorded, with its trigger',
-        () async {
-      final d = await device();
-      await engram.writeString('a.md', 'new\n');
+    test(
+      'a scan that changed something is recorded, with its trigger',
+      () async {
+        final d = await device();
+        await engram.writeString('a.md', 'new\n');
 
-      await d.reconciler.scan(trigger: ScanTrigger.resume);
+        await d.reconciler.scan(trigger: ScanTrigger.resume);
 
-      final notice = (await d.reconciler.recentScans()).single;
-      expect(notice.report.created, ['a.md']);
-      expect(notice.trigger, ScanTrigger.resume);
-      expect(notice.id, isNotNull);
-      expect(notice.lostHistory, isFalse);
-      // The event knows the note, not only its path.
-      final row = d.store.database.select(
-        'SELECT ulid, kind FROM bf_scan_event WHERE scan_id = ?',
-        [notice.id],
-      ).single;
-      expect(row['ulid'], d.store.catalog.byPath('a.md')!.ulid);
-      expect(row['kind'], 'created');
-    });
+        final notice = (await d.reconciler.recentScans()).single;
+        expect(notice.report.created, ['a.md']);
+        expect(notice.trigger, ScanTrigger.resume);
+        expect(notice.id, isNotNull);
+        expect(notice.lostHistory, isFalse);
+        // The event knows the note, not only its path.
+        final row = d.store.database.select(
+          'SELECT ulid, kind FROM bf_scan_event WHERE scan_id = ?',
+          [notice.id],
+        ).single;
+        expect(row['ulid'], d.store.catalog.byPath('a.md')!.ulid);
+        expect(row['kind'], 'created');
+      },
+    );
 
     test('the record outlives the reconciler that wrote it', () async {
       // The point of writing it down: a notice a user never opened Settings
@@ -2127,40 +2350,42 @@ void main() {
       expect(d.store.scans.count(), 5, reason: 'dismissed, not deleted');
     });
 
-    test('a delete plus a create in one scan is marked as a history loss',
-        () async {
-      // The one cost Decision 7 requires to be surfaced.
-      final d = await device();
-      await d.writer.write(
-        'old.md',
-        List.generate(20, (i) => 'original line number $i here').join('\n'),
-      );
-      final ulid = d.store.catalog.byPath('old.md')!.ulid;
-      await engram.delete('old.md');
-      await engram.writeString(
-        'new.md',
-        List.generate(20, (i) => 'completely different text $i').join('\n'),
-      );
+    test(
+      'a delete plus a create in one scan is marked as a history loss',
+      () async {
+        // The one cost Decision 7 requires to be surfaced.
+        final d = await device();
+        await d.writer.write(
+          'old.md',
+          List.generate(20, (i) => 'original line number $i here').join('\n'),
+        );
+        final ulid = d.store.catalog.byPath('old.md')!.ulid;
+        await engram.delete('old.md');
+        await engram.writeString(
+          'new.md',
+          List.generate(20, (i) => 'completely different text $i').join('\n'),
+        );
 
-      await d.reconciler.scan();
+        await d.reconciler.scan();
 
-      final notice = (await d.reconciler.recentScans()).single;
-      expect(notice.lostHistory, isTrue);
-      expect(notice.report.tombstoned, ['old.md']);
-      expect(notice.report.created, ['new.md']);
-      expect(
-        d.store.database
-            .select('SELECT lost_history FROM bf_scan')
-            .single['lost_history'],
-        1,
-      );
-      // The tombstone event names the dead note, which byPath no longer
-      // finds: that identity is what a later "attach its history" needs.
-      final dead = d.store.database.select(
-        "SELECT ulid FROM bf_scan_event WHERE kind = 'tombstoned'",
-      ).single['ulid'];
-      expect(dead, ulid);
-    });
+        final notice = (await d.reconciler.recentScans()).single;
+        expect(notice.lostHistory, isTrue);
+        expect(notice.report.tombstoned, ['old.md']);
+        expect(notice.report.created, ['new.md']);
+        expect(
+          d.store.database
+              .select('SELECT lost_history FROM bf_scan')
+              .single['lost_history'],
+          1,
+        );
+        // The tombstone event names the dead note, which byPath no longer
+        // finds: that identity is what a later "attach its history" needs.
+        final dead = d.store.database
+            .select("SELECT ulid FROM bf_scan_event WHERE kind = 'tombstoned'")
+            .single['ulid'];
+        expect(dead, ulid);
+      },
+    );
 
     test('a failure is recorded with its message', () async {
       final d = await device();
@@ -2170,7 +2395,10 @@ void main() {
 
       final notice = (await d.reconciler.recentScans()).single;
       expect(notice.report.failed.keys, ['bad.md']);
-      expect(notice.report.failed['bad.md'].toString(), contains('FormatException'));
+      expect(
+        notice.report.failed['bad.md'].toString(),
+        contains('FormatException'),
+      );
     });
 
     test('a scan cut short by close is not recorded', () async {
@@ -2258,6 +2486,36 @@ class _Device {
   }
 }
 
+/// A store over the real one from which one file disappears the moment it
+/// is opened: a stat sees it, the read that follows does not.
+class _VanishingStore extends EngramStore {
+  _VanishingStore(this.inner, {required this.vanish});
+
+  final FileSystemEngramStore inner;
+  final String vanish;
+
+  @override
+  Future<List<String>> list() => inner.list();
+
+  @override
+  Future<List<String>> listDirectories() => inner.listDirectories();
+
+  @override
+  Future<Uint8List> readBytes(String path) => inner.readBytes(path);
+
+  @override
+  Stream<List<int>> openRead(String path) async* {
+    if (path == vanish) await inner.delete(path);
+    yield* inner.openRead(path);
+  }
+
+  @override
+  Future<void> writeBytes(String path, Uint8List bytes) =>
+      inner.writeBytes(path, bytes);
+
+  @override
+  Future<FileFingerprint?> statFile(String path) => inner.statFile(path);
+}
 
 /// A store over the real one that refuses to read a blob whole: what
 /// proves the scan streams every blob and never loads one.

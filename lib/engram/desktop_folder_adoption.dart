@@ -141,7 +141,17 @@ Future<Engram?> pickAndAdoptFolder(
     final adopt = await confirm(previewing);
     // A cancelled pass is a declined adoption whatever was answered: the
     // preview it ended with is partial and was never shown.
-    if (!adopt || previewing.cancelled) return null;
+    if (!adopt || previewing.cancelled) {
+      // Declined, perhaps before the pass ended: stop it here, whether or
+      // not the confirmer did, and wait for it to stop — so when this
+      // returns nothing is still walking the folder behind a decision
+      // already made. What the pass ends with is unused, and so is how it
+      // ends: a file gone from under a walk that was being stopped anyway
+      // is nobody's error.
+      previewing.cancel();
+      await previewing.preview.then<void>((_) {}, onError: (_) {});
+      return null;
+    }
   }
   return repository.adoptFolder(location);
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:brainframe/engram/desktop_folder_adoption.dart';
@@ -185,6 +186,43 @@ void main() {
       expect(Directory('$picked/.brainframe').existsSync(), isFalse);
       final discovery = await repository.discover();
       expect(discovery.available.every((e) => e.readOnly), isTrue);
+    });
+
+    test('declining before the pass has ended stops it, and the call waits',
+        () async {
+      // A confirmer that answers at once — as the dialog's Cancel does, or
+      // a test's stub — leaves the walk running unless the flow stops it.
+      // It must: a walk over thousands of files going on behind a decision
+      // already made is wasted work, and if the folder goes from under it,
+      // an error with nobody to catch it.
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final picked = '${tempRoot.path}/Notes';
+      await Directory(picked).create(recursive: true);
+      for (var i = 0; i < 20; i++) {
+        await File('$picked/n$i.md').writeAsString('note $i\n');
+      }
+      FolderPreviewing? seen;
+
+      final engram = await pickAndAdoptFolder(
+        repository,
+        picker: () async => picked,
+        confirm: (previewing) async {
+          seen = previewing;
+          return false; // without cancelling, and without waiting
+        },
+      );
+
+      expect(engram, isNull);
+      expect(seen!.cancelled, isTrue, reason: 'stopped by the flow itself');
+      // Already over when the call returned, not merely told to stop: a
+      // callback on the preview runs on the next microtask, with no file
+      // still being read in between.
+      var ended = false;
+      unawaited(
+        seen!.preview.then<void>((_) => ended = true, onError: (_) {}),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(ended, isTrue);
     });
 
     test('an existing engram is shown as one, for the confirmer not to ask',

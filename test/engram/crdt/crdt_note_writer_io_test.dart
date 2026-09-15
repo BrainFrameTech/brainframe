@@ -134,8 +134,7 @@ void main() {
         identity: identity,
       );
       await writer.write('inbox/today.md', 'first\n');
-      final before =
-          identity.rows[store.catalog.byPath('inbox/today.md')!.ulid];
+      final before = identity.rows[store.catalog.byPath('inbox/today.md')!.ulid];
 
       await writer.write('inbox/today.md', 'first\nsecond\n');
 

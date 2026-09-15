@@ -7,4 +7,5 @@
 /// editor stays ignorant of whether an op-log is behind its saves.
 library;
 
-export 'crdt_session_stub.dart' if (dart.library.io) 'crdt_session_io.dart';
+export 'crdt_session_stub.dart'
+    if (dart.library.io) 'crdt_session_io.dart';

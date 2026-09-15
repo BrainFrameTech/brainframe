@@ -120,6 +120,36 @@ void main() {
     expect(files.single.path, endsWith('.db'));
   });
 
+  test('opening labels the store with the engram folder\'s path', () async {
+    // The store directory is named by the ULID, so without this nothing in
+    // the app-data directory says which folder a metadata.db belongs to.
+    final engram = engramWith(readOnly: false);
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    addTearDown(() => session?.close());
+
+    final store = Directory('${root.path}/engrams/${engram.id}');
+    expect(File('${store.path}/metadata.db').existsSync(), isTrue);
+    expect(
+      await File('${store.path}/path.txt').readAsString(),
+      '${root.path}/engram\n',
+    );
+  });
+
+  test('a store that cannot take the label still opens', () async {
+    // A debugging aid must never keep an engram from opening: the write is
+    // made to fail — a directory squatting on the file's name — and the
+    // session comes up regardless.
+    final engram = engramWith(readOnly: false);
+    await Directory(
+      '${root.path}/engrams/${engram.id}/path.txt',
+    ).create(recursive: true);
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    addTearDown(() => session?.close());
+
+    expect(session, isNotNull);
+    expect(session!.writer, isA<CrdtNoteWriter>());
+  });
+
   test('the map is flushed before the database closes', () async {
     // A rename recorded seconds before the engram was switched away from
     // must reach the folder, or every other device keeps the old path.
@@ -161,7 +191,10 @@ void main() {
     // A record from two years ago, planted through the store the session
     // opened — then the session is closed and reopened, which is when the
     // prune runs.
-    final store = await MetadataDatabase.open(engram.id, resolveRoot: resolveRoot);
+    final store = await MetadataDatabase.open(
+      engram.id,
+      resolveRoot: resolveRoot,
+    );
     store.scans.record(
       const DriftScanReport(created: ['old.md']),
       startedAt: DateTime.now().subtract(const Duration(days: 730)),

@@ -821,6 +821,11 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
   state); after a Dismiss, the list re-loads from the database. The ledger's
   counts are taken when the pane opens — leave and reopen Settings to refresh
   them.
+- **Inspection point (steps 13–14):** every `engrams/<ULID>/` store holds a
+  one-line `path.txt` naming the folder it belongs to, written each time the
+  engram opens — that is how to tell which store is which, and which one a
+  MISSING row's orphan is. It goes with the store on Clean up. A debugging
+  aid only: nothing in the app reads it.
 - **Inspection point:** Clean up is deliberately refused for the open engram
   rather than switching away for you — its `metadata.db` is a live connection
   and its identity map is rewritten on a timer, so a delete underneath it

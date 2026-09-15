@@ -24,6 +24,12 @@ Future<String> engramStorePath(
   AppDataRootResolver? resolveRoot,
 }) => throw UnsupportedError(_unsupported);
 
+Future<void> recordEngramPath(
+  String engramId,
+  String folderPath, {
+  AppDataRootResolver? resolveRoot,
+}) => throw UnsupportedError(_unsupported);
+
 Future<bool> deleteEngramStore(
   String engramId, {
   AppDataRootResolver? resolveRoot,

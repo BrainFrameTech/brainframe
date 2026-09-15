@@ -58,7 +58,8 @@ void main() {
       // nothing on the way out can reorder a key, requote a value, or drop a
       // comment. Re-serializing through a YAML library would break drift
       // detection forever by reporting a phantom change on every scan.
-      const text = '---\n'
+      const text =
+          '---\n'
           '# a comment the user wrote\n'
           'title:    "Today"\n'
           'zebra: 1\n'
@@ -146,10 +147,9 @@ void main() {
       // lookup failure rather than a state check: a ULID with no row at all.
       final orphan = NoteDocument.mint(store: store, path: 'other.md');
       addTearDown(orphan.dispose);
-      store.database.execute(
-        'DELETE FROM bf_catalog WHERE ulid = ?',
-        [orphan.ulid],
-      );
+      store.database.execute('DELETE FROM bf_catalog WHERE ulid = ?', [
+        orphan.ulid,
+      ]);
 
       expect(
         () => materializeNote(store: store, engram: engram, note: orphan),
@@ -199,87 +199,92 @@ void main() {
       expect(await noteFileHasDrifted(engram, row), isTrue);
     });
 
-    test('a same-size edit is caught by the hash, not the pre-filter', () async {
-      final store = await openStore();
-      addTearDown(store.close);
-      final note = NoteDocument.mint(
-        store: store,
-        path: 'inbox/today.md',
-        content: 'aaaa\n',
-      );
-      addTearDown(note.dispose);
-      final row = await materializeNote(
-        store: store,
-        engram: engram,
-        note: note,
-      );
+    test(
+      'a same-size edit is caught by the hash, not the pre-filter',
+      () async {
+        final store = await openStore();
+        addTearDown(store.close);
+        final note = NoteDocument.mint(
+          store: store,
+          path: 'inbox/today.md',
+          content: 'aaaa\n',
+        );
+        addTearDown(note.dispose);
+        final row = await materializeNote(
+          store: store,
+          engram: engram,
+          note: note,
+        );
 
-      // Identical length, so the size half of the pre-filter sees nothing and
-      // only the hash can tell these apart. The mtime half still has to see
-      // something, or this lands in the blind spot the next test pins — and
-      // on a fast machine under a parallel test run it did.
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      await engram.writeString('inbox/today.md', 'bbbb\n');
-      final stat = await engram.statFile('inbox/today.md');
+        // Identical length, so the size half of the pre-filter sees nothing and
+        // only the hash can tell these apart. The mtime half still has to see
+        // something, or this lands in the blind spot the next test pins — and
+        // on a fast machine under a parallel test run it did.
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        await engram.writeString('inbox/today.md', 'bbbb\n');
+        final stat = await engram.statFile('inbox/today.md');
 
-      expect(stat!.size, row.size, reason: 'size is blind to this edit');
-      expect(await noteFileHasDrifted(engram, row), isTrue);
-    });
+        expect(stat!.size, row.size, reason: 'size is blind to this edit');
+        expect(await noteFileHasDrifted(engram, row), isTrue);
+      },
+    );
 
-    test('the accepted blind spot: same size, same recorded millisecond',
-        () async {
-      // Decision 5 says the pre-filter "must never be the sole test" and also
-      // "if both are unchanged, skip hashing". Those pull against each other,
-      // and this is where: when size and mtime both match, hashing is skipped,
-      // so in exactly that case the pre-filter *is* the sole test.
-      //
-      // The bound is narrow — a same-size edit landing in the same millisecond
-      // as our own last write — and it is not one the code can close, because
-      // the catalog stores milliseconds and cannot describe a finer instant.
-      // Pinned so the limitation is a decision on record rather than a
-      // surprise, and so nobody "fixes" the truncation without reading this.
-      final store = await openStore();
-      addTearDown(store.close);
-      final note = NoteDocument.mint(
-        store: store,
-        path: 'inbox/today.md',
-        content: 'aaaa\n',
-      );
-      addTearDown(note.dispose);
-      final row = await materializeNote(
-        store: store,
-        engram: engram,
-        note: note,
-      );
+    test(
+      'the accepted blind spot: same size, same recorded millisecond',
+      () async {
+        // Decision 5 says the pre-filter "must never be the sole test" and also
+        // "if both are unchanged, skip hashing". Those pull against each other,
+        // and this is where: when size and mtime both match, hashing is skipped,
+        // so in exactly that case the pre-filter *is* the sole test.
+        //
+        // The bound is narrow — a same-size edit landing in the same millisecond
+        // as our own last write — and it is not one the code can close, because
+        // the catalog stores milliseconds and cannot describe a finer instant.
+        // Pinned so the limitation is a decision on record rather than a
+        // surprise, and so nobody "fixes" the truncation without reading this.
+        final store = await openStore();
+        addTearDown(store.close);
+        final note = NoteDocument.mint(
+          store: store,
+          path: 'inbox/today.md',
+          content: 'aaaa\n',
+        );
+        addTearDown(note.dispose);
+        final row = await materializeNote(
+          store: store,
+          engram: engram,
+          note: note,
+        );
 
-      await engram.writeString('inbox/today.md', 'bbbb\n');
-      final stat = await engram.statFile('inbox/today.md');
-      store.catalog.upsert(
-        CatalogRow(
-          ulid: row.ulid,
-          path: row.path,
-          mergePolicy: row.mergePolicy,
-          state: row.state,
-          materializedHash: row.materializedHash,
-          size: row.size,
-          mtimeUtc: stat!.mtimeUtc,
-          seedClaim: row.seedClaim,
-        ),
-      );
-      final blinded = store.catalog.byUlid(row.ulid)!;
+        await engram.writeString('inbox/today.md', 'bbbb\n');
+        final stat = await engram.statFile('inbox/today.md');
+        store.catalog.upsert(
+          CatalogRow(
+            ulid: row.ulid,
+            path: row.path,
+            mergePolicy: row.mergePolicy,
+            state: row.state,
+            materializedHash: row.materializedHash,
+            size: row.size,
+            mtimeUtc: stat!.mtimeUtc,
+            seedClaim: row.seedClaim,
+          ),
+        );
+        final blinded = store.catalog.byUlid(row.ulid)!;
 
-      expect(mayHaveDrifted(blinded, stat), isFalse);
-      expect(
-        await noteFileHasDrifted(engram, blinded),
-        isFalse,
-        reason: 'the accepted miss — the hash is never reached',
-      );
-      expect(
-        hasDrifted(blinded, contentHashOfString('bbbb\n')),
-        isTrue,
-        reason: 'the hash would have caught it, had it been asked',
-      );
-    });
+        expect(mayHaveDrifted(blinded, stat), isFalse);
+        expect(
+          await noteFileHasDrifted(engram, blinded),
+          isFalse,
+          reason: 'the accepted miss — the hash is never reached',
+        );
+        expect(
+          hasDrifted(blinded, contentHashOfString('bbbb\n')),
+          isTrue,
+          reason: 'the hash would have caught it, had it been asked',
+        );
+      },
+    );
 
     test('a missing file counts as drift', () async {
       final store = await openStore();
@@ -372,60 +377,62 @@ void main() {
   });
 
   group('a line-ending change costs nothing and still rewrites', () {
-    test('zero operations, LF on disk, and no drift on the next scan',
-        () async {
-      // The assertion #141 asked for, and the one a single scan cannot see.
-      // Reconciliation produces nothing, so an implementation that gates the
-      // write on "did anything change?" would leave the hash stale and report
-      // drift on this file forever.
-      final store = await openStore();
-      addTearDown(store.close);
-      final note = NoteDocument.mint(
-        store: store,
-        path: 'inbox/today.md',
-        content: 'one\ntwo\nthree\n',
-      );
-      addTearDown(note.dispose);
-      final first = await materializeNote(
-        store: store,
-        engram: engram,
-        note: note,
-      );
+    test(
+      'zero operations, LF on disk, and no drift on the next scan',
+      () async {
+        // The assertion #141 asked for, and the one a single scan cannot see.
+        // Reconciliation produces nothing, so an implementation that gates the
+        // write on "did anything change?" would leave the hash stale and report
+        // drift on this file forever.
+        final store = await openStore();
+        addTearDown(store.close);
+        final note = NoteDocument.mint(
+          store: store,
+          path: 'inbox/today.md',
+          content: 'one\ntwo\nthree\n',
+        );
+        addTearDown(note.dispose);
+        final first = await materializeNote(
+          store: store,
+          engram: engram,
+          note: note,
+        );
 
-      // A Windows tool rewrites the terminators.
-      await engram.writeString('inbox/today.md', 'one\r\ntwo\r\nthree\r\n');
-      expect(await noteFileHasDrifted(engram, first), isTrue);
+        // A Windows tool rewrites the terminators.
+        await engram.writeString('inbox/today.md', 'one\r\ntwo\r\nthree\r\n');
+        expect(await noteFileHasDrifted(engram, first), isTrue);
 
-      // Scan 1: reconcile, which normalizes and finds nothing to do.
-      final before = note.document.exportChanges().length;
-      applyExternalText(
-        note.document,
-        note.text,
-        await engram.readString('inbox/today.md'),
-      );
-      expect(
-        note.document.exportChanges().length,
-        before,
-        reason: 'a pure line-ending change generates no operations',
-      );
+        // Scan 1: reconcile, which normalizes and finds nothing to do.
+        final before = note.document.exportChanges().length;
+        applyExternalText(
+          note.document,
+          note.text,
+          await engram.readString('inbox/today.md'),
+        );
+        expect(
+          note.document.exportChanges().length,
+          before,
+          reason: 'a pure line-ending change generates no operations',
+        );
 
-      // The write and the hash commit happen anyway.
-      final rewritten = await materializeNote(
-        store: store,
-        engram: engram,
-        note: note,
-      );
+        // The write and the hash commit happen anyway.
+        final rewritten = await materializeNote(
+          store: store,
+          engram: engram,
+          note: note,
+        );
 
-      expect(await engram.readString('inbox/today.md'), 'one\ntwo\nthree\n');
-      expect(rewritten.materializedHash, first.materializedHash);
+        expect(await engram.readString('inbox/today.md'), 'one\ntwo\nthree\n');
+        expect(rewritten.materializedHash, first.materializedHash);
 
-      // Scan 2: this is the one that fails if the write was skipped.
-      expect(
-        await noteFileHasDrifted(engram, rewritten),
-        isFalse,
-        reason: 'the file is canonical again and the hash matches it',
-      );
-    });
+        // Scan 2: this is the one that fails if the write was skipped.
+        expect(
+          await noteFileHasDrifted(engram, rewritten),
+          isFalse,
+          reason: 'the file is canonical again and the hash matches it',
+        );
+      },
+    );
   });
 
   group('the sketch', () {

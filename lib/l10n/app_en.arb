@@ -793,6 +793,28 @@
     }
   },
 
+  "adoptFolderLooking": "Looking at “{name}”…",
+  "@adoptFolderLooking": {
+    "description": "Title of the adoption dialog while the picked folder is still being listed and its text files examined, before the confirmation's counts are in. Names the folder.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Notes" }
+    }
+  },
+
+  "adoptFolderListing": "Listing its files…",
+  "@adoptFolderListing": {
+    "description": "Caption under the adoption dialog's progress bar while the folder is being listed and no total is known yet. Also its screen-reader label."
+  },
+
+  "adoptFolderLooked": "{done} of {total} files",
+  "@adoptFolderLooked": {
+    "description": "Caption under the adoption dialog's progress bar once the folder is listed: files looked at so far of the total, both formatted with separators. Also its screen-reader label.",
+    "placeholders": {
+      "done": { "type": "String", "example": "1,234" },
+      "total": { "type": "String", "example": "7,912" }
+    }
+  },
+
   "adoptFolderTitle": "Adopt this folder?",
   "@adoptFolderTitle": {
     "description": "Title of the confirmation shown after the user picks a folder that is not yet an engram."

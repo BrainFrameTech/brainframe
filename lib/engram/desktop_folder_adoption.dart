@@ -28,15 +28,71 @@ import 'fs/fs_store.dart';
 /// cancels. Injected so tests can drive adoption without a native dialog.
 typedef DirectoryPicker = Future<String?> Function();
 
-/// Asks whether to go ahead with adopting the folder [preview] describes.
-/// Returns false to leave the folder untouched.
+/// Runs the preview of a picked folder — [previewFolderAdoption] over its
+/// location — told each file as it is looked at and asked between files
+/// whether to stop. Injected into [FolderPreviewing] so the dialog can be
+/// driven in a test without a folder.
+typedef FolderPreviewer = Future<FolderAdoptionPreview> Function({
+  FolderPreviewProgress? onProgress,
+  FolderPreviewCancelled? isCancelled,
+});
+
+/// A folder being looked at before adoption is asked (#168): its name, how
+/// far the pass has come, the preview when it ends, and a way to stop it.
 ///
-/// Called only for a folder that is not an engram yet: adoption writes into a
-/// folder the user already owns — the marker now, the identity map once the
-/// scan runs — and turns every content file into a note, and that is asked
-/// before it is done. An existing engram is opened as it is, with nothing
-/// new written, so nothing needs asking.
-typedef AdoptionConfirmer = Future<bool> Function(FolderAdoptionPreview preview);
+/// The pass starts the moment this is made. Between the native dialog closing
+/// and the counts being in, a large folder — thousands of files, a recursive
+/// listing and then every text file streamed for a carriage return — is long
+/// enough to look hung, so the UI is handed this at once, shows the folder's
+/// name and the count as it advances, and offers Cancel, rather than being
+/// handed the finished preview after a silence.
+class FolderPreviewing {
+  FolderPreviewing({required this.name, required FolderPreviewer run}) {
+    _preview = run(
+      onProgress: (done, total) =>
+          _progress.value = (done: done, total: total),
+      isCancelled: () => _cancelled,
+    );
+  }
+
+  /// The folder's own name, known before anything else is.
+  final String name;
+
+  final ValueNotifier<({int done, int total})?> _progress = ValueNotifier(
+    null,
+  );
+  late final Future<FolderAdoptionPreview> _preview;
+  bool _cancelled = false;
+
+  /// Files looked at so far, of the total — or null while the folder is
+  /// still being listed and there is no total to show. The first value has
+  /// `done == 0`, the last `done == total`.
+  ValueListenable<({int done, int total})?> get progress => _progress;
+
+  /// The preview, once the pass ends. A cancelled pass ends early with what
+  /// it had counted; [cancelled] says so, and the numbers are not to be
+  /// shown.
+  Future<FolderAdoptionPreview> get preview => _preview;
+
+  /// Whether [cancel] was called. The pass stops at the next file.
+  bool get cancelled => _cancelled;
+
+  /// Stops the pass at the next file. Adoption never proceeds after this,
+  /// whatever the confirmer answers.
+  void cancel() => _cancelled = true;
+}
+
+/// Shows the folder being looked at, then asks whether to go ahead with
+/// adopting it once [FolderPreviewing.preview] is in. Returns false to leave
+/// the folder untouched.
+///
+/// Adoption writes into a folder the user already owns — the marker now, the
+/// identity map once the scan runs — and turns every content file into a
+/// note, and that is asked before it is done. An existing engram is opened as
+/// it is, with nothing new written, so nothing needs asking: a confirmer
+/// answers true for a preview that says `isEngram` without putting a
+/// question.
+typedef AdoptionConfirmer = Future<bool> Function(FolderPreviewing previewing);
 
 /// Whether the pick-any-folder flow is available on this platform in v1.
 ///
@@ -57,9 +113,9 @@ bool get isDesktopFolderAdoptionSupported =>
 /// Throws [UnsupportedError] off the desktop targets — callers should only wire
 /// this in where [isDesktopFolderAdoptionSupported] is true. Pass [picker] to
 /// supply a directory chooser (tests do); it defaults to the native dialog.
-/// [confirm] is asked before a folder that is not yet an engram is adopted;
-/// with none, adoption proceeds unasked, which is right for a caller that has
-/// already asked in its own way and wrong for a UI.
+/// [confirm] is shown the folder as it is looked at and asked before it is
+/// adopted; with none, adoption proceeds unasked, which is right for a caller
+/// that has already asked in its own way and wrong for a UI.
 Future<Engram?> pickAndAdoptFolder(
   EngramRepository repository, {
   DirectoryPicker? picker,
@@ -74,8 +130,18 @@ Future<Engram?> pickAndAdoptFolder(
   if (path == null) return null; // the user dismissed the dialog
   final location = EngramLocation(path);
   if (confirm != null) {
-    final preview = await previewFolderAdoption(location);
-    if (!preview.isEngram && !await confirm(preview)) return null;
+    final previewing = FolderPreviewing(
+      name: folderNameOf(path),
+      run: ({onProgress, isCancelled}) => previewFolderAdoption(
+        location,
+        onProgress: onProgress,
+        isCancelled: isCancelled,
+      ),
+    );
+    final adopt = await confirm(previewing);
+    // A cancelled pass is a declined adoption whatever was answered: the
+    // preview it ended with is partial and was never shown.
+    if (!adopt || previewing.cancelled) return null;
   }
   return repository.adoptFolder(location);
 }

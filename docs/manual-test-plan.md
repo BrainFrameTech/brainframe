@@ -1334,15 +1334,20 @@ As of CRDT step 12, turning a plain folder into an engram asks first, and the
 scan that brings its files into the note catalog runs behind the UI with a
 progress bar rather than in front of it. The same scan runs on the **first
 launch of an engram that predates the catalog**, so this case is also how an
-existing engram's first open after the upgrade should look. Use a folder with
-a few dozen files, including a dot-directory (`.obsidian/` or a `.git/`) and
-at least one CRLF file; on the Pi, a few hundred files makes the progress
-bar easy to watch.
+existing engram's first open after the upgrade should look. Since #168 the
+dialog is up from the moment the folder is picked — showing the folder being
+listed and counted, with Cancel — and becomes the confirmation in place once
+the counts are in, so a large folder never leaves the window silent. Use a
+folder with a few dozen files, including a dot-directory (`.obsidian/` or a
+`.git/`) and at least one CRLF file; on the Pi, a few hundred files makes the
+progress bar easy to watch. Steps 9–11 want a large folder — a few thousand
+files, a checkout of a big repository will do.
 
 **Steps:**
 
 1. Engram switcher → **Open folder…** → pick a plain folder (no
-   `.brainframe/`). Read the dialog before touching it.
+   `.brainframe/`). Watch the dialog come up, then read it before touching
+   it.
 2. **Cancel.** Look inside the folder.
 3. Repeat step 1 and choose **Adopt**. Watch the sidebar.
 4. While the bar is still moving, select a note that is low in the tree —
@@ -1354,10 +1359,18 @@ bar easy to watch.
    opening it in BrainFrame; then open it, save an edit, and check again.
 8. Open a file inside the dot-directory in another editor and look for it in
    BrainFrame.
+9. **A large folder:** repeat step 1 with the folder of a few thousand files.
+   Watch the dialog; move the window while it counts.
+10. Repeat step 9 and, while it is still counting, **Cancel**. Look inside
+    the folder; open the switcher.
+11. Repeat step 9 and let it finish. **Cancel** the confirmation.
 
 **Expected:**
 
-- Step 1: a dialog titled **Adopt this folder?** naming the folder, saying a
+- Step 1: the dialog is up **at once** — *Looking at “name”…* over a thin
+  bar, captioned *Listing its files…* and then *n of N files*, with only
+  Cancel — and, for a folder this size almost immediately, becomes in the
+  same dialog **Adopt this folder?** naming the folder, saying a
   `.brainframe` folder is added inside it, giving the count of files that
   become notes (**not** counting anything under a dot-directory), and — only
   when there are any — how many of them use Windows line endings and will be
@@ -1380,18 +1393,29 @@ bar easy to watch.
   untouched by adoption; a blob's bytes are byte-identical.
 - Step 8: the dot-directory's contents never appear in the tree and never
   gain a note.
+- Step 9: *Looking at “name”…* stays up for as long as the folder takes: the
+  bar sweeps while the folder is listed, then reads *n of N files* and
+  advances in steps — not once per file — to *N of N*. The window moves and
+  repaints meanwhile; nothing else on screen changes. Then the confirmation,
+  in place, with its counts.
+- Step 10: the dialog closes at once; no `.brainframe/` inside the folder;
+  the switcher unchanged; and no **Adopt this folder?** appears afterwards.
+- Step 11: as step 2.
 - On every later launch of the same engram there is **no** progress bar: the
   steady-state scan has nothing to adopt and shows nothing.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | steps 1–2 **N/A** — no folder dialog (F15); steps 3–8 apply to the first launch of an existing engram | as Android | as Android | steps 1–2 **N/A** — no native dialog; steps 3–8 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder |
+| ✓ | ✓ | ✓ | steps 1–2 and 9–11 **N/A** — no folder dialog (F15); steps 3–8 apply to the first launch of an existing engram | as Android | as Android | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder |
 
 - **Progress on e-ink:** the bar advances one note at a time and stops moving
   when done — discrete steps, no animation. Report it if the bar is redrawn
-  while nothing is being adopted.
+  while nothing is being adopted. The adoption dialog is held to the same
+  rule: a handful of redraws while it counts, and under Reduce Motion the
+  listing bar is still rather than sweeping.
 - **A11y:** the bar's caption is its accessible label and is a live region, so
-  a screen reader hears the count change and the finish without polling.
+  a screen reader hears the count change and the finish without polling. So
+  is the dialog's caption while it counts.
 - **Inspection point:** the count in the dialog is the number the scan mints;
   a mismatch between the two is a bug in one filter or the other.
 

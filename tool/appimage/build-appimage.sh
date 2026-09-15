@@ -193,6 +193,25 @@ cp "$DESKTOP_FILE" "$APPDIR/usr/share/applications/${APP_ID}.desktop"
 # Icon basename must match the .desktop `Icon=` key (Icon=brainframe).
 cp "$ICON" "$ICON_DIR/${BIN_NAME}.png"
 
+# AppRun hook, written BEFORE linuxdeploy runs — the order is the whole fix.
+# linuxdeploy generates AppRun as a script that sources each hook present in
+# apprun-hooks/ *at the moment it generates it*, by name; it does not glob the
+# directory at run time. A hook added afterwards is carried in the AppImage and
+# never sourced, which is exactly what happened: the binary's $ORIGIN/lib rpath
+# was rewritten to $ORIGIN/../lib, the NEEDED plugin libs were copied to usr/lib
+# by the dependency walk and kept working, and the libraries dart:ffi loads at
+# run time by bare name — libsqlite3.so, libdartjni.so, anything a native asset
+# ships — were left in usr/bin/lib on no search path. metadata.db could not be
+# opened, the CRDT session came up null, and every engram opened as it did
+# before the catalog existed. No error reached the user.
+mkdir -p "$APPDIR/apprun-hooks"
+cat > "$APPDIR/apprun-hooks/10-flutter-libs.sh" <<'HOOK'
+# Flutter engine libs (libflutter_linux_gtk.so, libapp.so, plugin libs) and
+# the native-asset libraries dart:ffi opens by name (libsqlite3.so) live next
+# to the binary in usr/bin/lib; make sure the loader finds them.
+export LD_LIBRARY_PATH="${APPDIR}/usr/bin/lib:${LD_LIBRARY_PATH:-}"
+HOOK
+
 # ── Bundle dependencies with linuxdeploy + the GTK plugin ────────────────────
 log "==> linuxdeploy (+gtk) bundling dependencies"
 export APPIMAGE_EXTRACT_AND_RUN=1   # never FUSE-mount the tools themselves
@@ -209,15 +228,11 @@ export ARCH                         # appimagetool/linuxdeploy read this
   --icon-file "$ICON_DIR/${BIN_NAME}.png" \
   --plugin gtk >&2
 
-# AppRun hook: linuxdeploy's AppRun sources apprun-hooks/*.sh before exec, so
-# prepend the engine-lib dir. This is the deterministic guard against linuxdeploy
-# rewriting the binary's $ORIGIN/lib rpath away.
-mkdir -p "$APPDIR/apprun-hooks"
-cat > "$APPDIR/apprun-hooks/10-flutter-libs.sh" <<'HOOK'
-# Flutter engine libs (libflutter_linux_gtk.so, libapp.so, plugin libs) live
-# next to the binary in usr/bin/lib; make sure the loader finds them.
-export LD_LIBRARY_PATH="${APPDIR}/usr/bin/lib:${LD_LIBRARY_PATH:-}"
-HOOK
+# The hook above is only worth anything if AppRun sources it. Check, rather
+# than trust the ordering: a linuxdeploy that changes how it generates AppRun
+# would otherwise fail the same silent way again.
+grep -q '10-flutter-libs.sh' "$APPDIR/AppRun" \
+  || die "linuxdeploy's AppRun does not source apprun-hooks/10-flutter-libs.sh"
 
 # ── Finalize with our pinned static runtime (the FUSE 2/3 fix) ────────────────
 log "==> packaging with static runtime → $OUTPUT"

@@ -54,6 +54,60 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
 
+  testWidgets('the bar follows bytes and the caption files', (tester) async {
+    // One large file among many small ones is most of the wait, so it is
+    // most of the bar; the number the user reads is still the file count
+    // from the confirmation, which is the inspection point.
+    final reconciler = _Reconciler();
+    await tester.pumpWidget(host(reconciler));
+
+    reconciler.report(
+      const AdoptionProgress(
+        done: 2,
+        total: 8,
+        doneBytes: 600 << 20,
+        totalBytes: 800 << 20,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Adopting notes… 2 of 8'), findsOneWidget);
+    final bar = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(bar.value, closeTo(0.75, 0.001), reason: 'bytes, not 2 of 8');
+  });
+
+  testWidgets('steps within one file are coalesced like steps between', (
+    tester,
+  ) async {
+    // A blob is reported per chunk — thousands of times for one large file.
+    // The tick caps what that costs the scan, just as it does for files.
+    final reconciler = _Reconciler();
+    await tester.pumpWidget(host(reconciler));
+
+    reconciler.report(
+      const AdoptionProgress(done: 0, total: 2, totalBytes: 1000),
+    );
+    await tester.pump();
+    double value() => tester
+        .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+        .value!;
+    expect(value(), 0);
+
+    for (var read = 100; read <= 900; read += 100) {
+      reconciler.report(
+        AdoptionProgress(done: 0, total: 2, doneBytes: read, totalBytes: 1000),
+      );
+    }
+    await tester.pump();
+    expect(value(), 0, reason: 'not yet: the tick has not come');
+    expect(find.text('Adopting notes… 0 of 2'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(value(), closeTo(0.9, 0.001), reason: 'the latest chunk');
+  });
+
   testWidgets('steps in the middle are coalesced to one repaint per interval', (
     tester,
   ) async {
@@ -152,7 +206,9 @@ class _Reconciler implements NoteReconciler {
   AdoptionProgress? get currentAdoption => current;
 
   @override
-  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({
+    ScanTrigger trigger = ScanTrigger.manual,
+  }) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async => false;

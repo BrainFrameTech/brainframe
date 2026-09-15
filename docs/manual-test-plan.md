@@ -1341,7 +1341,9 @@ the counts are in, so a large folder never leaves the window silent. Use a
 folder with a few dozen files, including a dot-directory (`.obsidian/` or a
 `.git/`) and at least one CRLF file; on the Pi, a few hundred files makes the
 progress bar easy to watch. Steps 9–11 want a large folder — a few thousand
-files, a checkout of a big repository will do.
+files, a checkout of a big repository will do. Step 12 wants a folder with
+one file much larger than the rest — a few dozen notes beside a video of a
+few hundred MB.
 
 **Steps:**
 
@@ -1364,6 +1366,8 @@ files, a checkout of a big repository will do.
 10. Repeat step 9 and, while it is still counting, **Cancel**. Look inside
     the folder; open the switcher.
 11. Repeat step 9 and let it finish. **Cancel** the confirmation.
+12. **A large file:** repeat step 3 with the folder holding the large file.
+    Watch the sidebar bar while it is on that file.
 
 **Expected:**
 
@@ -1379,7 +1383,9 @@ files, a checkout of a big repository will do.
 - Step 2: nothing written — no `.brainframe/`, the switcher unchanged.
 - Step 3: the browser switches to the folder at once; a thin progress bar
   with "Adopting notes… *n* of *N*" appears at the top of the sidebar and
-  advances; the tree, reader, and editor all work meanwhile.
+  advances; the tree, reader, and editor all work meanwhile. The bar's
+  length follows **bytes**, not files, so it need not be at *n / N* of its
+  width — the caption is the count, the bar is the work.
 - Step 4: the note opens and saves normally. It does not open empty, and it
   is not duplicated when the bar reaches it.
 - Step 5: the bar disappears entirely (no empty strip left behind);
@@ -1401,16 +1407,23 @@ files, a checkout of a big repository will do.
 - Step 10: the dialog closes at once; no `.brainframe/` inside the folder;
   the switcher unchanged; and no **Adopt this folder?** appears afterwards.
 - Step 11: as step 2.
+- Step 12: the bar advances **during** the large file — in steps, for as long
+  as the file takes — while the caption holds on the same *n* of *N*; the
+  notes after it take the bar the rest of the way almost at once. It never
+  sits still on one tick for the whole file. If the file is replaced or
+  deleted while the bar is on it, the bar goes on with the remaining notes and
+  disappears when they are done — it never stalls.
 - On every later launch of the same engram there is **no** progress bar: the
   steady-state scan has nothing to adopt and shows nothing.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | steps 1–2 and 9–11 **N/A** — no folder dialog (F15); steps 3–8 apply to the first launch of an existing engram | as Android | as Android | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder |
+| ✓ | ✓ | ✓ | steps 1–2 and 9–11 **N/A** — no folder dialog (F15); steps 3–8 and 12 apply to the first launch of an existing engram | as Android | as Android | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 and 12 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder, and minutes for the one file of step 12, which is where a bar that only ticks per file reads as hung |
 
-- **Progress on e-ink:** the bar advances one note at a time and stops moving
-  when done — discrete steps, no animation. Report it if the bar is redrawn
-  while nothing is being adopted. The adoption dialog is held to the same
+- **Progress on e-ink:** the bar advances in discrete steps — at most a few a
+  second, whether between notes or within a large file — and stops moving
+  when done; no animation. Report it if the bar is redrawn while nothing is
+  being adopted. The adoption dialog is held to the same
   rule: a handful of redraws while it counts, and under Reduce Motion the
   listing bar is still rather than sweeping.
 - **A11y:** the bar's caption is its accessible label and is a live region, so

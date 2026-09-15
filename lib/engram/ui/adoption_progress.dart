@@ -118,10 +118,10 @@ class _AdoptionProgressBarState extends State<AdoptionProgressBar> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            LinearProgressIndicator(
-              value: progress.done / progress.total,
-              minHeight: 3,
-            ),
+            // The length follows bytes and the caption files: the bar moves
+            // for as long as a large file takes, and the number the user
+            // reads is still the count the confirmation showed.
+            LinearProgressIndicator(value: progress.fraction, minHeight: 3),
             const SizedBox(height: 4),
             ExcludeSemantics(
               child: Text(

@@ -467,11 +467,41 @@ class DriftReconciler implements NoteReconciler {
             ..sort();
       // This is the expensive half, and the only one worth a progress bar:
       // every file here is seeded, and on a folder that predates the catalog
-      // that is every file in it.
+      // that is every file in it. The bar is weighted by bytes, because that
+      // is where the cost is — a stat per file up front, cheap next to the
+      // read that follows, gives the total — and advances within a file as
+      // it is read, so one large blob among many small notes moves it for
+      // as long as it takes rather than parking it on a tick. A file whose
+      // size changes between here and its read is counted by what is read.
       var done = 0;
-      if (unknown.isNotEmpty) {
-        _reportAdoption(AdoptionProgress(done: 0, total: unknown.length));
+      var doneBytes = 0;
+      var totalBytes = 0;
+      void report() => _reportAdoption(
+        AdoptionProgress(
+          done: done,
+          total: unknown.length,
+          doneBytes: doneBytes,
+          totalBytes: totalBytes,
+        ),
+      );
+      void read(int bytes) {
+        doneBytes += bytes;
+        report();
       }
+
+      // Announced before the stats, so the bar is up at once and by files
+      // until the total in bytes is known — on the slowest target, thousands
+      // of stats are a visible pause.
+      if (unknown.isNotEmpty) report();
+      final sizes = <String, int>{};
+      for (final path in unknown) {
+        if (_closed) break;
+        final size = (await engram.statFile(path))?.size;
+        if (size == null) continue;
+        sizes[path] = size;
+        totalBytes += size;
+      }
+      if (unknown.isNotEmpty) report();
       for (final path in unknown) {
         if (_closed) break;
         try {
@@ -482,6 +512,8 @@ class DriftReconciler implements NoteReconciler {
             engram,
             path,
             ceiling: noteSizeCeilingBytes,
+            size: sizes[path],
+            onRead: read,
           );
           final match = await _matchMissing(path, content, missing);
           if (match != null) {
@@ -511,11 +543,7 @@ class DriftReconciler implements NoteReconciler {
           _fail(failed, path, error, stack);
         } finally {
           done++;
-          if (unknown.isNotEmpty) {
-            _reportAdoption(
-              AdoptionProgress(done: done, total: unknown.length),
-            );
-          }
+          report();
         }
       }
       if (unknown.isNotEmpty) _reportAdoption(null);
@@ -1116,28 +1144,37 @@ enum _Arrival { minted, adopted, present }
 class _NewFile {
   const _NewFile(this.digest, this.bytes, {this.overCeiling = false});
 
+  /// Reads the file at [path] the way its kind wants.
+  ///
+  /// [size] is the file's size from a stat the caller already has; without
+  /// it a text path is stat'd here. [onRead] is told each stretch of bytes
+  /// as it is read — per chunk of a streamed blob, once for a note read
+  /// whole — for a caller showing progress.
   static Future<_NewFile> read(
     EngramStore engram,
     String path, {
     required int ceiling,
+    int? size,
+    void Function(int bytes)? onRead,
   }) async {
     if (mergePolicyForPath(path) == MergePolicy.fugueText) {
       // Bytes on disk, as found (Decision 1): the size the user can see,
       // and never fewer than the elements the sequence would allocate. A
       // stat that comes back null is a file that vanished between the
       // listing and here; reading it fails the same way it would have.
-      final size = (await engram.statFile(path))?.size;
+      size ??= (await engram.statFile(path))?.size;
       if (size != null && size > ceiling) {
         return _NewFile(
-          await digestFile(engram, path),
+          await digestFile(engram, path, onRead: onRead),
           null,
           overCeiling: true,
         );
       }
       final bytes = await engram.readBytes(path);
+      onRead?.call(bytes.length);
       return _NewFile(ContentDigest.of(bytes), bytes);
     }
-    return _NewFile(await digestFile(engram, path), null);
+    return _NewFile(await digestFile(engram, path, onRead: onRead), null);
   }
 
   final ContentDigest digest;

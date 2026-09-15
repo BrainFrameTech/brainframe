@@ -109,10 +109,31 @@ void main() {
       expect((await digestStream(chunked(300))).size, 1000);
     });
 
+    test('tells a listener each chunk as it is folded in', () async {
+      // What lets a progress bar move during a file rather than after it.
+      final read = <int>[];
+      final digest = await digestStream(chunked(300), onRead: read.add);
+      expect(digest, whole);
+      expect(read, [300, 300, 300, 100]);
+    });
+
     test('digestFile streams from the store', () async {
       final store = _ChunkedStore({'a.bin': bytes}, chunkSize: 128);
       expect(await digestFile(store, 'a.bin'), whole);
       expect(store.reads, ['a.bin'], reason: 'openRead, never readBytes');
+
+      final read = <int>[];
+      await digestFile(store, 'a.bin', onRead: read.add);
+      expect(read, [
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        104,
+      ], reason: 'per chunk');
     });
 
     test('a store with no stream of its own still digests', () async {

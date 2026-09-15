@@ -28,6 +28,18 @@ const String engramsDirectoryName = 'engrams';
 /// the next reader wondering whether they are in the right place.
 const String metadataDatabaseFileName = 'metadata.db';
 
+/// A one-line file beside [metadataDatabaseFileName] naming the absolute path
+/// of the engram folder the store belongs to.
+///
+/// A debugging aid and nothing more. The store directory is named by the
+/// engram's ULID, which is opaque on purpose, so someone looking at the
+/// app-data directory — to find the right `metadata.db` to inspect or delete,
+/// or to work out what an orphaned store was for — has no way to tell which
+/// folder is which without it. It is rewritten on every open, so it follows
+/// a folder that moved; nothing in the app reads it, and the app is correct
+/// without it.
+const String engramPathFileName = 'path.txt';
+
 /// The [AppDataSource] for [operatingSystem], a `Platform.operatingSystem`
 /// value (`linux`, `macos`, `windows`, `android`, `ios`, `fuchsia`).
 ///

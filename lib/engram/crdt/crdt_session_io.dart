@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import '../engram.dart';
 import '../fs/fs_store_io.dart';
 import '../note_reconciler.dart';
@@ -9,6 +11,9 @@ import 'identity_authorship_io.dart';
 import 'identity_map_io.dart';
 import 'metadata_db_io.dart';
 import 'note_document_lock.dart';
+
+/// The `dart:developer` log name for the session's own messages.
+const String crdtSessionLogName = 'brainframe.engram.session';
 
 /// One engram's open op-log, for as long as that engram is the active one.
 ///
@@ -62,6 +67,26 @@ class CrdtSession {
     // filesystem engram; the seam allows otherwise, and such an engram would
     // get drift reconciliation and nothing that needs a listing.
     final store = engram.store;
+    if (store is FileSystemEngramStore) {
+      // Label the store with the folder it belongs to, for whoever is
+      // looking at the app-data directory by hand. A debugging aid: the
+      // engram opens whether or not it could be written, and the failure is
+      // logged rather than raised.
+      try {
+        await recordEngramPath(
+          engram.id,
+          store.location.path,
+          resolveRoot: resolveRoot,
+        );
+      } on Object catch (error, stack) {
+        developer.log(
+          'could not record the folder path in the engram store',
+          name: crdtSessionLogName,
+          error: error,
+          stackTrace: stack,
+        );
+      }
+    }
     final identity = store is FileSystemEngramStore
         ? await AuthoredIdentity.load(
             IdentityMap(

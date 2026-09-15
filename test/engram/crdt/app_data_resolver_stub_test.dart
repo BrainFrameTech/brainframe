@@ -25,6 +25,13 @@ void main() {
     );
   });
 
+  test('recordEngramPath is unsupported on the web stub', () {
+    expect(
+      () => recordEngramPath('01JBQ9YQ7C8VF9YB0X5H3TQ2ZK', '/x'),
+      throwsUnsupportedError,
+    );
+  });
+
   test('deleteEngramStore is unsupported on the web stub', () {
     expect(
       () => deleteEngramStore('01JBQ9YQ7C8VF9YB0X5H3TQ2ZK'),

@@ -41,10 +41,10 @@ AppDataRootResolver appDataRootResolver({
   return switch (appDataSourceFor(
     operatingSystem ?? Platform.operatingSystem,
   )) {
-    AppDataSource.applicationSupport => () async =>
-      (await getApplicationSupportDirectory()).path,
-    AppDataSource.applicationCache => () async =>
-      (await getApplicationCacheDirectory()).path,
+    AppDataSource.applicationSupport =>
+      () async => (await getApplicationSupportDirectory()).path,
+    AppDataSource.applicationCache =>
+      () async => (await getApplicationCacheDirectory()).path,
   };
 }
 
@@ -64,14 +64,27 @@ Future<String> engramStorePath(
   AppDataRootResolver? resolveRoot,
 }) async {
   if (!isCanonicalUlid(engramId)) {
-    throw ArgumentError.value(
-      engramId,
-      'engramId',
-      'must be a canonical ULID',
-    );
+    throw ArgumentError.value(engramId, 'engramId', 'must be a canonical ULID');
   }
   final root = await (resolveRoot ?? appDataRootResolver())();
   return '$root/$engramsDirectoryName/$engramId';
+}
+
+/// Writes `path.txt` in the engram [engramId]'s device-local store directory,
+/// naming [folderPath] — the absolute path of the engram folder — on one
+/// line. See [engramPathFileName] for what it is for.
+///
+/// Rewritten whole on every call, so a store whose folder moved is relabelled
+/// the next time the engram opens. The directory is created if it is not
+/// there yet, so the order of this and the database open does not matter.
+Future<void> recordEngramPath(
+  String engramId,
+  String folderPath, {
+  AppDataRootResolver? resolveRoot,
+}) async {
+  final directory = await engramStorePath(engramId, resolveRoot: resolveRoot);
+  await Directory(directory).create(recursive: true);
+  await File('$directory/$engramPathFileName').writeAsString('$folderPath\n');
 }
 
 /// Deletes the engram [engramId]'s device-local store directory — `metadata.db`

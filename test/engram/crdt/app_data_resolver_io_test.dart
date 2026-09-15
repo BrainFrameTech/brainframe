@@ -134,6 +134,59 @@ void main() {
     });
   });
 
+  group('recordEngramPath', () {
+    late Directory root;
+    late AppDataRootResolver resolveRoot;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('engram_store_path');
+      resolveRoot = appDataRootResolver(overridePath: root.path);
+    });
+
+    tearDown(() {
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    test('writes the folder path on one line beside metadata.db', () async {
+      // The store directory is a ULID, opaque on purpose; this is what tells
+      // someone looking at the app-data directory which folder it is for.
+      final id = newUlid();
+      await recordEngramPath(id, '/home/me/Notes', resolveRoot: resolveRoot);
+
+      expect(
+        await File('${root.path}/engrams/$id/path.txt').readAsString(),
+        '/home/me/Notes\n',
+      );
+    });
+
+    test('creates the store directory when the database has not yet', () async {
+      final id = newUlid();
+      expect(Directory('${root.path}/engrams/$id').existsSync(), isFalse);
+
+      await recordEngramPath(id, '/home/me/Notes', resolveRoot: resolveRoot);
+
+      expect(File('${root.path}/engrams/$id/path.txt').existsSync(), isTrue);
+    });
+
+    test('rewrites it whole, so a moved folder is relabelled', () async {
+      final id = newUlid();
+      await recordEngramPath(id, '/old/place', resolveRoot: resolveRoot);
+      await recordEngramPath(id, '/new/place', resolveRoot: resolveRoot);
+
+      expect(
+        await File('${root.path}/engrams/$id/path.txt').readAsString(),
+        '/new/place\n',
+      );
+    });
+
+    test('rejects anything that is not a canonical ULID', () async {
+      await expectLater(
+        recordEngramPath('../engrams', '/x', resolveRoot: resolveRoot),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('deleteEngramStore', () {
     late Directory root;
     late AppDataRootResolver resolveRoot;
@@ -155,6 +208,7 @@ void main() {
       // index — goes as one; only this engram's directory, not a sibling's.
       await File('${store.path}/metadata.db').create(recursive: true);
       await File('${store.path}/metadata.db-wal').create();
+      await File('${store.path}/path.txt').create();
       await File('${store.path}/index/search.db').create(recursive: true);
       await File(
         '${root.path}/engrams/$other/metadata.db',

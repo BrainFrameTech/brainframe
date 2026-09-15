@@ -56,12 +56,22 @@ sudo apt install patchelf desktop-file-utils file
    ([`linux/packaging/`](../linux/packaging/)) and the
    [`brainframe.png`](../brainframe.png) icon are installed into the usual
    `usr/share` locations.
-2. **Bundle dependencies with `linuxdeploy` + the GTK plugin.** This pulls the
-   app's GTK/glib dependency tree into the AppDir and patches library paths, so
-   the result runs on distributions with different GTK builds. An AppRun hook
-   (`apprun-hooks/10-flutter-libs.sh`) prepends the engine-library directory to
-   `LD_LIBRARY_PATH` as a deterministic guard, independent of how `linuxdeploy`
-   rewrites rpaths.
+2. **Write the AppRun hook, then bundle dependencies with `linuxdeploy` + the
+   GTK plugin.** `linuxdeploy` pulls the app's GTK/glib dependency tree into
+   `usr/lib` and patches library paths, so the result runs on distributions
+   with different GTK builds. That rewrite turns the binary's `$ORIGIN/lib`
+   rpath into `$ORIGIN/../lib`, which is fine for everything the binary
+   *links* — the dependency walk copies those into `usr/lib` — but not for
+   what Dart opens **at run time by name**: `libsqlite3.so`, the native asset
+   the `sqlite3` package ships, stays in `usr/bin/lib` on no search path. The
+   hook (`apprun-hooks/10-flutter-libs.sh`) prepends that directory to
+   `LD_LIBRARY_PATH`. **It must exist before `linuxdeploy` runs**: the
+   generated `AppRun` sources each hook present at generation time, by name,
+   and never globs the directory. A hook written afterwards ships in the
+   AppImage and is never sourced — which is how a whole release opened every
+   engram with no `metadata.db`, no scan, and no error, since a session that
+   cannot open its database comes up null. The script now checks that
+   `AppRun` names the hook and fails the build if it does not.
 3. **Package with the static runtime.** `appimagetool --runtime-file` writes the
    final AppImage using the FUSE 2/3-safe runtime described above.
 

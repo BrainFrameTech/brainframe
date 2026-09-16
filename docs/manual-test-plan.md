@@ -125,7 +125,7 @@ its **position**. No flash of a wrong-sized window before restore.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ + position restore only under **X11**; on **Wayland** size + maximized restore but position does **not** (compositor owns placement) — expected, not a bug | ✓ but **N/A** for window geometry — OS owns the window; only the spinner→engram start applies | same as Android | same as Android | ✓ for start-up; **N/A** for geometry — flutter-pi is single fullscreen surface |
+| ✓ | ✓ | ✓ + position restore only under **X11**; on **Wayland** size + maximized restore but position does **not** (compositor owns placement) — expected, not a bug | ✓ but **N/A** for window geometry — OS owns the window; only the spinner→engram start applies | same as Android | same as Android | ✓ for start-up; **N/A** for geometry — flutter-pi is a single fullscreen surface with no window plugin, so start-up skips the restore entirely (a crash here on `window_manager` is a regression) |
 
 - **Master-detail / Full-panel:** start-up restores whichever mode the current
   width implies; it does not persist a mode.
@@ -404,7 +404,7 @@ snapshot.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ (Cmd+S) | ✓ | ✓ + **N/A** for the keyboard save unless a HW keyboard is attached — tap the chip instead | ✓ (HW keyboard optional) | ✓ (Cmd+S with keyboard; else tap chip) | ✓ but keystroke feedback is the unsolved e-ink case |
+| ✓ | ✓ (Cmd+S) | ✓ | ✓ + **N/A** for the keyboard save unless a HW keyboard is attached — tap the chip instead | ✓ (HW keyboard optional) | ✓ (Cmd+S with keyboard; else tap chip) | ✓ but keystroke feedback is the unsolved e-ink case; step 9 has no close button and no window to close — Quit flushes and then ends the process directly, so the keystroke must still be on disk |
 
 - **Error path:** if a write fails, the chip shows `error` and the buffer stays
   dirty for retry — hard to force manually; note it as an inspection point.

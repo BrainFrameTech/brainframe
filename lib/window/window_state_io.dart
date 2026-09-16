@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io' show exit;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
@@ -39,11 +41,26 @@ void suspendWindowStatePersistence() {
   _persistenceSuspended = true;
 }
 
+/// False once [initWindowManager] found no `window_manager` plugin behind
+/// the method channel. `defaultTargetPlatform` says `linux` under flutter-pi
+/// too, but that embedder has no GTK window and links none of the desktop
+/// plugins, so the channel throws [MissingPluginException] on first use.
+/// There is no window to manage there; [requestAppQuit] ends the process
+/// directly instead.
+bool _windowManagerAvailable = true;
+
+/// Ends the process when there is no OS window to close. Overridable so a
+/// test can observe the exit rather than suffer it.
+@visibleForTesting
+void Function(int code) exitProcess = exit;
+
 /// Resets the module-level persistence flags between tests.
 @visibleForTesting
 void resetWindowStatePersistenceForTesting() {
   _persistenceDisabled = false;
   _persistenceSuspended = false;
+  _windowManagerAvailable = true;
+  exitProcess = exit;
 }
 
 bool get _isDesktop =>
@@ -64,7 +81,14 @@ bool get _isDesktop =>
 Future<void> initWindowManager({Size? startupSize}) async {
   if (!_isDesktop) return;
 
-  await windowManager.ensureInitialized();
+  try {
+    await windowManager.ensureInitialized();
+  } on MissingPluginException {
+    // A `linux` platform with no window plugin (flutter-pi): nothing to
+    // restore or persist. Remember it so Quit does not hit the same wall.
+    _windowManagerAvailable = false;
+    return;
+  }
   final store = _deviceStore(SharedPreferencesAsync());
   // An explicit --window-size takes the session off the saved geometry
   // entirely: nothing is restored (so no stale position or maximized state
@@ -105,9 +129,20 @@ Future<void> initWindowManager({Size? startupSize}) async {
 /// `close()` fires the delete-event that [WindowStatePersister.onWindowClose]
 /// intercepts, which flushes unsaved edits and saves the geometry before
 /// destroying the window. A no-op where there is no OS window to close.
+///
+/// Where the platform is desktop-shaped but has no window plugin (flutter-pi),
+/// there is no close to intercept, so the same withheld-buffer check and flush
+/// run here and the process exits directly.
 Future<void> requestAppQuit() async {
   if (!_isDesktop) return;
-  await windowManager.close();
+  if (_windowManagerAvailable) {
+    await windowManager.close();
+    return;
+  }
+  final pendingSaves = PendingSaves.instance;
+  if (!await pendingSaves.resolveWithheld()) return;
+  await pendingSaves.flushAll();
+  exitProcess(0);
 }
 
 /// Persists window geometry whenever it changes, and flushes unsaved edits on

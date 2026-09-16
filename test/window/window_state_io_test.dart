@@ -26,14 +26,14 @@ void main() {
 
   const channel = MethodChannel('window_manager');
   // window_manager asks screen_retriever for the display when centering.
-  const screenChannel = MethodChannel('dev.leanflutter.plugins/screen_retriever');
+  const screenChannel = MethodChannel(
+    'dev.leanflutter.plugins/screen_retriever',
+  );
   late List<String> calls;
   late List<MethodCall> invocations;
 
-  SettingsStore storeWith(_MapBackend device) => SettingsStore(
-    device: device,
-    engram: () => const NullSettingsBackend(),
-  );
+  SettingsStore storeWith(_MapBackend device) =>
+      SettingsStore(device: device, engram: () => const NullSettingsBackend());
 
   setUp(() {
     calls = [];
@@ -51,7 +51,9 @@ void main() {
         .setMockMethodCallHandler(screenChannel, (call) async {
           switch (call.method) {
             case 'getAllDisplays':
-              return const {'displays': [display]};
+              return const {
+                'displays': [display],
+              };
             case 'getCursorScreenPoint':
               return const {'dx': 0.0, 'dy': 0.0};
             default:
@@ -93,30 +95,35 @@ void main() {
     await persister.onWindowClose();
 
     expect(calls.where((m) => m == 'destroy'), hasLength(1));
-    expect(
-      device.values[windowStateSetting.key],
-      {'x': 100.0, 'y': 200.0, 'width': 1280.0, 'height': 800.0, 'maximized': false},
-    );
+    expect(device.values[windowStateSetting.key], {
+      'x': 100.0,
+      'y': 200.0,
+      'width': 1280.0,
+      'height': 800.0,
+      'maximized': false,
+    });
   });
 
-  test('onWindowClose writes unsaved edits before the window goes away',
-      () async {
-    final saves = PendingSaves();
-    final order = <String>[];
-    saves.register('editor', () async => order.add('flush'));
-    final device = _MapBackend();
-    final persister = WindowStatePersister(
-      storeWith(device),
-      pendingSaves: saves,
-    );
+  test(
+    'onWindowClose writes unsaved edits before the window goes away',
+    () async {
+      final saves = PendingSaves();
+      final order = <String>[];
+      saves.register('editor', () async => order.add('flush'));
+      final device = _MapBackend();
+      final persister = WindowStatePersister(
+        storeWith(device),
+        pendingSaves: saves,
+      );
 
-    await persister.onWindowClose();
+      await persister.onWindowClose();
 
-    // Flushed first, and before the window was destroyed — a debounced
-    // keystroke must not die with the process.
-    expect(order, ['flush']);
-    expect(calls, contains('destroy'));
-  });
+      // Flushed first, and before the window was destroyed — a debounced
+      // keystroke must not die with the process.
+      expect(order, ['flush']);
+      expect(calls, contains('destroy'));
+    },
+  );
 
   test('a withheld buffer the user keeps stops the close', () async {
     // Over the note size limit a flush writes nothing, so the close asks;
@@ -199,11 +206,13 @@ void main() {
     /// The setBounds that carries the size. Centering issues a second
     /// setBounds with only a position, so "the last one" is the wrong call.
     Map<Object?, Object?> sizeBounds() =>
-        invocations.firstWhere(
-              (c) =>
-                  c.method == 'setBounds' &&
-                  (c.arguments as Map).containsKey('width'),
-            ).arguments
+        invocations
+                .firstWhere(
+                  (c) =>
+                      c.method == 'setBounds' &&
+                      (c.arguments as Map).containsKey('width'),
+                )
+                .arguments
             as Map<Object?, Object?>;
 
     setUp(() {
@@ -219,31 +228,36 @@ void main() {
       expect(sizeBounds()['height'], 1000.0);
     });
 
-    test('does not restore the saved geometry it was told to override',
-        () async {
-      await initWindowManager(startupSize: const Size(1600, 1000));
+    test(
+      'does not restore the saved geometry it was told to override',
+      () async {
+        await initWindowManager(startupSize: const Size(1600, 1000));
 
-      // Restoring would have re-applied the stored 1280x800 and maximized it,
-      // which would defeat the size that was asked for.
-      expect(calls, isNot(contains('maximize')));
-      expect(sizeBounds()['width'], 1600.0);
-    });
+        // Restoring would have re-applied the stored 1280x800 and maximized it,
+        // which would defeat the size that was asked for.
+        expect(calls, isNot(contains('maximize')));
+        expect(sizeBounds()['width'], 1600.0);
+      },
+    );
 
-    test('does not write the recording size back over the saved geometry',
-        () async {
-      final device = seededDevice();
-      await initWindowManager(startupSize: const Size(1600, 1000));
+    test(
+      'does not write the recording size back over the saved geometry',
+      () async {
+        final device = seededDevice();
+        await initWindowManager(startupSize: const Size(1600, 1000));
 
-      // A resize during the session, then the save-on-close path.
-      await WindowStatePersister(storeWith(device)).onWindowClose();
+        // A resize during the session, then the save-on-close path.
+        await WindowStatePersister(storeWith(device)).onWindowClose();
 
-      expect(
-        device.values[windowStateSetting.key],
-        savedGeometry,
-        reason: 'a size passed for one session must not become the '
-            'remembered one',
-      );
-    });
+        expect(
+          device.values[windowStateSetting.key],
+          savedGeometry,
+          reason:
+              'a size passed for one session must not become the '
+              'remembered one',
+        );
+      },
+    );
 
     test('without the flag, geometry is persisted as usual', () async {
       final device = seededDevice();
@@ -256,6 +270,87 @@ void main() {
         isNot(savedGeometry),
         reason: 'the override must not leak into ordinary sessions',
       );
+    });
+  });
+
+  group('without a window_manager plugin (flutter-pi)', () {
+    // defaultTargetPlatform is linux there too, but the embedder links no
+    // desktop plugins, so the channel has nobody behind it.
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            throw MissingPluginException(
+              'No implementation found for method ${call.method}',
+            );
+          });
+    });
+
+    test(
+      'initWindowManager gives up quietly instead of crashing startup',
+      () async {
+        await expectLater(initWindowManager(), completes);
+
+        expect(calls, ['ensureInitialized']);
+      },
+    );
+
+    test(
+      'requestAppQuit flushes unsaved edits and exits the process',
+      () async {
+        await initWindowManager();
+        final order = <String>[];
+        PendingSaves.instance.register(
+          'editor',
+          () async => order.add('flush'),
+        );
+        addTearDown(() => PendingSaves.instance.unregister('editor'));
+        exitProcess = (code) => order.add('exit $code');
+
+        await requestAppQuit();
+
+        expect(order, ['flush', 'exit 0']);
+        // Nothing was asked of the plugin that is not there.
+        expect(calls, ['ensureInitialized']);
+      },
+    );
+
+    test('requestAppQuit stays put when a withheld buffer is kept', () async {
+      await initWindowManager();
+      final order = <String>[];
+      PendingSaves.instance.register(
+        'editor',
+        () async => order.add('flush'),
+        isWithheld: () => true,
+        resolve: () async => false,
+      );
+      addTearDown(() => PendingSaves.instance.unregister('editor'));
+      exitProcess = (code) => order.add('exit $code');
+
+      await requestAppQuit();
+
+      expect(order, isEmpty);
+    });
+
+    test('with the plugin present, requestAppQuit closes the window', () async {
+      // The io test above sets the plugin up; a plain Quit must still go
+      // through the window so onWindowClose does the flushing.
+      resetWindowStatePersistenceForTesting();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            return null;
+          });
+      var exited = false;
+      exitProcess = (_) => exited = true;
+
+      await requestAppQuit();
+
+      expect(calls, ['close']);
+      expect(exited, isFalse);
     });
   });
 }

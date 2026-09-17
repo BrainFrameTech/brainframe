@@ -122,6 +122,23 @@ class DriftScanReport {
   /// every deletion and every creation above.
   bool get complete => listingFailure == null;
 
+  /// True when the scan changed what a listing of the folder shows — a
+  /// path appeared, vanished, or moved — as opposed to what a file holds.
+  ///
+  /// This is what a tree of the engram needs to know, and nothing else in
+  /// the report is: a reconciled note is the same path with new content,
+  /// a conversion is the same path under a new policy, and a note found
+  /// over the ceiling is still listed where it was. [reconstructed] counts
+  /// because it leaves the oversized copy beside the note as a new file.
+  bool get changesListing =>
+      created.isNotEmpty ||
+      oversized.isNotEmpty ||
+      adopted.isNotEmpty ||
+      moved.isNotEmpty ||
+      tombstoned.isNotEmpty ||
+      retired.isNotEmpty ||
+      reconstructed.isNotEmpty;
+
   /// True when the scan changed nothing and nothing failed.
   bool get isClean =>
       reconciled.isEmpty &&
@@ -495,4 +512,19 @@ abstract class NoteReconciler {
   /// are not announced here: the browser initiated the in-app ones, and the
   /// external ones change what is listed, not what an open buffer holds.
   Stream<String> get reconciled;
+
+  /// Every completed scan's report, as it completes — the ones [scan]
+  /// returns, and the scan-shaped records a conversion or a reconstruction
+  /// makes of itself. Broadcast, like [reconciled]: nothing from before a
+  /// subscription, nothing missed during one.
+  ///
+  /// This is how the tree learns that the folder's listing changed under
+  /// it. The scan runs on start, on resume, and before an open; the first
+  /// two are nobody's action in the UI, so nothing above would otherwise
+  /// re-list — a file created by another editor, a sync client, or a
+  /// second BrainFrame over the same folder was found by the scan and shown
+  /// by nothing until the next restart. A subscriber should read
+  /// [DriftScanReport.changesListing] and ignore the rest: most scans are
+  /// clean, and a re-list on each would be work for nothing.
+  Stream<DriftScanReport> get scanReports;
 }

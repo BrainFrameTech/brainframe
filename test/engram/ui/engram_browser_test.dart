@@ -1310,6 +1310,65 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
 
+    testWidgets('a scan that found a new file re-lists the tree', (
+      tester,
+    ) async {
+      // Another editor, a sync client, or a second BrainFrame put a file in
+      // the folder; the resume scan found it. Nothing in the UI did that,
+      // so nothing else would re-list.
+      final store = _RwStore({'welcome.md': '# W'});
+      final reconciler = await pumpBrowser(tester, store);
+      store.files['arrived.md'] = '# From elsewhere';
+      expect(find.text('arrived.md'), findsNothing, reason: 'not yet listed');
+
+      reconciler.finishScan(const DriftScanReport(created: ['arrived.md']));
+      await tester.pumpAndSettle();
+
+      expect(find.text('arrived.md'), findsOneWidget);
+    });
+
+    testWidgets('a scan that only reconciled content does not re-list', (
+      tester,
+    ) async {
+      // The listing is the same; re-issuing it would be work for nothing.
+      // A file slipped into the store without a listing-changing report
+      // stays unseen, which is how the absence of a re-list shows.
+      final store = _RwStore({'welcome.md': '# W'});
+      final reconciler = await pumpBrowser(tester, store);
+      store.files['quiet.md'] = '# Unannounced';
+
+      reconciler.finishScan(
+        const DriftScanReport(reconciled: ['welcome.md']),
+      );
+      await tester.pumpAndSettle();
+      reconciler.finishScan(DriftScanReport.clean);
+      await tester.pumpAndSettle();
+
+      expect(find.text('quiet.md'), findsNothing);
+    });
+
+    testWidgets('a scan that tombstoned the open note re-lists and falls '
+        'back', (tester) async {
+      final store = _RwStore({'welcome.md': '# W', 'other.md': '# O'});
+      final reconciler = await pumpBrowser(tester, store);
+      await tester.tap(find.text('other.md'));
+      await tester.pumpAndSettle();
+      store.files.remove('other.md');
+
+      reconciler.finishScan(const DriftScanReport(tombstoned: ['other.md']));
+      await tester.pumpAndSettle();
+
+      expect(find.text('other.md'), findsNothing, reason: 'gone from the tree');
+      expect(find.text('# O'), findsNothing, reason: 'and from the pane');
+      expect(
+        find.descendant(
+          of: find.byType(FileTree),
+          matching: find.text('welcome.md'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a new note is reported as created', (tester) async {
       final store = _RwStore({'welcome.md': '# W'});
       final reconciler = await pumpBrowser(tester, store);
@@ -1688,4 +1747,13 @@ class _RecordingReconciler implements NoteReconciler {
 
   @override
   Stream<String> get reconciled => const Stream<String>.empty();
+
+  final StreamController<DriftScanReport> _scanReports =
+      StreamController<DriftScanReport>.broadcast(sync: true);
+
+  /// A scan finished with [report].
+  void finishScan(DriftScanReport report) => _scanReports.add(report);
+
+  @override
+  Stream<DriftScanReport> get scanReports => _scanReports.stream;
 }

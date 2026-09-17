@@ -156,6 +156,12 @@ class _EngramBrowserState extends State<EngramBrowser> {
   /// to English per file). A no-op for filesystem engrams.
   EngramStore? _contentStore;
 
+  /// The reconciler whose scan reports the tree follows, and the subscription. Held
+  /// so an engram switch — which swaps the session and with it the
+  /// reconciler — moves the subscription rather than leaking one per engram.
+  NoteReconciler? _scanned;
+  StreamSubscription<DriftScanReport>? _scanReports;
+
   @override
   void initState() {
     super.initState();
@@ -175,7 +181,23 @@ class _EngramBrowserState extends State<EngramBrowser> {
   void dispose() {
     widget.controller?._detach(this);
     _commands?.withdraw();
+    unawaited(_scanReports?.cancel());
     super.dispose();
+  }
+
+  /// A scan finished. If it changed what the folder lists — a file another
+  /// editor, a sync client, or a second BrainFrame put there, took away, or
+  /// renamed — the tree is re-listed, exactly as after one of its own
+  /// mutations. A scan that only reconciled content is not the tree's
+  /// business, and most scans are clean; neither re-lists.
+  ///
+  /// Only once the engram has loaded: the start-up scan can finish while the
+  /// first listing is still in flight, and re-listing then would be a second
+  /// load of the same thing — the selection fallback in [_refresh] would
+  /// also run before there is a selection to keep.
+  void _onScan(DriftScanReport report) {
+    if (!mounted || !report.changesListing || _contentStore == null) return;
+    _refresh();
   }
 
   /// Publishes what the desktop menu bar may invoke right now. A read-only
@@ -245,6 +267,14 @@ class _EngramBrowserState extends State<EngramBrowser> {
     final locale = Localizations.localeOf(context);
     _commands = AppCommandsScope.maybeOf(context);
     _publishCommands(engram);
+    // The session is an inherited dependency too, swapped on an engram
+    // switch and null for a read-only engram: follow whichever is current.
+    final reconciler = CrdtSessionScope.maybeReconcilerOf(context);
+    if (reconciler != _scanned) {
+      unawaited(_scanReports?.cancel());
+      _scanned = reconciler;
+      _scanReports = reconciler?.scanReports.listen(_onScan);
+    }
     final engramChanged = engram.id != _loadedEngramId;
     if (engramChanged || locale != _loadedLocale) {
       _loadedEngramId = engram.id;

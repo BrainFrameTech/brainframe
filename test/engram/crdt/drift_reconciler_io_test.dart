@@ -594,6 +594,54 @@ void main() {
     });
   });
 
+  group('scan reports are announced', () {
+    test('every completed scan, clean or not, as it completes', () async {
+      final d = await device();
+      await d.writer.write('a.md', 'a\n');
+      final seen = <DriftScanReport>[];
+      final subscription = d.reconciler.scanReports.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await engram.writeString('new.md', 'new\n');
+      await d.reconciler.scan();
+      await d.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, hasLength(2));
+      expect(seen[0].created, ['new.md']);
+      expect(seen[0].changesListing, isTrue);
+      expect(seen[1].isClean, isTrue);
+      expect(seen[1].changesListing, isFalse);
+    });
+
+    test('a conversion is announced as the scan it records', () async {
+      // Housekeeping's own actions go through the same stream, so the tree
+      // hears about a reconstruction's aside file the same way.
+      final d = await device();
+      await d.writer.write('a.md', 'a\n');
+      final seen = <DriftScanReport>[];
+      final subscription = d.reconciler.scanReports.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await d.reconciler.convertToPlainFile('a.md');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen.single.converted, ['a.md']);
+      expect(seen.single.changesListing, isFalse, reason: 'same path');
+    });
+
+    test('a reconciled-only scan does not change the listing', () async {
+      final d = await device();
+      await d.writer.write('a.md', 'a\n');
+      await engram.writeString('a.md', 'a changed\n');
+
+      final report = await d.reconciler.scan();
+
+      expect(report.reconciled, ['a.md']);
+      expect(report.changesListing, isFalse);
+    });
+  });
+
   group('the lock', () {
     test('a reconciliation and a save of one note are serialized', () async {
       // Without the lock both open the note, both diff against the same base,

@@ -1290,14 +1290,23 @@ folder.
   external change. This holds for a note the instance has no history for as
   well (an adopted one — F36): it is reloaded on the same triggers, without
   a Housekeeping card, because nothing became history.
-- Step 8: `X-renamed.md` appears in the tree, **X** is gone, and the note
-  opens with its content intact and saves normally. Nothing visible says
-  "this is the same note" — that is the point; a defect here looks like a
-  note that opens empty, or a second copy.
+- Step 8: `X-renamed.md` appears in the tree **on the switch back**, without
+  clicking anything, and **X** is gone; the note opens with its content
+  intact and saves normally. Nothing visible says "this is the same note" —
+  that is the point; a defect here looks like a note that opens empty, or a
+  second copy.
+- **Steps 8–11, the tree itself:** every file the scan creates, moves, or
+  removes shows up in the tree the moment that scan finishes — the resume
+  is enough, no click, no restart. The tree re-lists only when a scan
+  changed *what is listed*: after step 2 (content only) it must not
+  flicker or lose its scroll position. A defect looks like a new file that
+  is only listed after a restart, or a tree that redraws on every switch
+  back.
 - Step 9: as step 8, with the appended paragraph showing. A rename *plus* a
   rewrite of most of the note is allowed to come back as a fresh note (the
   similarity cutoff, biased toward missing); an appended paragraph is not.
-- Step 10: **Z** appears, opens, and saves like any other note.
+- Step 10: **Z** appears on the switch back, opens, and saves like any
+  other note.
 - Step 11: the first **Z** disappears from the tree; the second one opens
   with its own content and none of the first's.
 - Step 12: exactly **one** `<peerId>.db` file per BrainFrame install that has
@@ -1926,10 +1935,11 @@ guards against.
   the window flushes the editor (F10 step 6b) — so **A** shows it on that
   first switch, not the second. A defect looks like A missing the line on
   the first switch and picking it up on the next.
-- Step 5: **A** lists `Something New.md`. Usually A adopts B's ULID
-  outright; if A's scan raced B's map write, A minted its own and the
-  *next* scan retires it in favour of the lower ULID (Decision 9) — either
-  way, by the end of step 6 the note has one identity on both sides.
+- Step 5: **A** lists `Something New.md` as soon as it regains focus — no
+  click, no restart. Usually A adopts B's ULID outright; if A's scan raced
+  B's map write, A minted its own and the *next* scan retires it in favour
+  of the lower ULID (Decision 9) — either way, by the end of step 6 the
+  note has one identity on both sides.
 - Step 6: **B** shows A's line. **A**, on the second switch, shows nothing
   new and nothing lost.
 - Step 7: **B** reloads A's edit while holding the note open, as step 3.
@@ -2088,7 +2098,7 @@ cases for these until the code exists.
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
 | **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), and two instances over one folder can be driven as two devices on Linux (F36) — but with no transport, a note never carries history on more than one device. Merging two histories of one note is what stays untestable until #67. |
-| **Filesystem watcher (#70)** | External edits are picked up at start, resume, and before open (F29), not live. An edit made while the note is open and the window focused waits for the next trigger. |
+| **Filesystem watcher (#70)** | External edits and new files are picked up at start, resume, and before open (F29), not live — the tree and the open note both follow the scan (F29 steps 8–11, F36 step 5), so what the watcher would add is only the *trigger*. An edit or a new file that lands while the window is focused waits for the next one. |
 | **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
 
 When any of these lands, move its row up into the matrix with concrete steps and

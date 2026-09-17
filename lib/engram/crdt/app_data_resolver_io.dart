@@ -2,14 +2,12 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
-import '../id.dart';
 import 'app_data_source.dart';
+import 'engram_store_location_io.dart' as location;
 
-/// Resolves the root directory holding every engram's device-local store.
-///
-/// A function rather than a value so the choice can be made once at startup
-/// and injected, the way `engramContainerResolver` already is.
-typedef AppDataRootResolver = Future<String> Function();
+// The typedef lives with the platform-agnostic decisions; re-exported here
+// because this file is where a caller reaching for the resolver looks.
+export 'app_data_source.dart' show AppDataRootResolver;
 
 /// Picks where this device's app-owned engram data lives.
 ///
@@ -19,6 +17,16 @@ typedef AppDataRootResolver = Future<String> Function();
 /// excluded from the coverage gate as untestable bootstrap, and a resolver
 /// that silently picks the wrong directory does not fail — it opens an empty
 /// engram.
+///
+/// **This is the one function in the store's world that touches
+/// `path_provider`**, and this file is the only one that imports it. The
+/// directory work — [engramStorePath], [recordEngramPath],
+/// [deleteEngramStore] — lives in
+/// [engram_store_location_io.dart](engram_store_location_io.dart), which
+/// takes the resolver as an argument; the wrappers below supply this
+/// function as the default, so a caller at the app's edge may omit it, while
+/// the store underneath never depends on it and stays compilable by plain
+/// `dart`.
 ///
 /// [overridePath] short-circuits platform resolution entirely and is the
 /// Raspberry Pi's case: its library is expected to live on a separate mounted
@@ -48,66 +56,34 @@ AppDataRootResolver appDataRootResolver({
   };
 }
 
-/// The directory holding the engram [engramId]'s device-local store —
-/// `<app data root>/engrams/<engram ULID>/`, where `metadata.db` goes.
-///
-/// **The engram ULID names the directory and appears nowhere inside the
-/// database.** That is what makes a changed engram ULID — which a future sync
-/// election can produce, since two devices that adopt one folder before
-/// syncing each mint their own — a directory rename and nothing more: every
-/// byte inside is already correct. Nothing should later key a table on it.
-///
-/// Throws [ArgumentError] unless [engramId] is a canonical ULID, so a display
-/// name or a relative path can never become a directory component here.
+/// [location.engramStorePath], with this platform's root when [resolveRoot]
+/// is omitted.
 Future<String> engramStorePath(
   String engramId, {
   AppDataRootResolver? resolveRoot,
-}) async {
-  if (!isCanonicalUlid(engramId)) {
-    throw ArgumentError.value(engramId, 'engramId', 'must be a canonical ULID');
-  }
-  final root = await (resolveRoot ?? appDataRootResolver())();
-  return '$root/$engramsDirectoryName/$engramId';
-}
+}) => location.engramStorePath(
+  engramId,
+  resolveRoot: resolveRoot ?? appDataRootResolver(),
+);
 
-/// Writes `path.txt` in the engram [engramId]'s device-local store directory,
-/// naming [folderPath] — the absolute path of the engram folder — on one
-/// line. See [engramPathFileName] for what it is for.
-///
-/// Rewritten whole on every call, so a store whose folder moved is relabelled
-/// the next time the engram opens. The directory is created if it is not
-/// there yet, so the order of this and the database open does not matter.
+/// [location.recordEngramPath], with this platform's root when [resolveRoot]
+/// is omitted.
 Future<void> recordEngramPath(
   String engramId,
   String folderPath, {
   AppDataRootResolver? resolveRoot,
-}) async {
-  final directory = await engramStorePath(engramId, resolveRoot: resolveRoot);
-  await Directory(directory).create(recursive: true);
-  await File('$directory/$engramPathFileName').writeAsString('$folderPath\n');
-}
+}) => location.recordEngramPath(
+  engramId,
+  folderPath,
+  resolveRoot: resolveRoot ?? appDataRootResolver(),
+);
 
-/// Deletes the engram [engramId]'s device-local store directory — `metadata.db`
-/// and anything beside it — and returns whether there was one to delete.
-///
-/// Absence is success, not failure: a store that was never opened on this
-/// device, or one already removed by an earlier attempt, both leave nothing
-/// to do. The other half of a clean-up, the marker directory inside the
-/// folder, lives behind the filesystem store seam.
-///
-/// The directory is resolved through [engramStorePath], so the same ULID check
-/// guards it: nothing but a canonical engram ULID can name what is deleted
-/// here. **Never call this for an open engram:** its `metadata.db` is a live
-/// SQLite connection, which on Windows refuses the delete and everywhere else
-/// leaves the session writing into an unlinked file.
+/// [location.deleteEngramStore], with this platform's root when [resolveRoot]
+/// is omitted.
 Future<bool> deleteEngramStore(
   String engramId, {
   AppDataRootResolver? resolveRoot,
-}) async {
-  final directory = Directory(
-    await engramStorePath(engramId, resolveRoot: resolveRoot),
-  );
-  if (!await directory.exists()) return false;
-  await directory.delete(recursive: true);
-  return true;
-}
+}) => location.deleteEngramStore(
+  engramId,
+  resolveRoot: resolveRoot ?? appDataRootResolver(),
+);

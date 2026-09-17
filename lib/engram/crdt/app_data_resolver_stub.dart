@@ -8,11 +8,12 @@
 /// every platform.
 library;
 
+import 'app_data_source.dart';
+
+export 'app_data_source.dart' show AppDataRootResolver;
+
 const String _unsupported =
     'Device-local engram storage is not supported on this platform.';
-
-/// Signature parity with the `dart:io` build; nothing here ever returns one.
-typedef AppDataRootResolver = Future<String> Function();
 
 AppDataRootResolver appDataRootResolver({
   String? overridePath,

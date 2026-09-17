@@ -16,7 +16,7 @@
 /// already does for the filesystem store.
 library;
 
-import 'app_data_resolver.dart';
+import 'app_data_source.dart';
 
 /// The failure types are shared with the `dart:io` build rather than mirrored
 /// here, so a `catch` clause names one class on every platform. They are pure
@@ -31,7 +31,7 @@ abstract final class MetadataDatabase {
 
   static Future<MetadataDatabase> open(
     String engramId, {
-    AppDataRootResolver? resolveRoot,
+    required AppDataRootResolver resolveRoot,
   }) => throw UnsupportedError(_unsupported);
 
   static MetadataDatabase openInMemory() =>
@@ -41,5 +41,5 @@ abstract final class MetadataDatabase {
 Future<void> relocateEngramStore({
   required String fromEngramId,
   required String toEngramId,
-  AppDataRootResolver? resolveRoot,
+  required AppDataRootResolver resolveRoot,
 }) => throw UnsupportedError(_unsupported);

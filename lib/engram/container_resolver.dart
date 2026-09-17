@@ -1,4 +1,4 @@
-import 'fs/fs_store.dart';
+import 'fs/engram_container.dart';
 
 /// Picks the engram container for this session: the user's real one, or an
 /// empty throwaway when the session must not see it.

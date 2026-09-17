@@ -4,7 +4,8 @@ import 'package:crdt_lf/crdt_lf.dart';
 import 'package:crdt_lf_sqlite/crdt_lf_sqlite.dart';
 import 'package:sqlite3/sqlite3.dart' as sq;
 
-import 'app_data_resolver.dart';
+import 'app_data_source.dart';
+import 'engram_store_location_io.dart';
 import 'catalog_io.dart';
 import 'scan_history_io.dart';
 import 'store_exceptions.dart';
@@ -96,11 +97,16 @@ CREATE TABLE IF NOT EXISTS bf_meta (
   /// A fresh database is stamped with [currentSchemaVersion] and a newly
   /// generated [PeerId]; an existing one is validated and read back.
   ///
+  /// [resolveRoot] is required, not defaulted: the store is told where the
+  /// app-data root is and never asks the platform, which is what keeps it —
+  /// and everything built on it — free of `path_provider` and compilable by
+  /// plain `dart`. The app passes `appDataRootResolver()` at its edge.
+  ///
   /// Throws [MetadataDatabaseException] if the database was written by a newer
   /// build, or if its recorded version or peer identity cannot be parsed.
   static Future<MetadataDatabase> open(
     String engramId, {
-    AppDataRootResolver? resolveRoot,
+    required AppDataRootResolver resolveRoot,
   }) async {
     final directory = await engramStorePath(engramId, resolveRoot: resolveRoot);
     await Directory(directory).create(recursive: true);
@@ -228,7 +234,7 @@ CREATE TABLE IF NOT EXISTS bf_meta (
 Future<void> relocateEngramStore({
   required String fromEngramId,
   required String toEngramId,
-  AppDataRootResolver? resolveRoot,
+  required AppDataRootResolver resolveRoot,
 }) async {
   final from = await engramStorePath(fromEngramId, resolveRoot: resolveRoot);
   final to = await engramStorePath(toEngramId, resolveRoot: resolveRoot);

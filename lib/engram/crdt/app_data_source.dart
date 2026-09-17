@@ -6,6 +6,15 @@
 /// job is to be the one place the answer is written down and tested.
 library;
 
+/// Resolves the root directory holding every engram's device-local store.
+///
+/// A function rather than a value so the choice can be made once at startup
+/// and injected, the way `engramContainerResolver` already is — and so the
+/// store never has to know how the platform answers. The app supplies
+/// `appDataRootResolver()` from `app_data_resolver.dart`; a test or a
+/// command-line tool supplies a directory of its own.
+typedef AppDataRootResolver = Future<String> Function();
+
 /// The `path_provider` call an app-data root is read from.
 enum AppDataSource {
   /// `getApplicationSupportDirectory()`.

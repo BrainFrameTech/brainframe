@@ -3,9 +3,11 @@
 /// `dart:io` implementation on native platforms, a throwing stub on web.
 ///
 /// Callers import only this file and get `createFileSystemEngram`,
-/// `openFileSystemEngram`, and `applicationEngramContainerPath` — plus the
+/// `openFileSystemEngram`, and the rest of the store — plus the
 /// platform-agnostic [EngramLocation] value type — resolved to the right
-/// implementation for the build.
+/// implementation for the build. The default *containers* engrams live in
+/// are behind [engram_container.dart](engram_container.dart) instead, the
+/// one place in this layer that touches `path_provider`.
 library;
 
 export 'engram_location.dart';

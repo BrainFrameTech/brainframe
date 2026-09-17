@@ -49,16 +49,16 @@ class CrdtSession {
   /// writes at all.
   ///
   /// [resolveRoot] overrides where `metadata.db` is looked for, so a test can
-  /// point at a temporary directory instead of the real app-data one.
+  /// point at a temporary directory instead of the real app-data one. This
+  /// is the app's edge: the platform's answer is applied here, once, and
+  /// handed down to a store that never asks for it.
   static Future<CrdtSession?> openFor(
     Engram engram, {
     AppDataRootResolver? resolveRoot,
   }) async {
     if (engram.readOnly) return null;
-    final database = await MetadataDatabase.open(
-      engram.id,
-      resolveRoot: resolveRoot,
-    );
+    final root = resolveRoot ?? appDataRootResolver();
+    final database = await MetadataDatabase.open(engram.id, resolveRoot: root);
     // Old scan records go on open, before anything reads them: a year of
     // ordinary scans, never the ones that lost history or failed.
     database.scans.prune();
@@ -76,7 +76,7 @@ class CrdtSession {
         await recordEngramPath(
           engram.id,
           store.location.path,
-          resolveRoot: resolveRoot,
+          resolveRoot: root,
         );
       } on Object catch (error, stack) {
         developer.log(

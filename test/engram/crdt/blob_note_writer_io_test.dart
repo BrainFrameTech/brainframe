@@ -178,10 +178,11 @@ void main() {
       expect(identity.rows.keys, [row.ulid]);
     });
 
-    test('a history-pending blob is written, and nothing else', () async {
+    test('a history-pending blob is written, and observed', () async {
       // Adopted from another device's map, claims not yet arrived: the file
-      // is saved — that is the point of writing it first — and the catalog
-      // is left for the log to reconcile against when it lands.
+      // is saved — that is the point of writing it first — and no claim is
+      // made. The catalog still learns the bytes, as this device's own, so
+      // the next scan does not take them for a change made underneath it.
       final store = await openStore();
       addTearDown(store.close);
       final ulid = newUlid();
@@ -204,7 +205,9 @@ void main() {
 
       expect(await engram.readString('theirs.md'), 'edited here\n');
       expect(changesOf(store, ulid), 0);
-      expect(store.catalog.byUlid(ulid)!.materializedHash, isNull);
+      final row = store.catalog.byUlid(ulid)!;
+      expect(row.state, NoteState.historyPending);
+      expect(row.materializedHash, contentHashOfString('edited here\n'));
     });
 
     test('refuses a text note', () async {

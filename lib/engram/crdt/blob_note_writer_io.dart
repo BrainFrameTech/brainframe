@@ -117,7 +117,14 @@ class BlobNoteWriter implements NoteWriter {
       // adopted from another device's map and its claims have not arrived,
       // so there is no register to write to. The file is already saved —
       // that is the point of writing it first — and the log, when it lands,
-      // is reconciled against it as an external change.
+      // is reconciled against it as an external change. Recorded as
+      // observed, so the next scan knows these bytes are this device's own.
+      await recordFileState(
+        store: database,
+        engram: engram,
+        row: row,
+        digest: digest,
+      );
       return;
     }
     try {

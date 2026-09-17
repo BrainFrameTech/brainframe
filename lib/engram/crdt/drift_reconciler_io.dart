@@ -446,6 +446,9 @@ class DriftReconciler implements NoteReconciler {
             case _Drift.awaitingDecision:
               awaitingDecision.add(row.path);
             case _Drift.none:
+            case _Drift.observed:
+              // Observed is not a change to the engram the report — and
+              // Housekeeping, behind it — would list; the editor was told.
               break;
           }
           continue;
@@ -525,6 +528,7 @@ class DriftReconciler implements NoteReconciler {
               case _Drift.awaitingDecision:
                 awaitingDecision.add(path);
               case _Drift.none:
+              case _Drift.observed:
                 break;
             }
             continue;
@@ -628,6 +632,7 @@ class DriftReconciler implements NoteReconciler {
           );
           return false;
         case _Drift.none:
+        case _Drift.observed:
           return false;
       }
     }
@@ -684,20 +689,14 @@ class DriftReconciler implements NoteReconciler {
   /// The lock is taken per note and released before the next, so a save
   /// waiting on it waits for one reconciliation, not a whole scan.
   Future<_Drift> _reconcileRow(CatalogRow row) async {
-    if (row.state != NoteState.live && row.state != NoteState.oversized) {
-      return _Drift.none;
-    }
+    if (!_hasFile(row.state)) return _Drift.none;
 
     return lock.run(() async {
       // Re-read under the lock: a save that was ahead of us in the queue has
       // just committed a new hash, and the row we were handed describes the
       // file before it.
       var current = database.catalog.byUlid(row.ulid);
-      if (current == null) return _Drift.none;
-      if (current.state != NoteState.live &&
-          current.state != NoteState.oversized) {
-        return _Drift.none;
-      }
+      if (current == null || !_hasFile(current.state)) return _Drift.none;
 
       final stat = await engram.statFile(current.path);
       if (stat == null) return _Drift.none; // gone: the scan's question
@@ -705,6 +704,12 @@ class DriftReconciler implements NoteReconciler {
         return await _reconcileBlob(current, stat)
             ? _Drift.reconciled
             : _Drift.none;
+      }
+      // Nothing to diff into, so none of the below applies — not the
+      // ceiling either, which guards a history from being opened whole,
+      // and this note has none here. What the scan can still do is look.
+      if (current.state == NoteState.historyPending) {
+        return _observe(current, stat);
       }
 
       // The ceiling, from the stat and before any read, and whether or not
@@ -753,8 +758,13 @@ class DriftReconciler implements NoteReconciler {
       } on NoteHistoryPendingException {
         // A live row whose log has not arrived: nothing to diff into. The
         // file stays as the user left it, which is what Decision 4's bounded
-        // exception promises, and the eventual log reconciles it then.
-        return _Drift.none;
+        // exception promises, and the eventual log reconciles it then. What
+        // it holds is still noted, as for a history-pending row.
+        return _recordObserved(
+          current,
+          ContentDigest(hash: onDiskHash, size: bytes.length),
+          utf8.decode(bytes),
+        );
       }
       try {
         // Steps 3 and 4: a minimal script — never replace-all — applied in
@@ -778,6 +788,75 @@ class DriftReconciler implements NoteReconciler {
       _reconciled.add(current.path);
       return _Drift.reconciled;
     });
+  }
+
+  /// Whether a row in [state] has a file the scan should look at. A
+  /// tombstone has none; a history-pending note has one and no history.
+  static bool _hasFile(NoteState state) =>
+      state == NoteState.live ||
+      state == NoteState.oversized ||
+      state == NoteState.historyPending;
+
+  /// Decision 6 for a text note this device holds but cannot diff into —
+  /// adopted from the identity map, its op-log not yet arrived. The file is
+  /// the authority (Decision 4's bounded exception): nothing is diffed and
+  /// nothing is written. What the scan can still do is *notice*. The row
+  /// records the bytes last observed, the way a blob's does, so a later scan
+  /// can tell that the file changed underneath — and say so on [reconciled],
+  /// because an editor holding the note is otherwise never told, and a save
+  /// from its stale buffer would put the old text back over the new. Under
+  /// the lock already.
+  ///
+  /// Over the ceiling the file is digested rather than read, so it can still
+  /// be found by hash if it moves; it gets no sketch. Nothing here marks it
+  /// oversized — that state means "a history too large to open", and this
+  /// note has none.
+  Future<_Drift> _observe(CatalogRow current, FileFingerprint stat) async {
+    if (!mayHaveDrifted(current, stat)) return _Drift.none;
+    if (stat.size > noteSizeCeilingBytes) {
+      return _recordObserved(
+        current,
+        await digestFile(engram, current.path),
+        null,
+      );
+    }
+    final bytes = await engram.readBytes(current.path);
+    return _recordObserved(
+      current,
+      ContentDigest.of(bytes),
+      utf8.decode(bytes),
+    );
+  }
+
+  /// Commits what the file behind [current] holds, for a note whose file is
+  /// the authority, and announces the change if it is one.
+  ///
+  /// A first observation is silent: there was nothing to compare against,
+  /// and whoever has the note open read the file itself. Only a file that
+  /// differs from the last observed bytes reaches [reconciled].
+  ///
+  /// What a pending row's hash means is "last observed", never "last
+  /// materialized". When its log does arrive (**#67**), the note must be
+  /// reconciled against the file once regardless of the hash: the document
+  /// that arrived may say something else entirely, and a matching hash says
+  /// only that the *file* has not moved since this device last looked.
+  Future<_Drift> _recordObserved(
+    CatalogRow current,
+    ContentDigest digest,
+    String? text,
+  ) async {
+    if (!hasDrifted(current, digest.hash)) return _Drift.none;
+    final first = current.materializedHash == null;
+    await recordFileState(
+      store: database,
+      engram: engram,
+      row: current,
+      digest: digest,
+      text: text,
+    );
+    if (first) return _Drift.none;
+    _reconciled.add(current.path);
+    return _Drift.observed;
   }
 
   /// [row] in [state], everything else as it was.
@@ -968,14 +1047,27 @@ class DriftReconciler implements NoteReconciler {
         // that door is not built yet — the row records the honest state
         // and the writer treats both alike.
         final row = merged.forPath(path)!;
-        database.catalog.upsert(
-          CatalogRow(
-            ulid: row.ulid,
-            path: path,
-            mergePolicy: row.mergePolicy,
-            state: NoteState.historyPending,
-            seedClaim: row.seedClaim,
-          ),
+        final adopted = CatalogRow(
+          ulid: row.ulid,
+          path: path,
+          mergePolicy: row.mergePolicy,
+          state: NoteState.historyPending,
+          seedClaim: row.seedClaim,
+        );
+        database.catalog.upsert(adopted);
+        // Recorded as found — the content is in hand, and the next scan
+        // would otherwise read it again to learn the same thing. This is
+        // what lets a later scan tell the file changed underneath, and
+        // what lets an external rename be matched to this row rather than
+        // tombstoned and minted afresh. Not written to the map: a row this
+        // device merely learned is never its to announce.
+        final bytes = content.bytes;
+        await recordFileState(
+          store: database,
+          engram: engram,
+          row: adopted,
+          digest: content.digest,
+          text: bytes == null ? null : utf8.decode(bytes),
         );
         return _Arrival.adopted;
 
@@ -1194,4 +1286,8 @@ enum _Drift {
 
   /// The file is over the ceiling; the note now waits for the user.
   awaitingDecision,
+
+  /// The file had changed underneath a note this device cannot reconcile,
+  /// and the change was noticed and announced — nothing became history.
+  observed,
 }

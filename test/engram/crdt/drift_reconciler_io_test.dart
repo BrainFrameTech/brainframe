@@ -297,6 +297,11 @@ void main() {
         isEmpty,
         reason: 'a row we merely learned is never ours to write',
       );
+      expect(
+        d.store.catalog.byPath('adopted.md')!.materializedHash,
+        contentHashOfString('edited elsewhere\r\n'),
+        reason: 'what the file held is noted, so a later change is seen',
+      );
     });
 
     test(
@@ -318,6 +323,10 @@ void main() {
 
         expect(await d.reconciler.reconcile('theirs.md'), isFalse);
         expect((await d.reconciler.scan()).isClean, isTrue);
+        expect(
+          d.store.catalog.byPath('theirs.md')!.materializedHash,
+          contentHashOfString('content\n'),
+        );
       },
     );
 
@@ -438,6 +447,150 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(seen, ['a.md', 'b.md']);
+    });
+  });
+
+  group('a history-pending note changed underneath (Decision 4)', () {
+    // The pre-sync, two-devices-one-folder case: B holds A's note by
+    // identity alone, so B cannot diff into it — but B's editor may have it
+    // open, and a save from a stale buffer would put the old text back over
+    // whatever changed the file. The scan cannot make history of the
+    // change; it can notice it, and say so.
+    Future<(_Device, _Device)> adoptedByB(String path, String text) async {
+      final a = await device();
+      await engram.writeString(path, text);
+      await a.reconciler.scan();
+      await a.publish();
+      final b = await device();
+      expect((await b.reconciler.scan()).adopted, [path]);
+      return (a, b);
+    }
+
+    test('is announced on the stream, and nothing else happens', () async {
+      final (_, b) = await adoptedByB('shared.md', 'from A\n');
+      final seen = <String>[];
+      final subscription = b.reconciler.reconciled.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await engram.writeString('shared.md', 'from A\nchanged elsewhere\n');
+      final report = await b.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, ['shared.md'], reason: 'the editor must reload');
+      expect(report.isClean, isTrue, reason: 'nothing became history');
+      expect(changesOf(b, 'shared.md'), 0, reason: 'never seeded');
+      final row = b.store.catalog.byPath('shared.md')!;
+      expect(row.state, NoteState.historyPending);
+      expect(
+        row.materializedHash,
+        contentHashOfString('from A\nchanged elsewhere\n'),
+      );
+      expect(
+        await engram.readString('shared.md'),
+        'from A\nchanged elsewhere\n',
+        reason: 'the file is the authority and is not rewritten',
+      );
+      expect(b.identity.rows, isEmpty, reason: 'not ours to announce');
+    });
+
+    test('is announced by reconcile(path) too, once', () async {
+      final (_, b) = await adoptedByB('shared.md', 'v1\n');
+      final seen = <String>[];
+      final subscription = b.reconciler.reconciled.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await engram.writeString('shared.md', 'v2\n');
+      expect(await b.reconciler.reconcile('shared.md'), isFalse);
+      expect(await b.reconciler.reconcile('shared.md'), isFalse);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, ['shared.md'], reason: 'unchanged since: no second event');
+    });
+
+    test('the first look is silent', () async {
+      // A row with no hash yet — one made by a retirement, or by a build
+      // that predates the observation — is brought up to date without an
+      // announcement: nothing was known to compare against, and whoever
+      // has the note open read the file itself.
+      final d = await device();
+      d.store.catalog.upsert(
+        CatalogRow(
+          ulid: newUlid(),
+          path: 'adopted.md',
+          mergePolicy: MergePolicy.fugueText,
+          state: NoteState.historyPending,
+          seedClaim: OperationId(peerB, HybridLogicalClock.now()),
+        ),
+      );
+      await engram.writeString('adopted.md', 'as found\n');
+      final seen = <String>[];
+      final subscription = d.reconciler.reconciled.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await d.reconciler.scan();
+      await engram.writeString('adopted.md', 'changed\n');
+      await d.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, ['adopted.md']);
+    });
+
+    test('this device\'s own save is not a change underneath', () async {
+      // The writer's plain write of a pending note records what it wrote,
+      // so the next scan does not reload the editor over its own text —
+      // and over whatever was typed since.
+      final (_, b) = await adoptedByB('shared.md', 'from A\n');
+      final seen = <String>[];
+      final subscription = b.reconciler.reconciled.listen(seen.add);
+      addTearDown(subscription.cancel);
+
+      await b.writer.write('shared.md', 'from A\nfrom B\n');
+      expect((await b.reconciler.scan()).isClean, isTrue);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+      expect(changesOf(b, 'shared.md'), 0);
+      expect(await engram.readString('shared.md'), 'from A\nfrom B\n');
+    });
+
+    test('over the ceiling it is digested, not read, and still seen', () async {
+      final (_, b) = await adoptedByB('big.md', 'small\n');
+      final seen = <String>[];
+      final subscription = b.reconciler.reconciled.listen(seen.add);
+      addTearDown(subscription.cancel);
+      final huge = 'x' * (defaultNoteSizeCeilingBytes + 1);
+
+      await engram.writeString('big.md', huge);
+      final report = await b.reconciler.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, ['big.md']);
+      expect(report.isClean, isTrue);
+      final row = b.store.catalog.byPath('big.md')!;
+      expect(row.state, NoteState.historyPending, reason: 'not oversized');
+      expect(row.materializedHash, contentHashOfString(huge));
+      expect(row.sketch, isNull, reason: 'never held whole');
+    });
+
+    test('an external rename of an adopted note keeps its identity', () async {
+      // The companion to "cannot be matched, and says so": a note adopted
+      // by the scan has its hash, so a rename outside the app is a move
+      // rather than a tombstone and a fresh mint — and the map is told, as
+      // the in-app rename path already tells it.
+      final (a, b) = await adoptedByB('trails/cedar.md', 'cedar marsh\n');
+      final ulid = a.store.catalog.byPath('trails/cedar.md')!.ulid;
+
+      await engram.move('trails/cedar.md', 'journal/cedar.md');
+      final report = await b.reconciler.scan();
+
+      expect(report.moved, {'trails/cedar.md': 'journal/cedar.md'});
+      expect(report.tombstoned, isEmpty);
+      expect(report.created, isEmpty);
+      final row = b.store.catalog.byPath('journal/cedar.md')!;
+      expect(row.ulid, ulid);
+      expect(row.state, NoteState.historyPending);
+      await b.publish();
+      expect((await b.mapRowFor('journal/cedar.md'))!.ulid, ulid);
     });
   });
 

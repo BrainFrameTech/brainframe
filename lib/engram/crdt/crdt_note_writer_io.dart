@@ -5,10 +5,13 @@
 /// the editor never learns whether an op-log is behind it.
 library;
 
+import 'dart:convert';
+
 import '../engram_store.dart';
 import '../note_writer.dart';
 import 'blob_note_writer_io.dart';
 import 'catalog.dart';
+import 'drift.dart';
 import 'identity_authorship_io.dart';
 import 'materializer_io.dart';
 import 'metadata_db_io.dart';
@@ -119,6 +122,16 @@ class CrdtNoteWriter implements NoteWriter {
       // reconciles this content as ordinary drift. The exception ends the
       // moment the log lands.
       await DirectNoteWriter(engram).write(path, text);
+      // Recorded as observed, so the next scan does not take this device's
+      // own write for a change made underneath the editor and reload it
+      // over whatever was typed since.
+      await recordFileState(
+        store: database,
+        engram: engram,
+        row: row,
+        digest: ContentDigest.of(utf8.encode(text)),
+        text: text,
+      );
       return;
     }
 

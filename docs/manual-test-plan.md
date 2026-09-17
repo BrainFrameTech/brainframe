@@ -357,6 +357,9 @@ snapshot.
    (macOS/iOS with a keyboard). Watch the chip.
 5. Type, then **select a different file** without saving; reopen the first.
 6. Type, then click **outside** the editor (focus loss).
+   - **6b (desktop):** type, then *within the 5 s debounce* switch to another
+     application's window (Alt+Tab / Cmd+Tab) so BrainFrame stays visible but
+     loses window focus. Watch the chip, then check the file on disk.
 7. Type, then background/quit the app; relaunch and reopen the file.
 8. Edit text, then edit it **back** to the original.
 9. **Desktop exit (no lifecycle warning):** type a character and, *within the
@@ -376,7 +379,12 @@ snapshot.
   tappable "save now" when `unsaved`/`error`.
 - Switching files flushes the outgoing file first — the edit is on disk when you
   return; nothing stranded.
-- Focus loss and app pause/detach both flush.
+- Focus loss and app pause/detach both flush — and so does losing the
+  **window** (step 6b): the chip goes `saving`→`saved` on the switch, not 5 s
+  later, and the file on disk already holds the keystroke. A desktop app gets
+  only `inactive` for that, and the reason it must flush on it is a second
+  BrainFrame over the same folder: its resume scan runs the instant it is
+  focused, and before this it read the folder from before your edit.
 - Editing back to the original returns the chip to `saved` and cancels any
   pending write.
 - **Both desktop exits write first.** The keystroke from step 9 is on disk after

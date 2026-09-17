@@ -34,7 +34,8 @@ enum SaveStatus {
 /// is written — with a [maxWait] cap so an uninterrupted typing burst (which
 /// keeps resetting the idle timer) still checkpoints at least once per cap.
 /// [flush] writes immediately and is the hook for the manual save, a file
-/// switch, focus loss, and app-lifecycle pause/detach.
+/// switch, focus loss — the editor's, and the window's — and app-lifecycle
+/// pause/detach.
 ///
 /// Two correctness rules from the design are honored here: switching files
 /// flushes the outgoing file first ([openFile]), and a write captures the path
@@ -266,8 +267,18 @@ class DocumentEditController extends ChangeNotifier
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Leaving or backgrounding must never strand edits.
-    if (state == AppLifecycleState.paused ||
+    // Leaving or backgrounding must never strand edits — and neither must
+    // losing the window. On desktop, switching to another window sends
+    // `inactive` and nothing else, so without it here a keystroke sits in
+    // the debounce while whatever took focus reads the folder: a second
+    // BrainFrame over the same engram scans on its own resume, immediately,
+    // and finds the file from before the edit. `inactive` is also cheap
+    // everywhere it fires for other reasons (a system prompt, an incoming
+    // call): flushing a dirty buffer early is what the timer would have done
+    // a few seconds later. `resumed` is left alone; there is nothing to save
+    // on the way back in.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       unawaited(flush());

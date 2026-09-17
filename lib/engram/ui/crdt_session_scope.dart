@@ -173,9 +173,9 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
   ///
   /// The editor is flushed first, which is Decision 6's step 1 — reconciling
   /// underneath an unsaved buffer would race the save. In practice the buffer
-  /// is already clean, since pause flushed it, and this is the guarantee
-  /// rather than the common case. A session that resolves mid-flight is left
-  /// to its own start-up scan.
+  /// is already clean, since losing focus or being paused flushed it, and
+  /// this is the guarantee rather than the common case. A session that
+  /// resolves mid-flight is left to its own start-up scan.
   Future<void> _scanOnResume() async {
     final session = _session;
     if (session == null) return;

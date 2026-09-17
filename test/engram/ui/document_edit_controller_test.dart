@@ -124,8 +124,12 @@ void main() {
       });
     });
 
-    test('app pause/hide/detach flushes the buffer', () {
+    test('app inactive/pause/hide/detach flushes the buffer', () {
+      // `inactive` is what a desktop window gets when another window takes
+      // focus — the only lifecycle event it gets for that — and a second
+      // instance over the same engram scans the moment it is focused.
       for (final state in [
+        AppLifecycleState.inactive,
         AppLifecycleState.paused,
         AppLifecycleState.hidden,
         AppLifecycleState.detached,
@@ -143,13 +147,12 @@ void main() {
       }
     });
 
-    test('inactive/resumed lifecycle states do not write', () {
+    test('the resumed lifecycle state does not write', () {
       fakeAsync((async) {
         final store = _RecordingStore();
         final c = _controller(store);
         c.openFile('a.md', 'A');
         c.edit('A2');
-        c.didChangeAppLifecycleState(AppLifecycleState.inactive);
         c.didChangeAppLifecycleState(AppLifecycleState.resumed);
         async.flushMicrotasks();
         expect(store.writes, isEmpty);

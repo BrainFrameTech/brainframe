@@ -176,6 +176,9 @@ class _FakeReconciler implements NoteReconciler {
 
   @override
   Stream<String> get reconciled => _events.stream;
+
+  @override
+  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
 }
 
 Widget _host(EngramStore store, String path, {NoteReconciler? reconciler}) =>

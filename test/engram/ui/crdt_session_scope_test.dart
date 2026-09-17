@@ -505,6 +505,9 @@ class _RecordingReconciler implements NoteReconciler {
 
   @override
   Stream<String> get reconciled => const Stream<String>.empty();
+
+  @override
+  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
 }
 
 class _NoopWriter implements NoteWriter {

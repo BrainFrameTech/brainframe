@@ -97,6 +97,8 @@ class DriftReconciler implements NoteReconciler {
 
   final StreamController<String> _reconciled =
       StreamController<String>.broadcast();
+  final StreamController<DriftScanReport> _scanReports =
+      StreamController<DriftScanReport>.broadcast();
   final StreamController<AdoptionProgress?> _adoption =
       StreamController<AdoptionProgress?>.broadcast();
   AdoptionProgress? _currentAdoption;
@@ -123,6 +125,9 @@ class DriftReconciler implements NoteReconciler {
   Stream<String> get reconciled => _reconciled.stream;
 
   @override
+  Stream<DriftScanReport> get scanReports => _scanReports.stream;
+
+  @override
   Stream<AdoptionProgress?> get adoption => _adoption.stream;
 
   @override
@@ -145,9 +150,12 @@ class DriftReconciler implements NoteReconciler {
   }
 
   /// Writes what the scan did to the history, or — for a clean scan — only
-  /// when it ran. Recording is not allowed to fail the scan: the work is
-  /// done and the report is true whether or not it was written down, so a
-  /// database that refuses the row is logged and the report still returned.
+  /// when it ran, and announces the report on [scanReports]. Recording is not
+  /// allowed to fail the scan: the work is done and the report is true
+  /// whether or not it was written down, so a database that refuses the row
+  /// is logged and the report still returned — and still announced, since
+  /// what the tree needs to know is what happened to the folder, not
+  /// whether the ledger heard about it.
   void _recordScan(
     DriftScanReport report, {
     required ScanTrigger trigger,
@@ -155,6 +163,7 @@ class DriftReconciler implements NoteReconciler {
     bool stampLastScan = true,
   }) {
     if (_closed) return;
+    _scanReports.add(report);
     final finished = DateTime.now();
     try {
       // A conversion is recorded here so Housekeeping lists it, but it is
@@ -1214,6 +1223,7 @@ class DriftReconciler implements NoteReconciler {
     _closed = true;
     _reportAdoption(null);
     await _reconciled.close();
+    await _scanReports.close();
     await _adoption.close();
   }
 }

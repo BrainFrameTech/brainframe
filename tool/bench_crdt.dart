@@ -10,15 +10,15 @@
 //   BENCH=quick flutter test tool/bench_crdt.dart     # one folder, small notes
 //   BENCH=scan  flutter test tool/bench_crdt.dart     # or BENCH=seed
 //
-// It would be a plain `dart run` script if it could be: everything it times
-// is pure Dart over SQLite. But the store and the app-data resolver import
-// `path_provider`, a Flutter plugin, so the import chain reaches `dart:ui`
-// and only the Flutter tool can compile it. `flutter test` is the smallest
-// harness that can, and it runs on a Raspberry Pi over SSH the same as on a
-// desktop. Everything it touches — the catalog, the op-log, the reconciler,
-// the identity map — is the code the app runs, over real files in a temporary
-// directory that is removed afterwards. Nothing reaches the real app data or
-// any real engram.
+// Everything it times is pure Dart over SQLite, and since the store stopped
+// importing `path_provider` (it is handed its directory instead — see
+// `engram_store_location_io.dart`) a plain `dart run` could compile it. It
+// stays a `flutter test` file because it is written as one: the test
+// harness gives it its structure and its timeouts, and it runs on a
+// Raspberry Pi over SSH the same as on a desktop. Everything it touches —
+// the catalog, the op-log, the reconciler, the identity map — is the code
+// the app runs, over real files in a temporary directory that is removed
+// afterwards. Nothing reaches the real app data or any real engram.
 //
 // Two figures matter and both scale: the first scan over an existing engram
 // mints every note (this is adoption's cost, and the reason step 12 must be

@@ -23,10 +23,6 @@ void main() {
     );
   });
 
-  test('applicationEngramContainerPath is unsupported on the web stub', () {
-    expect(() => applicationEngramContainerPath(), throwsUnsupportedError);
-  });
-
   test('previewFolderAdoption is unsupported on the web stub', () {
     expect(
       () => previewFolderAdoption(const EngramLocation('/x')),
@@ -36,10 +32,6 @@ void main() {
 
   test('removeFileSystemEngramMarker is unsupported on the web stub', () {
     expect(() => removeFileSystemEngramMarker(loc), throwsUnsupportedError);
-  });
-
-  test('ephemeralEngramContainerPath is unsupported on the web stub', () {
-    expect(() => ephemeralEngramContainerPath(), throwsUnsupportedError);
   });
 
   test('discoverContainerEngrams is unsupported on the web stub', () {

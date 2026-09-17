@@ -5,9 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// `dart:ffi`, which does not exist there.
 void main() {
   const id = '01JBQ9YQ7C8VF9YB0X5H3TQ2ZK';
+  Future<String> nowhere() async => '/nowhere';
 
   test('open is unsupported on the web stub', () {
-    expect(() => MetadataDatabase.open(id), throwsUnsupportedError);
+    expect(
+      () => MetadataDatabase.open(id, resolveRoot: nowhere),
+      throwsUnsupportedError,
+    );
   });
 
   test('openInMemory is unsupported on the web stub', () {
@@ -18,7 +22,11 @@ void main() {
 
   test('relocateEngramStore is unsupported on the web stub', () {
     expect(
-      () => relocateEngramStore(fromEngramId: id, toEngramId: id),
+      () => relocateEngramStore(
+        fromEngramId: id,
+        toEngramId: id,
+        resolveRoot: nowhere,
+      ),
       throwsUnsupportedError,
     );
   });

@@ -15,8 +15,7 @@ const String _unsupported =
 Future<Engram> createFileSystemEngram({
   required EngramLocation location,
   required String displayName,
-}) =>
-    throw UnsupportedError(_unsupported);
+}) => throw UnsupportedError(_unsupported);
 
 Future<Engram> openFileSystemEngram(EngramLocation location) =>
     throw UnsupportedError(_unsupported);
@@ -24,27 +23,21 @@ Future<Engram> openFileSystemEngram(EngramLocation location) =>
 Future<Engram> openOrCreateFileSystemEngram(
   EngramLocation location, {
   required String displayName,
-}) =>
-    throw UnsupportedError(_unsupported);
+}) => throw UnsupportedError(_unsupported);
 
 Future<FolderAdoptionPreview> previewFolderAdoption(
   EngramLocation location, {
   FolderPreviewProgress? onProgress,
   FolderPreviewCancelled? isCancelled,
-}) =>
-    throw UnsupportedError(_unsupported);
+}) => throw UnsupportedError(_unsupported);
 
 Future<bool> removeFileSystemEngramMarker(EngramLocation location) =>
-    throw UnsupportedError(_unsupported);
-
-Future<String> applicationEngramContainerPath() =>
-    throw UnsupportedError(_unsupported);
-
-Future<String> ephemeralEngramContainerPath() =>
     throw UnsupportedError(_unsupported);
 
 Future<List<Engram>> discoverContainerEngrams(String containerPath) =>
     throw UnsupportedError(_unsupported);
 
-Future<Engram> createContainerEngram(String containerPath, String displayName) =>
-    throw UnsupportedError(_unsupported);
+Future<Engram> createContainerEngram(
+  String containerPath,
+  String displayName,
+) => throw UnsupportedError(_unsupported);

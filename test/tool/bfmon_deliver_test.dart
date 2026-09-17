@@ -222,22 +222,27 @@ void main() {
       await a.publish();
       final b = await device('b', engramId: id, folder: folder);
       await b.reconciler.scan();
-      // A note B has never heard of is skipped, not invented.
+      // A note B has not met yet: over a shared folder no scan runs at
+      // delivery (it would diff the sender's edits in as B's own), so the
+      // row is created from the sender's identity; the file is already
+      // there, being A's projection.
       await a.writer.write('three.md', '3\n');
+      await a.publish();
       await b.release();
       final out = StringBuffer();
 
       final outcomes = await send(a, b, out: out);
 
-      expect(outcomes, {
-        DeliveryOutcome.delivered: 2,
-        DeliveryOutcome.skipped: 1,
-      });
+      expect(outcomes, {DeliveryOutcome.delivered: 3});
+      expect(out.toString(), isNot(contains('receiver scanned')));
       expect(
         out.toString(),
-        contains('three.md  skipped: the receiver has no row'),
+        contains('three.md  created on the receiver; +1 change; file already'),
       );
-      expect(out.toString(), contains('2 delivered, 1 skipped'));
+      expect(out.toString(), contains('3 delivered'));
+      await b.reopen();
+      expect(b.rowAt('three.md')!.seededBy, a.store.peerId);
+      expect(b.valueOf('three.md'), '3\n');
     });
   });
 
@@ -277,6 +282,114 @@ void main() {
       expect((await a.reconciler.scan()).isClean, isTrue);
       expect((await b.reconciler.scan()).isClean, isTrue);
       expect(a.changesOf('x.md'), b.changesOf('x.md'));
+    });
+
+    test('a note only the sender has appears on the receiver', () async {
+      // The transport's other job: a new note, created on A while B was
+      // off, has no file in B's folder for a scan to find. Its identity
+      // and its whole text are in what is delivered.
+      final id = newUlid();
+      final folderA = '${root.path}/copyA';
+      final folderB = '${root.path}/copyB';
+      final a = await device('a', engramId: id, folder: folderA);
+      await a.writer.write('x.md', 'base\n');
+      await a.publish();
+      _copyTree(folderA, folderB);
+      final b = await device('b', engramId: id, folder: folderB);
+      await b.reconciler.scan();
+      await b.release();
+      await send(a, b);
+
+      await a.writer.write('notes/fresh.md', 'made on A\nwhile B was off\n');
+      await a.publish();
+      final out = StringBuffer();
+
+      final outcomes = await send(a, b, out: out);
+
+      expect(outcomes, {
+        DeliveryOutcome.upToDate: 1,
+        DeliveryOutcome.delivered: 1,
+      });
+      expect(out.toString(), contains('identity: 1 map file copied'));
+      expect(
+        out.toString(),
+        contains('notes/fresh.md  created on the receiver; +1 change'),
+      );
+      expect(
+        await File('$folderB/notes/fresh.md').readAsString(),
+        'made on A\nwhile B was off\n',
+      );
+      await b.reopen();
+      final row = b.rowAt('notes/fresh.md')!;
+      expect(row.state, NoteState.live);
+      expect(row.seededBy, a.store.peerId);
+      expect(b.valueOf('notes/fresh.md'), 'made on A\nwhile B was off\n');
+      expect((await b.reconciler.scan()).isClean, isTrue);
+
+      // B can edit it as its own operations now, and A receives them.
+      await b.writer.write('notes/fresh.md', 'made on A\nwhile B was off\nB\n');
+      await a.release();
+      await send(b, a);
+      await a.reopen();
+      expect(a.valueOf('notes/fresh.md'), 'made on A\nwhile B was off\nB\n');
+      expect(
+        await File('$folderA/notes/fresh.md').readAsString(),
+        'made on A\nwhile B was off\nB\n',
+      );
+    });
+
+    test('both devices minted: the maps meet, the election runs, then the '
+        'winner\'s log is delivered', () async {
+      // Two copies of one folder opened before either had published a map:
+      // every note has two ULIDs. The lower wins per path.
+      final id = newUlid();
+      final folderA = '${root.path}/copyA';
+      final folderB = '${root.path}/copyB';
+      Directory(folderA).createSync(recursive: true);
+      File('$folderA/same.md').writeAsStringSync('shared text\n');
+      _copyTree(folderA, folderB);
+      final a = await device('a', engramId: id, folder: folderA);
+      await a.reconciler.scan();
+      await a.publish();
+      final b = await device('b', engramId: id, folder: folderB);
+      await b.reconciler.scan();
+      await b.publish();
+      final ulidA = a.rowAt('same.md')!.ulid;
+      final ulidB = b.rowAt('same.md')!.ulid;
+      expect(ulidA, isNot(ulidB));
+      final lower = ulidA.compareTo(ulidB) < 0 ? a : b;
+      final higher = identical(lower, a) ? b : a;
+      final winner = lower.rowAt('same.md')!.ulid;
+
+      // Deliver from the winner: the loser retires its own ULID and
+      // adopts the winner's, then receives the winner's log.
+      await higher.release();
+      final out = StringBuffer();
+      final outcomes = await send(lower, higher, out: out);
+
+      expect(outcomes, {DeliveryOutcome.delivered: 1});
+      expect(out.toString(), contains('identity: 1 map file copied'));
+      expect(out.toString(), contains('1 retired'));
+      expect(out.toString(), contains('same.md  +1 change; promoted'));
+      await higher.reopen();
+      final row = higher.rowAt('same.md')!;
+      expect(row.ulid, winner);
+      expect(row.state, NoteState.live);
+      expect(higher.valueOf('same.md'), 'shared text\n');
+      expect(
+        higher.store.catalog
+            .byUlid(identical(higher, a) ? ulidA : ulidB)!
+            .state,
+        NoteState.tombstoned,
+        reason: 'the loser\'s own ULID is retired',
+      );
+
+      // The other way round, the winner already holds the winning ULID;
+      // the loser's log is for a retired document and is not wanted.
+      await lower.release();
+      final back = StringBuffer();
+      await send(higher, lower, out: back);
+      expect(back.toString(), contains('same.md  up to date'));
     });
 
     test('local drift on the receiver is reconciled before import', () async {
@@ -370,29 +483,28 @@ void main() {
       expect(() => send(a, b, note: 'nope.md'), throwsArgumentError);
     });
 
-    test('a receiver another process holds open', () async {
+    test('a receiver another process holds open, by name', () async {
       final id = newUlid();
       final folder = '${root.path}/e';
       final a = await device('a', engramId: id, folder: folder);
       final b = await device('b', engramId: id, folder: folder);
       await b.release();
-      expect(isOpenByAnotherProcess(b.storePath), isFalse);
+      expect(holdersOf(b.storePath), isEmpty);
       final holder = await Process.start('tail', ['-f', b.storePath]);
       addTearDown(holder.kill);
-      // Give tail a moment to open the file.
-      for (var i = 0; i < 50; i++) {
-        if (isOpenByAnotherProcess(b.storePath) == true) break;
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
+      await _untilHeld(b.storePath);
 
-      expect(isOpenByAnotherProcess(b.storePath), isTrue);
+      final holders = holdersOf(b.storePath)!;
+      expect(holders.single.pid, holder.pid);
+      expect(holders.single.name, 'tail');
+      expect(holders.single.isMonitor, isFalse);
       expect(
         () => send(a, b),
         throwsA(
           isA<ArgumentError>().having(
             (e) => e.message,
             'message',
-            contains('open in another process'),
+            allOf(contains('open in another process'), contains('(tail)')),
           ),
         ),
       );
@@ -406,7 +518,47 @@ void main() {
       );
       expect(out.toString(), contains('delivering from'));
     }, skip: !Platform.isLinux);
+
+    test('a bfmon watching the receiver is tolerated, and named', () async {
+      // The third window: a watch holds the store read-only. Stood in for
+      // by a script under the monitor's name, which is what /proc reports.
+      final id = newUlid();
+      final folder = '${root.path}/e';
+      final a = await device('a', engramId: id, folder: folder);
+      await a.writer.write('n.md', 'x\n');
+      await a.publish();
+      final b = await device('b', engramId: id, folder: folder);
+      await b.reconciler.scan();
+      await b.release();
+      final asMonitor = File('${root.path}/bfmon')
+        ..writeAsStringSync(
+          '#!/bin/sh\nexec 3<"\$1"\nwhile :; do sleep 1 3<&-; done\n',
+        );
+      await Process.run('chmod', ['+x', asMonitor.path]);
+      final holder = await Process.start(asMonitor.path, [b.storePath]);
+      addTearDown(holder.kill);
+      await _untilHeld(b.storePath);
+      expect(holdersOf(b.storePath)!.single.isMonitor, isTrue);
+      final out = StringBuffer();
+
+      final outcomes = await send(a, b, out: out);
+
+      expect(outcomes, {DeliveryOutcome.delivered: 1});
+      expect(
+        out.toString(),
+        contains('(bfmon) is watching the receiving store'),
+      );
+    }, skip: !Platform.isLinux);
   });
+}
+
+/// Waits for a just-started process to have [path] open.
+Future<void> _untilHeld(String path) async {
+  for (var i = 0; i < 100; i++) {
+    if (holdersOf(path)!.isNotEmpty) return;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('nothing opened $path');
 }
 
 void _copyTree(String from, String to) {

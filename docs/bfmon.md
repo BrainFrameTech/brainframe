@@ -112,27 +112,42 @@ knows the identity of.
 dart run bin/bfmon.dart deliver <from-store> <to-store> [<path|ulid>]
 ```
 
-Carries the sender's operations for one note — or for every note it holds
-a log for — into the receiver's op-log, and brings the receiver's file up to
-date with what arrived. This is the local half of sync (#67) with a person
-standing in for the transport, and it is the only way, today, for a note to
-carry history on more than one device.
+Carries everything a transport would carry from one device to another:
+the sender's identity map, and its operations for one note — or for every
+note it holds a log for — into the receiver's op-log; then brings the
+receiver's files up to date with what arrived, creating a note it has never
+met. This is the local half of sync (#67) with a person standing in for the
+transport, and it is the only way, today, for a note to carry history on
+more than one device.
 
 **The receiving app must be closed.** It holds the store open and keeps the
 open note's text in its editor; delivering underneath it would leave that
 buffer stale, and the editor's next save would diff the stale text into the
 merged document — deleting what just arrived. On Linux the command checks
-`/proc` and refuses if another process has the store open; elsewhere it
-cannot tell, and `--force` says you have closed it.
+`/proc`, names whatever holds the store, and refuses:
 
-What happens to each note, in order:
+```text
+bfmon: the receiving store is open in another process: pid 41210 (brainframe) — close it first
+```
 
-1. **Local drift first.** If the receiver's file changed outside the app and
-   its row is live, that drift is reconciled *before* the import, so the
+A bfmon `watch` holding the store is fine and is said so — it only reads,
+and it will narrate the delivery. Elsewhere the check cannot be made, and
+`--force` says you have closed the app.
+
+What happens, in order:
+
+0. **Identity first.** Over two folders, the sender's `.brainframe/shared/`
+   map files are copied into the receiver's folder and the receiver is
+   scanned — the real reconciler doing the real thing: adopting identities
+   for files it has, and, where both devices minted one path, the election
+   (the lower ULID wins, the loser's row is retired). Over one shared
+   folder the map is already shared and no scan runs; see the caveat below
+   for why.
+1. **Local drift.** If the receiver's file changed outside the app and its
+   row is live, that drift is reconciled *before* the import, so the
    receiver's own edits are operations against the document as it was.
-   Skipped when both devices share one folder — there the file already
-   carries the sender's edits, and diffing them in would author a second
-   copy of each.
+   Skipped over a shared folder, where the file already carries the
+   sender's edits and diffing them in would author a second copy of each.
 2. **Import.** The sender's changes the receiver lacks are saved into its
    log. A re-run is harmless: `up to date`.
 3. **A history-pending row is promoted** to live — it has a log now — and
@@ -142,6 +157,11 @@ What happens to each note, in order:
 4. **A live row is materialized** from the merged document: the file becomes
    the projection of both histories, and the hash is recorded so the
    receiver's next scan is clean.
+5. **A note the receiver has never met is created.** The sender's row says
+   what it is — path, policy, seed claim — and its log holds the whole
+   text, so the row is written, the log imported, and the file materialized:
+   the note appears in the receiver's folder, under the sender's identity.
+   Not a seed; the seed is the minter's, imported with the rest.
 
 A blob's log carries digests, never bytes. After the import the register's
 winner is compared with the receiver's file; if they differ and the sender's
@@ -149,15 +169,19 @@ folder holds a file with the winning digest, the bytes are copied, otherwise
 the line says what is missing.
 
 ```text
-delivering from d1ed2620 to 5102c2da  (shared folder: files already carry the sender's edits)
+note: pid 1657373 (dart:bfmon.dart) is watching the receiving store; it will see the delivery land
+delivering from bd4d1777 to 22a9aaef
+identity: 1 map file copied into the receiver's folder
+receiver scanned: 35 retired (the other device's ULID won)
 index.md  +2 changes; promoted historyPending → live; file already the projection
-new.md  skipped: the receiver has no row for 01M2PM…56V — open the engram there so it adopts the identity first
-1 delivered, 1 skipped
+notes/fresh.md  created on the receiver; +1 change; materialized 3f1c0a9b2e77
+35 delivered
 ```
 
-A note the receiver has no catalog row for is skipped, never invented:
-identity travels through the shared map, and the receiver adopts it on its
-next scan. Deliver again afterwards.
+Where both devices minted a path and the receiver's ULID is the lower, the
+line says `both devices minted it — the receiver's … wins; deliver the
+other way`. Tombstoned rows on the sender — retired ULIDs, deleted notes —
+are not delivered: their history is not wanted anywhere.
 
 ## Reading a two-device session
 
@@ -179,7 +203,8 @@ shell.
 One thing delivery cannot repair: in a shared folder, an edit reaches the
 other device twice — once as a file, once as operations — and if the receiver
 has already *scanned* the file before the operations arrive, it has authored
-its own copy of that edit, and the import adds the sender's on top. In the
-demo, close the receiving instance before the sender edits, which is what
+its own copy of that edit, and the import adds the sender's on top. That is
+why `deliver` runs no scan over a shared folder, and why, in the demo, the
+receiving instance is closed before the sender edits — which is what
 "offline" means here anyway. In a real sync the operations arrive before any
 scan does, and the reconciler finds the file already matching.

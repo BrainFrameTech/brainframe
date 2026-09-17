@@ -1962,9 +1962,11 @@ guards against.
   now holds the *history*, not just the files. B's new line reaches **A** as
   before, but in the monitor it now appears on **B's** side too, as
   `+change B@…` — B's own operation, on top of A's. `bfmon log /tmp/deviceB
-  index.md` lists A's operations followed by B's. A defect looks like the
-  command refusing with "open in another process" while B is quit (report
-  it), or B's `index.md` opening with different content than before.
+  index.md` lists A's operations followed by B's. The monitor's own `watch`
+  may stay running: the command names it and goes ahead. A defect looks
+  like the command refusing with "open in another process: pid N
+  (brainframe)" while B is quit (report it, with the pid's process), or B's
+  `index.md` opening with different content than before.
 - Throughout: every line typed on either side is on disk at the end, and
   none is duplicated. If a line vanishes, note which instance saved last
   and what the other one was showing at the time.

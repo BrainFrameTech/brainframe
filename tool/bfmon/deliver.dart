@@ -4,10 +4,20 @@
 ///
 /// The op-log is a table keyed `(document_id, change_id)`, and every row for
 /// a note is a complete causal set, so *moving* the rows is three SQL
-/// statements. What makes delivery more than that is what the receiver must
-/// do once they land, and nothing in the app does it yet, because nothing
-/// has ever delivered anything:
+/// statements. What makes delivery more than that is everything a transport
+/// carries besides operations, and what the receiver must do once they
+/// land — none of which the app does yet, because nothing has ever
+/// delivered anything:
 ///
+/// 0. **Identity first.** The sender's identity-map files — engram-level
+///    shared state, one file per peer, designed to be copied by a sync
+///    client (Decision 9) — are copied into the receiver's folder when the
+///    two folders differ, and the receiver is scanned. That scan is the
+///    real code doing the real thing: adopting identities for files it has,
+///    and, where both devices minted one path, the election — the lower
+///    ULID wins, the loser is retired. Without this step a receiver over
+///    its own copy of the folder calls every note by a different name and
+///    nothing can be delivered to it.
 /// 1. **Local drift first.** If the receiver's file has changed outside the
 ///    app and its row is live, that drift is reconciled *before* the
 ///    import, so the receiver's own edits are operations against the
@@ -26,6 +36,14 @@
 /// 4. **A live row is materialized** from the merged document: the file
 ///    becomes the projection of both histories, and the hash is recorded so
 ///    the receiver's next scan finds nothing to do.
+/// 5. **A note the receiver has never met is created.** The sender's row
+///    says what it is — path, policy, seed claim — and the log holds its
+///    whole text, so the row is written, the log imported, and the file
+///    materialized: the note appears in the receiver's folder. Not a seed:
+///    the seed is the minter's, imported with the rest. If the receiver
+///    holds a *different* ULID at that path, both devices minted it and
+///    the election in step 0 should have settled it; a leftover means the
+///    receiver's ULID won, and the note is delivered the other way.
 ///
 /// A blob's log carries digests, never bytes (Decision 3), so for a blob the
 /// register is merged and, when the winning digest is not what the receiver's
@@ -36,7 +54,9 @@
 /// a note's text in its editor; delivering underneath it would leave that
 /// buffer stale, and its next save would diff the stale text into the
 /// merged document — deleting what just arrived. On Linux this is checked
-/// through `/proc`; elsewhere it cannot be, and `--force` says you did.
+/// through `/proc`, naming whatever holds the store; a bfmon `watch` is
+/// tolerated, since it only reads. Elsewhere it cannot be checked, and
+/// `--force` says you did.
 library;
 
 import 'dart:convert';
@@ -56,6 +76,7 @@ import 'package:brainframe/engram/crdt/note_document_lock.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/metadata.dart';
+import 'package:crdt_lf/crdt_lf.dart';
 
 import 'replay.dart';
 import 'store.dart';
@@ -63,16 +84,41 @@ import 'store.dart';
 /// What happened to one note, for the summary.
 enum DeliveryOutcome { delivered, upToDate, skipped, failed }
 
-/// Whether another process has [path] open — the receiving app, typically.
+/// A process that has a store open: its pid and what it is.
+class StoreHolder {
+  const StoreHolder(this.pid, this.name);
+
+  final int pid;
+
+  /// The process name from `/proc/<pid>/comm` — `brainframe` for the app,
+  /// `bfmon` for a built monitor, `dart:bfmon.dart` for one under
+  /// `dart run`.
+  final String name;
+
+  /// Whether this is another bfmon — a `watch` in the third window,
+  /// typically. It holds the store read-only and keeps nothing in memory
+  /// that a delivery could leave stale; it will narrate the delivery.
+  bool get isMonitor => name.contains('bfmon');
+
+  @override
+  String toString() => 'pid $pid ($name)';
+}
+
+/// The processes, other than this one, that have [path] open.
 ///
 /// Linux only, through `/proc/<pid>/fd`; null where it cannot be told.
 /// Only this user's processes are readable, which is the case that matters:
-/// the app is theirs.
-bool? isOpenByAnotherProcess(String path) {
+/// the app is theirs. The path is compared resolved, since the kernel
+/// reports the real file and the user may have named it through a symlink.
+List<StoreHolder>? holdersOf(String path) {
   if (!Platform.isLinux) return null;
-  final target = File(path).absolute.path;
   final proc = Directory('/proc');
   if (!proc.existsSync()) return null;
+  final file = File(path);
+  final target = file.existsSync()
+      ? file.resolveSymbolicLinksSync()
+      : file.absolute.path;
+  final holders = <StoreHolder>[];
   for (final entry in proc.listSync()) {
     final other = int.tryParse(
       entry.uri.pathSegments.where((s) => s.isNotEmpty).last,
@@ -87,13 +133,21 @@ bool? isOpenByAnotherProcess(String path) {
     }
     for (final link in links) {
       try {
-        if (Link(link.path).targetSync() == target) return true;
+        if (Link(link.path).targetSync() != target) continue;
       } on FileSystemException {
         continue;
       }
+      String name;
+      try {
+        name = File('${entry.path}/comm').readAsStringSync().trim();
+      } on FileSystemException {
+        name = '?';
+      }
+      holders.add(StoreHolder(other, name));
+      break;
     }
   }
-  return false;
+  return holders;
 }
 
 /// Carries the sender's log for [note] — a path or a ULID, or every note
@@ -101,8 +155,10 @@ bool? isOpenByAnotherProcess(String path) {
 /// up to date with what arrived. Prints one line per note to [out].
 ///
 /// Throws [ArgumentError] for a refusal: the same store on both sides, a
-/// receiver with no folder label, or a receiver still open elsewhere
-/// without [force].
+/// receiver with no folder label, or a receiver still open in a process that
+/// is not a bfmon, without [force]. Another bfmon — the `watch` in the third
+/// window — is fine: it reads, keeps no note in memory, and will narrate
+/// what arrives.
 Future<Map<DeliveryOutcome, int>> deliver({
   required String fromStorePath,
   required String toStorePath,
@@ -122,19 +178,30 @@ Future<Map<DeliveryOutcome, int>> deliver({
       'folder is unknown; open the engram in that instance once',
     );
   }
-  switch (isOpenByAnotherProcess(to)) {
-    case true when !force:
-      throw ArgumentError(
-        'the receiving store is open in another process — close that '
-        'BrainFrame first (or pass --force if you know what you are doing)',
-      );
-    case null when !force:
+  final holders = holdersOf(to);
+  if (holders == null) {
+    if (!force) {
       out.writeln(
         'note: cannot tell whether the receiving app is running on this '
         'platform; make sure it is closed',
       );
-    default:
-      break;
+    }
+  } else {
+    final monitors = holders.where((h) => h.isMonitor).toList();
+    final others = holders.where((h) => !h.isMonitor).toList();
+    if (monitors.isNotEmpty) {
+      out.writeln(
+        'note: ${monitors.join(', ')} is watching the receiving store; '
+        'it will see the delivery land',
+      );
+    }
+    if (others.isNotEmpty && !force) {
+      throw ArgumentError(
+        'the receiving store is open in another process: '
+        '${others.join(', ')} — close it first (or pass --force if it is '
+        'not a BrainFrame and you know what you are doing)',
+      );
+    }
   }
 
   final sender = StoreReader.open(from, label: 'sender');
@@ -145,6 +212,9 @@ Future<Map<DeliveryOutcome, int>> deliver({
           Directory(receiverFolder).absolute.path;
   final receiver = await _openReceiver(to);
   final engram = FileSystemEngramStore(EngramLocation(receiverFolder));
+  final mapsCopied = shared
+      ? 0
+      : _copyIdentityMaps(from: senderFolder, to: receiverFolder);
   final identity = await AuthoredIdentity.load(
     IdentityMap(engramRoot: receiverFolder, peerId: receiver.peerId),
   );
@@ -166,6 +236,36 @@ Future<Map<DeliveryOutcome, int>> deliver({
       'to ${receiver.peerId.toString().substring(0, 8)}'
       '${shared ? '  (shared folder: files already carry the sender\'s edits)' : ''}',
     );
+    if (mapsCopied > 0) {
+      out.writeln(
+        'identity: $mapsCopied map file${mapsCopied == 1 ? '' : 's'} copied '
+        'into the receiver\'s folder',
+      );
+    }
+    // Step 0: the receiver's own scan, so identities meet before history
+    // does — adoptions, and the election where both devices minted a path.
+    // Its drift pass is step 1 for every note at once, which is right over
+    // two folders and wrong over one: there the file already carries the
+    // sender's edits, and a scan now would author the receiver's own copy
+    // of each before the sender's arrive. Over a shared folder the map is
+    // already shared, and a note the receiver has not met is created in
+    // step 5 from the sender's identity instead.
+    var reconciledByScan = const <String>{};
+    if (!shared) {
+      final scanned = await reconciler.scan();
+      reconciledByScan = scanned.reconciled.toSet();
+      final settled = <String>[
+        if (scanned.adopted.isNotEmpty) '${scanned.adopted.length} adopted',
+        if (scanned.retired.isNotEmpty)
+          '${scanned.retired.length} retired (the other device\'s ULID won)',
+        if (scanned.created.isNotEmpty) '${scanned.created.length} minted',
+        if (scanned.reconciled.isNotEmpty)
+          '${scanned.reconciled.length} reconciled',
+      ];
+      if (settled.isNotEmpty) {
+        out.writeln('receiver scanned: ${settled.join(', ')}');
+      }
+    }
     final targets = <CatalogEntry>[];
     if (note != null) {
       final entry = sender.entryNamed(note);
@@ -174,9 +274,15 @@ Future<Map<DeliveryOutcome, int>> deliver({
       }
       targets.add(entry);
     } else {
+      // Every note the sender holds a log for — except the tombstoned: a
+      // retired ULID's seed, or a deleted note's history, is not wanted
+      // anywhere, and its path is now another row's.
       final counts = sender.changeCounts();
       targets.addAll(
-        sender.catalog().values.where((e) => (counts[e.ulid] ?? 0) > 0),
+        sender.catalog().values.where(
+          (e) =>
+              (counts[e.ulid] ?? 0) > 0 && e.state != NoteState.tombstoned.name,
+        ),
       );
       targets.sort((a, b) => a.path.compareTo(b.path));
     }
@@ -193,6 +299,7 @@ Future<Map<DeliveryOutcome, int>> deliver({
             reconciler: reconciler,
             lock: lock,
             shared: shared,
+            reconciledByScan: reconciledByScan,
             out: out,
           ),
         );
@@ -239,16 +346,46 @@ Future<DeliveryOutcome> _deliverOne(
   required DriftReconciler reconciler,
   required NoteDocumentLock lock,
   required bool shared,
+  required Set<String> reconciledByScan,
   required StringSink out,
 }) async {
   final ulid = target.ulid;
   var row = receiver.catalog.byUlid(ulid);
+  var created = false;
   if (row == null) {
-    out.writeln(
-      '${target.path}  skipped: the receiver has no row for ${_short(ulid)} '
-      '— open the engram there so it adopts the identity first',
+    final atPath = receiver.catalog.byPath(target.path);
+    if (atPath != null) {
+      // Both devices minted this path. The election is deterministic —
+      // the lower ULID wins. Over two folders the receiver's scan has just
+      // run it with the sender's map in hand, so a row still here under
+      // another ULID is the winner; over a shared folder it is a race the
+      // receiving app settles on its next scan.
+      final receiverWins = atPath.ulid.compareTo(ulid) < 0;
+      out.writeln(
+        '${target.path}  skipped: both devices minted it — '
+        '${receiverWins ? 'the receiver\'s ${_short(atPath.ulid)} wins over the sender\'s ${_short(ulid)}; deliver the other way' : 'the sender\'s ${_short(ulid)} wins, and the receiving app retires ${_short(atPath.ulid)} on its next scan; deliver again after'}',
+      );
+      return DeliveryOutcome.skipped;
+    }
+    final claim = target.seedClaim;
+    if (claim == null) {
+      out.writeln(
+        '${target.path}  skipped: the sender\'s row has no seed claim to '
+        'carry',
+      );
+      return DeliveryOutcome.skipped;
+    }
+    // Step 5: a note the receiver has never met. Its identity is the
+    // sender's, whole, and the log about to arrive holds its text.
+    row = CatalogRow(
+      ulid: ulid,
+      path: target.path,
+      mergePolicy: MergePolicy.parse(target.mergePolicy),
+      state: NoteState.live,
+      seedClaim: OperationId.parse(claim),
     );
-    return DeliveryOutcome.skipped;
+    receiver.catalog.upsert(row);
+    created = true;
   }
   if (row.state == NoteState.tombstoned) {
     out.writeln('${row.path}  skipped: tombstoned on the receiver');
@@ -262,7 +399,7 @@ Future<DeliveryOutcome> _deliverOne(
       if (!have.contains(stored.changeId)) stored.change,
   ];
   final wasPending = row.state == NoteState.historyPending;
-  if (fresh.isEmpty && !wasPending) {
+  if (fresh.isEmpty && !wasPending && !created) {
     out.writeln('$path  up to date');
     return DeliveryOutcome.upToDate;
   }
@@ -274,9 +411,9 @@ Future<DeliveryOutcome> _deliverOne(
   // Step 1: the receiver's own drift, as its own operations, before
   // anything else arrives — only where the file could not already hold the
   // sender's edits.
-  var reconciledFirst = false;
+  var reconciledFirst = reconciledByScan.contains(path);
   if (!shared && !wasPending && row.mergePolicy == MergePolicy.fugueText) {
-    reconciledFirst = await reconciler.reconcile(path);
+    reconciledFirst = await reconciler.reconcile(path) || reconciledFirst;
     row = receiver.catalog.byUlid(ulid)!;
   }
 
@@ -285,6 +422,7 @@ Future<DeliveryOutcome> _deliverOne(
     if (fresh.isNotEmpty) storage.saveChanges(fresh);
     final arrived = '+${fresh.length} change${fresh.length == 1 ? '' : 's'}';
     final phrases = <String>[
+      if (created) 'created on the receiver',
       arrived,
       if (reconciledFirst) 'local drift reconciled first',
     ];
@@ -349,6 +487,39 @@ Future<DeliveryOutcome> _deliverOne(
     out.writeln('$path  ${phrases.join('; ')}');
     return DeliveryOutcome.delivered;
   });
+}
+
+/// Copies every identity-map file in the sender's folder that the
+/// receiver's folder lacks or holds a different version of. Returns how
+/// many were written. The files are whole, small, and rewritten whole by
+/// their owner, so a byte comparison is the right test.
+int _copyIdentityMaps({required String? from, required String to}) {
+  if (from == null) return 0;
+  final source = Directory('$from/.brainframe/shared');
+  if (!source.existsSync()) return 0;
+  final target = Directory('$to/.brainframe/shared')
+    ..createSync(recursive: true);
+  var copied = 0;
+  for (final entity in source.listSync()) {
+    if (entity is! File || !entity.path.endsWith('.db')) continue;
+    final destination = File('${target.path}/${entity.uri.pathSegments.last}');
+    final bytes = entity.readAsBytesSync();
+    if (destination.existsSync() &&
+        _sameBytes(destination.readAsBytesSync(), bytes)) {
+      continue;
+    }
+    destination.writeAsBytesSync(bytes, flush: true);
+    copied++;
+  }
+  return copied;
+}
+
+bool _sameBytes(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// A blob after import: the register's winner against the file's bytes.

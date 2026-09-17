@@ -7,9 +7,11 @@ because two BrainFrame windows over one folder look exactly like an editor
 with a file watcher — the CRDT layer's work is invisible from the windows,
 and this is the third window that narrates it.
 
-It is developer tooling, not part of the app: plain Dart, no Flutter, and it
-never writes. Every database is opened read-only, so it is safe to point at
-the stores of instances that are running.
+It is developer tooling, not part of the app: plain Dart, no Flutter. The
+reading commands (`watch`, `log`, `notes`) open every database read-only, so
+they are safe to point at the stores of instances that are running.
+`deliver` is the one command that writes, and it needs the receiving app
+closed — see below.
 
 ## Running it
 
@@ -19,6 +21,7 @@ From the repo root:
 dart run bin/bfmon.dart watch /tmp/deviceA /tmp/deviceB
 dart run bin/bfmon.dart notes /tmp/deviceA
 dart run bin/bfmon.dart log   /tmp/deviceA index.md
+dart run bin/bfmon.dart deliver /tmp/deviceA /tmp/deviceB [index.md]
 ```
 
 A store argument is any of: a `metadata.db`; the directory holding one; or an
@@ -103,6 +106,59 @@ The catalog as a table: state, change count, seed, ULID, path — the quickest
 way to see which notes this device holds a history for and which it merely
 knows the identity of.
 
+## `deliver`
+
+```bash
+dart run bin/bfmon.dart deliver <from-store> <to-store> [<path|ulid>]
+```
+
+Carries the sender's operations for one note — or for every note it holds
+a log for — into the receiver's op-log, and brings the receiver's file up to
+date with what arrived. This is the local half of sync (#67) with a person
+standing in for the transport, and it is the only way, today, for a note to
+carry history on more than one device.
+
+**The receiving app must be closed.** It holds the store open and keeps the
+open note's text in its editor; delivering underneath it would leave that
+buffer stale, and the editor's next save would diff the stale text into the
+merged document — deleting what just arrived. On Linux the command checks
+`/proc` and refuses if another process has the store open; elsewhere it
+cannot tell, and `--force` says you have closed it.
+
+What happens to each note, in order:
+
+1. **Local drift first.** If the receiver's file changed outside the app and
+   its row is live, that drift is reconciled *before* the import, so the
+   receiver's own edits are operations against the document as it was.
+   Skipped when both devices share one folder — there the file already
+   carries the sender's edits, and diffing them in would author a second
+   copy of each.
+2. **Import.** The sender's changes the receiver lacks are saved into its
+   log. A re-run is harmless: `up to date`.
+3. **A history-pending row is promoted** to live — it has a log now — and
+   its file, the authority until this moment, is diffed into the arrived
+   document once, so plain-file edits made while pending become operations
+   on top of the sender's. Then it is materialized.
+4. **A live row is materialized** from the merged document: the file becomes
+   the projection of both histories, and the hash is recorded so the
+   receiver's next scan is clean.
+
+A blob's log carries digests, never bytes. After the import the register's
+winner is compared with the receiver's file; if they differ and the sender's
+folder holds a file with the winning digest, the bytes are copied, otherwise
+the line says what is missing.
+
+```text
+delivering from d1ed2620 to 5102c2da  (shared folder: files already carry the sender's edits)
+index.md  +2 changes; promoted historyPending → live; file already the projection
+new.md  skipped: the receiver has no row for 01M2PM…56V — open the engram there so it adopts the identity first
+1 delivered, 1 skipped
+```
+
+A note the receiver has no catalog row for is skipped, never invented:
+identity travels through the shared map, and the receiver adopts it on its
+next scan. Deliver again afterwards.
+
 ## Reading a two-device session
 
 With two instances over one folder (manual test plan F36), the story
@@ -110,6 +166,20 @@ With two instances over one folder (manual test plan F36), the story
 not*: a note minted on A is adopted on B with A's ULID and zero changes; an
 edit made on B reaches A's op-log as a change *authored by A* — the diff the
 scan computed, attributed to the device that ingested it — and B's row only
-ever records the hash it observed. A note carrying history on both devices
-needs operations to travel, which is #67's transport; a `deliver` command
-that moves them by hand is the planned next step of this tool.
+ever records the hash it observed.
+
+`deliver` changes the story to *history arrives*. Close B, deliver A → B,
+relaunch B: `log` on B now shows A's operations, B's row is live, and B's
+next edit is an operation under B's own peer — `watch` prints `+change B@…`
+on B's side. Deliver B → A the same way and A's log holds two authors for one
+note. Two separate folder copies, edited concurrently and delivered both
+ways, converge to one text on both sides: the merge, with no transport but a
+shell.
+
+One thing delivery cannot repair: in a shared folder, an edit reaches the
+other device twice — once as a file, once as operations — and if the receiver
+has already *scanned* the file before the operations arrive, it has authored
+its own copy of that edit, and the import adds the sender's on top. In the
+demo, close the receiving instance before the sender edits, which is what
+"offline" means here anyway. In a real sync the operations arrive before any
+scan does, and the reconciler finds the file already matching.

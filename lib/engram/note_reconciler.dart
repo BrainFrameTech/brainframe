@@ -483,14 +483,16 @@ abstract class NoteReconciler {
   Future<void> noteDeleted(String path);
 
   /// Every path whose *content* was reconciled into history, by [scan] or
-  /// [reconcile], as it happens. Broadcast: subscribe from anywhere, miss
-  /// nothing that happens while subscribed, and expect nothing from before.
+  /// [reconcile], as it happens — and every path whose content was found
+  /// changed underneath a note this device holds but cannot reconcile, a
+  /// history-pending one. Broadcast: subscribe from anywhere, miss nothing
+  /// that happens while subscribed, and expect nothing from before.
   ///
   /// This is how the editor learns that the file under its open note was
-  /// rewritten — regardless of which trigger did it — so it can reload rather
-  /// than save a buffer that no longer knows what is on disk. Creations,
-  /// moves, and deletions are not announced here: the browser initiated the
-  /// in-app ones, and the external ones change what is listed, not what an
-  /// open buffer holds.
+  /// rewritten — regardless of which trigger did it, and whether or not
+  /// history was made of it — so it can reload rather than save a buffer
+  /// that no longer knows what is on disk. Creations, moves, and deletions
+  /// are not announced here: the browser initiated the in-app ones, and the
+  /// external ones change what is listed, not what an open buffer holds.
   Stream<String> get reconciled;
 }

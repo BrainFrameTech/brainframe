@@ -1279,7 +1279,9 @@ folder.
 - Throughout: the pane never flickers to a spinner on resume; only a note that
   actually changed on disk is reloaded. Reloading moves the caret to the end
   of the text — accepted for now, note it only if it happens *without* an
-  external change.
+  external change. This holds for a note the instance has no history for as
+  well (an adopted one — F36): it is reloaded on the same triggers, without
+  a Housekeeping card, because nothing became history.
 - Step 8: `X-renamed.md` appears in the tree, **X** is gone, and the note
   opens with its content intact and saves normally. Nothing visible says
   "this is the same note" — that is the point; a defect here looks like a
@@ -1850,6 +1852,107 @@ hand.
   bytes" for a note that was judged against 65,536. The record keeps no
   per-scan limit. Known, not a defect.
 
+### F36 — Two BrainFrames over one folder (a second device, before sync)
+
+There is no sync transport yet, but the *local* half of sync is real, and on
+Linux it can be exercised with two instances of the app acting as two
+devices: each gets its own app-data directory — so its own `metadata.db` and
+its own peer ID — and the engram folder is the only thing they share. That
+is exactly the pre-sync state of two machines over a Dropbox-style folder,
+and it shows what the design calls "identity is shared, history is not": the
+second instance to open the folder **adopts** every note's ULID from the
+first's identity map but has no history for any of them, so it edits them
+as plain files until a log arrives (**#67**). Two things must nevertheless
+hold: nothing is lost across the two, and neither editor sits on stale text.
+
+Set-up (Linux). Two terminals, one shared folder, two data homes:
+
+```bash
+cp -r test/fixtures/engram /tmp/shared-engram
+XDG_DATA_HOME=/tmp/deviceA flutter run -d linux \
+  --dart-entrypoint-args=--engram --dart-entrypoint-args=/tmp/shared-engram \
+  --dart-entrypoint-args=--ignore-config
+XDG_DATA_HOME=/tmp/deviceB flutter run -d linux \
+  --dart-entrypoint-args=--engram --dart-entrypoint-args=/tmp/shared-engram \
+  --dart-entrypoint-args=--ignore-config
+```
+
+Start **A** first and let it settle before starting **B**. **Never** run
+two instances with the *same* `XDG_DATA_HOME`: that is two writers on one
+`metadata.db` with one peer ID, which the design forbids and nothing
+guards against.
+
+**Steps:**
+
+1. In **A**, open `index.md`. Switch focus to **B** and open `index.md` there.
+2. In **B**, add a line and let it save (`saved`). Switch focus to **A**.
+3. In **A**, with the new line showing, add a line of your own and let it
+   save. Switch focus to **B**.
+4. **The stale-buffer trap:** in **B**, with `index.md` still open, add a
+   line and switch to **A** *within the 5 s debounce*. In **A**, without
+   touching `index.md`, switch straight back to **B**.
+5. In **B**, create a new note `Something New.md` with a line of text; let
+   it save. Switch to **A**.
+6. In **A**, open `Something New.md`, add a line, let it save. Switch to
+   **B**; then back to **A** once more.
+7. In **B**, with `Something New.md` open, switch to **A**; in **A**, edit
+   the note and let it save; switch back to **B**.
+8. In the file manager, rename `Something New.md` to `Renamed.md` while
+   both apps are unfocused. Focus **A**, then **B**; open `Renamed.md` in
+   each.
+9. Open **Settings › Housekeeping** in each instance and read the scan
+   cards.
+
+**Expected:**
+
+- Step 2: **A** shows B's line within a moment of regaining focus, at
+  `saved`. The resume scan reconciled B's plain-file write into A's history
+  (A minted `index.md`, so A has a history for it).
+- Step 3: **B** shows both lines. B has no history for `index.md` — it
+  adopted A's ULID — so nothing was reconciled; B's editor was told the
+  file changed underneath it and reloaded. Same appearance as step 2, by a
+  different route, and that is the point: **a note this instance cannot
+  reconcile still reloads when its file changes.** A defect looks like B
+  showing only its own line until you click away and back.
+- Step 4: the line typed in **B** is on disk *before* **A** scans — losing
+  the window flushes the editor (F10 step 6b) — so **A** shows it on that
+  first switch, not the second. A defect looks like A missing the line on
+  the first switch and picking it up on the next.
+- Step 5: **A** lists `Something New.md`. Usually A adopts B's ULID
+  outright; if A's scan raced B's map write, A minted its own and the
+  *next* scan retires it in favour of the lower ULID (Decision 9) — either
+  way, by the end of step 6 the note has one identity on both sides.
+- Step 6: **B** shows A's line. **A**, on the second switch, shows nothing
+  new and nothing lost.
+- Step 7: **B** reloads A's edit while holding the note open, as step 3.
+- Step 8: both instances list `Renamed.md` and neither lists
+  `Something New.md`; the note opens in each with its content intact. The
+  instance that holds it *without* a history matched the rename by the
+  file's hash — a defect looks like a tombstone and a second copy of the
+  note in Housekeeping's ledger.
+- Step 9: every card describes a change to *that* instance's history —
+  "updated from disk", created, moved. **No card is made for a reload that
+  made no history** (steps 3 and 7 on **B**): the editor was told, the
+  ledger was not.
+- Throughout: every line typed on either side is on disk at the end, and
+  none is duplicated. If a line vanishes, note which instance saved last
+  and what the other one was showing at the time.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| **N/A** — the app-data root comes from the Known Folders API, which no environment variable redirects; a second install is a second peer (F28), but two of those are two *builds*, not two of one | **N/A** — `~/Library/Application Support` is fixed per bundle id, same reason | ✓ | **N/A** — one install, one private data directory | as Android | as Android | **N/A** — one app per device, and no window focus to drive the resume |
+
+- **What this is not:** a test of merging. Every note here has a history
+  on exactly one side, so what converges is *files*, not operations. The
+  same note carrying history on both devices is #67's case and has no
+  manual form yet.
+- **Inspection point:** each instance's `metadata.db` (under
+  `$XDG_DATA_HOME/tech.brainframe.app.debug/engrams/<engram ULID>/`) tells
+  the story: `bf_catalog.state` is `live` for notes the instance minted and
+  `historyPending` for adopted ones, `bf_scan_event` names what each scan
+  did, and `changes` grows only on the side that has a history. A note
+  reloaded without history changes nothing but the row's recorded hash.
+
 ---
 
 ## Bug-class deep-dives
@@ -1976,7 +2079,7 @@ cases for these until the code exists.
 | **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which has no editor header to hang it on. |
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
-| **Sync / multi-device** | No sync layer; engrams are local folders. Note that the *local* half now exists — saves become CRDT operations (F10 step 10) and external edits are reconciled into history (F29) — but with no transport there is still no second device to test against. Two BrainFrames over one shared folder converge through the files alone, which the automated suite proves; it is not a manual case until a sync client is in the loop. |
+| **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), and two instances over one folder can be driven as two devices on Linux (F36) — but with no transport, a note never carries history on more than one device. Merging two histories of one note is what stays untestable until #67. |
 | **Filesystem watcher (#70)** | External edits are picked up at start, resume, and before open (F29), not live. An edit made while the note is open and the window focused waits for the next trigger. |
 | **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
 

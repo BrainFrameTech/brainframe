@@ -1964,12 +1964,22 @@ guards against.
   on exactly one side, so what converges is *files*, not operations. The
   same note carrying history on both devices is #67's case and has no
   manual form yet.
-- **Inspection point:** each instance's `metadata.db` (under
-  `$XDG_DATA_HOME/tech.brainframe.app.debug/engrams/<engram ULID>/`) tells
-  the story: `bf_catalog.state` is `live` for notes the instance minted and
-  `historyPending` for adopted ones, `bf_scan_event` names what each scan
-  did, and `changes` grows only on the side that has a history. A note
-  reloaded without history changes nothing but the row's recorded hash.
+- **The third window:** run the store monitor beside the two instances —
+  `dart run bin/bfmon.dart watch /tmp/deviceA /tmp/deviceB`
+  ([docs/bfmon.md](bfmon.md)) — and every step above narrates itself as it
+  happens: the adoption in step 1, B's `observed` and A's `reconciled` plus
+  the `+change A@… +"…"` line in step 2, the reload on B in step 3 as an
+  `observed` line with **no** change and no scan card, the election in
+  step 5 if it races, the `moved` line in step 8. It never writes, so it is
+  safe to leave running. What to look for: the *same hash* on both sides
+  after each round trip, `changes` growing only on the side that holds a
+  history, and every change authored by the device that ingested the edit.
+- **Inspection point:** without the monitor, each instance's `metadata.db`
+  (under `$XDG_DATA_HOME/tech.brainframe.app.debug/engrams/<engram ULID>/`)
+  tells the same story: `bf_catalog.state` is `live` for notes the instance
+  minted and `historyPending` for adopted ones, `bf_scan_event` names what
+  each scan did, and `changes` grows only on the side that has a history. A
+  note reloaded without history changes nothing but the row's recorded hash.
 
 ---
 

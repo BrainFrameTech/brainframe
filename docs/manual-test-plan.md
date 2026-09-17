@@ -1919,6 +1919,10 @@ guards against.
    each.
 9. Open **Settings › Housekeeping** in each instance and read the scan
    cards.
+10. **History arrives (optional, needs the monitor):** quit **B**. Run
+    `dart run bin/bfmon.dart deliver /tmp/deviceA /tmp/deviceB` from the
+    repo root, then relaunch **B** and open `index.md`. Add a line in **B**
+    and let it save. Switch to **A**.
 
 **Expected:**
 
@@ -1952,6 +1956,15 @@ guards against.
   "updated from disk", created, moved. **No card is made for a reload that
   made no history** (steps 3 and 7 on **B**): the editor was told, the
   ledger was not.
+- Step 10: `deliver` prints one line per note, `promoted historyPending →
+  live` for each note A minted, and **B** relaunches with everything exactly
+  as it was — nothing visible changes in the window, which is the point: B
+  now holds the *history*, not just the files. B's new line reaches **A** as
+  before, but in the monitor it now appears on **B's** side too, as
+  `+change B@…` — B's own operation, on top of A's. `bfmon log /tmp/deviceB
+  index.md` lists A's operations followed by B's. A defect looks like the
+  command refusing with "open in another process" while B is quit (report
+  it), or B's `index.md` opening with different content than before.
 - Throughout: every line typed on either side is on disk at the end, and
   none is duplicated. If a line vanishes, note which instance saved last
   and what the other one was showing at the time.
@@ -1960,10 +1973,11 @@ guards against.
 | --- | --- | --- | --- | --- | --- | --- |
 | **N/A** — the app-data root comes from the Known Folders API, which no environment variable redirects; a second install is a second peer (F28), but two of those are two *builds*, not two of one | **N/A** — `~/Library/Application Support` is fixed per bundle id, same reason | ✓ | **N/A** — one install, one private data directory | as Android | as Android | **N/A** — one app per device, and no window focus to drive the resume |
 
-- **What this is not:** a test of merging. Every note here has a history
-  on exactly one side, so what converges is *files*, not operations. The
-  same note carrying history on both devices is #67's case and has no
-  manual form yet.
+- **What this is not:** a test of merging under sync. Through step 9 every
+  note has a history on exactly one side, so what converges is *files*, not
+  operations; step 10 puts one note's history on both sides by hand, with
+  the monitor's `deliver` standing in for #67's transport. The transport
+  itself is what stays untestable.
 - **The third window:** run the store monitor beside the two instances —
   `dart run bin/bfmon.dart watch /tmp/deviceA /tmp/deviceB`
   ([docs/bfmon.md](bfmon.md)) — and every step above narrates itself as it
@@ -2107,7 +2121,7 @@ cases for these until the code exists.
 | **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which has no editor header to hang it on. |
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
-| **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), and two instances over one folder can be driven as two devices on Linux (F36) — but with no transport, a note never carries history on more than one device. Merging two histories of one note is what stays untestable until #67. |
+| **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), two instances over one folder can be driven as two devices on Linux (F36), and the monitor's `deliver` can carry one device's operations into the other's store by hand (F36 step 10, [docs/bfmon.md](bfmon.md)). What stays untestable is the transport itself: operations arriving while the app runs, and what it does at that moment. |
 | **Filesystem watcher (#70)** | External edits and new files are picked up at start, resume, and before open (F29), not live — the tree and the open note both follow the scan (F29 steps 8–11, F36 step 5), so what the watcher would add is only the *trigger*. An edit or a new file that lands while the window is focused waits for the next one. |
 | **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
 

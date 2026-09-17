@@ -9,6 +9,7 @@
 //   dart run bin/bfmon.dart watch /tmp/deviceA /tmp/deviceB
 //   dart run bin/bfmon.dart notes /tmp/deviceA
 //   dart run bin/bfmon.dart log   /tmp/deviceA index.md
+//   dart run bin/bfmon.dart deliver /tmp/deviceA /tmp/deviceB [index.md]
 //
 // A store argument is a `metadata.db`, its directory, or an app-data home
 // (the `XDG_DATA_HOME` an instance was launched with) holding one engram's
@@ -16,14 +17,18 @@
 // `dart build cli -t bin/bfmon.dart` gives a standalone bundle that runs on the
 // Pi.
 //
-// Never writes. Opens every database read-only and touches nothing else, so
-// it is safe to point at the stores of instances that are running.
+// The reading commands open every database read-only and touch nothing
+// else, so they are safe to point at the stores of instances that are
+// running. `deliver` is the one that writes: it carries one device's
+// operations into another's op-log — sync's local half, by hand — and needs
+// the receiving app closed.
 import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
 
 import '../tool/bfmon/commands.dart';
+import '../tool/bfmon/deliver.dart';
 import '../tool/bfmon/store.dart';
 import '../tool/bfmon/watch.dart';
 
@@ -34,6 +39,9 @@ Usage:
   bfmon watch <store> [<store>...]   narrate every change as it lands
   bfmon notes <store>                the catalog: state, seed, change count
   bfmon log   <store> <path|ulid>    one note's op-log, replayed
+  bfmon deliver <from> <to> [<path|ulid>]
+                                     carry the sender's operations into the
+                                     receiver's op-log (receiving app closed)
 
 A <store> is a metadata.db, the directory holding one, or an app-data home
 (the XDG_DATA_HOME an instance runs with) containing engrams/<ulid>/metadata.db.
@@ -55,6 +63,11 @@ Future<void> main(List<String> arguments) async {
       'color',
       defaultsTo: stdout.supportsAnsiEscapes,
       help: 'Colour the store labels.',
+    )
+    ..addFlag(
+      'force',
+      negatable: false,
+      help: 'deliver: proceed even if the receiving store looks open.',
     )
     ..addFlag('help', abbr: 'h', negatable: false);
 
@@ -90,7 +103,11 @@ Future<void> main(List<String> arguments) async {
         );
       case 'notes':
         if (operands.length != 1) throw ArgumentError('notes needs one store');
-        final store = _open(operands.single, 'A', engramId: engramId);
+        final store = _open(
+          operands.single,
+          _basename(operands.single),
+          engramId: engramId,
+        );
         try {
           printNotes(store, stdout);
         } finally {
@@ -100,12 +117,30 @@ Future<void> main(List<String> arguments) async {
         if (operands.length != 2) {
           throw ArgumentError('log needs a store and a path or ULID');
         }
-        final store = _open(operands.first, 'A', engramId: engramId);
+        final store = _open(
+          operands.first,
+          _basename(operands.first),
+          engramId: engramId,
+        );
         try {
           if (!printLog(store, operands.last, stdout)) exitCode = 1;
         } finally {
           store.close();
         }
+      case 'deliver':
+        if (operands.length < 2 || operands.length > 3) {
+          throw ArgumentError(
+            'deliver needs a sender, a receiver, and optionally one note',
+          );
+        }
+        final outcomes = await deliver(
+          fromStorePath: resolveStorePath(operands[0], engramId: engramId),
+          toStorePath: resolveStorePath(operands[1], engramId: engramId),
+          note: operands.length == 3 ? operands[2] : null,
+          out: stdout,
+          force: options['force'] as bool,
+        );
+        if ((outcomes[DeliveryOutcome.failed] ?? 0) > 0) exitCode = 1;
       default:
         throw ArgumentError('unknown command: $command');
     }
@@ -113,6 +148,17 @@ Future<void> main(List<String> arguments) async {
     stderr.writeln('bfmon: ${error.message}');
     exitCode = 64;
   }
+}
+
+/// A one-store command's label: the argument as the user spelled it, last
+/// segment only — `deviceB`, not `A`.
+String _basename(String argument) {
+  final segments = argument.split('/').where((s) => s.isNotEmpty).toList();
+  if (segments.isEmpty) return argument;
+  final last = segments.last;
+  return last == 'metadata.db' && segments.length > 1
+      ? segments[segments.length - 2]
+      : last;
 }
 
 StoreReader _open(String argument, String label, {String? engramId}) =>

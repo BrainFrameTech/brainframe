@@ -27,6 +27,7 @@ class CatalogEntry {
     required this.state,
     required this.materializedHash,
     required this.seededBy,
+    required this.seedHlc,
   });
 
   final String ulid;
@@ -35,6 +36,11 @@ class CatalogEntry {
   final String state;
   final String? materializedHash;
   final String? seededBy;
+  final String? seedHlc;
+
+  /// The seed claim as the catalog spells it, `peer@hlc`, or null.
+  String? get seedClaim =>
+      seededBy == null || seedHlc == null ? null : '$seededBy@$seedHlc';
 }
 
 /// One recorded scan and what it did, from `bf_scan` and `bf_scan_event`.
@@ -187,8 +193,8 @@ class StoreReader {
   /// Every catalog row, by ULID.
   Map<String, CatalogEntry> catalog() {
     final rows = _db.select(
-      'SELECT ulid, path, merge_policy, state, materialized_hash, seeded_by '
-      'FROM bf_catalog',
+      'SELECT ulid, path, merge_policy, state, materialized_hash, seeded_by, '
+      'seed_hlc FROM bf_catalog',
     );
     return {
       for (final row in rows)
@@ -199,6 +205,7 @@ class StoreReader {
           state: row['state'] as String,
           materializedHash: row['materialized_hash'] as String?,
           seededBy: row['seeded_by'] as String?,
+          seedHlc: row['seed_hlc'] as String?,
         ),
     };
   }

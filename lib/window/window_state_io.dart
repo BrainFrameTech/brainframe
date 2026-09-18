@@ -78,7 +78,7 @@ bool get _isDesktop =>
 /// silently ignores client requests to move a window, so position is neither
 /// meaningfully restorable nor savable there. Size and maximized state work on
 /// all desktops; position additionally works on X11, macOS, and Windows.
-Future<void> initWindowManager({Size? startupSize}) async {
+Future<void> initWindowManager({Size? startupSize, String? title}) async {
   if (!_isDesktop) return;
 
   try {
@@ -102,7 +102,9 @@ Future<void> initWindowManager({Size? startupSize}) async {
     size: startupSize ?? saved?.size ?? _defaultSize,
     minimumSize: _minimumSize,
     center: saved == null,
-    title: 'BrainFrame',
+    // The frame's title before Flutter's first frame; the app's
+    // onGenerateTitle keeps it in agreement afterwards.
+    title: title ?? 'BrainFrame',
   );
 
   await windowManager.waitUntilReadyToShow(options, () async {

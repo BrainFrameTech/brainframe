@@ -41,7 +41,10 @@ Future<void> main(List<String> args) async {
   // No-op on web and mobile. With --ignore-config nothing is saved to restore,
   // so the window opens at its default geometry. An explicit --window-size
   // overrides both, and is neither restored from nor written back.
-  await initWindowManager(startupSize: options.windowSize);
+  await initWindowManager(
+    startupSize: options.windowSize,
+    title: options.windowTitle,
+  );
 
   // The engram registry lives in shared preferences; user engrams sit in the
   // app documents container by default. On web the container resolver throws,
@@ -72,6 +75,7 @@ Future<void> main(List<String> args) async {
       repository: repository,
       resolveInitialEngram: _initialEngramResolver(options, repository),
       settingsController: settingsController,
+      windowTitle: options.windowTitle,
     ),
   );
 }

@@ -10,6 +10,7 @@ void main() {
       expect(options.engramPath, isNull);
       expect(options.ignoreConfig, isFalse);
       expect(options.windowSize, isNull);
+      expect(options.windowTitle, isNull);
       expect(options.showHelp, isFalse);
     });
 
@@ -19,8 +20,11 @@ void main() {
     });
 
     test('help is recognized alongside other options', () {
-      final options =
-          StartupOptions.parse(['--engram=/z', '--ignore-config', '--help']);
+      final options = StartupOptions.parse([
+        '--engram=/z',
+        '--ignore-config',
+        '--help',
+      ]);
       expect(options.showHelp, isTrue);
       expect(options.engramPath, '/z');
       expect(options.ignoreConfig, isTrue);
@@ -30,6 +34,7 @@ void main() {
       expect(StartupOptions.usage, contains('--engram'));
       expect(StartupOptions.usage, contains('--ignore-config'));
       expect(StartupOptions.usage, contains('--window-size'));
+      expect(StartupOptions.usage, contains('--window-title'));
       expect(StartupOptions.usage, contains('--help'));
     });
 
@@ -45,8 +50,10 @@ void main() {
     });
 
     test('a path may itself contain spaces (space-separated form)', () {
-      final options =
-          StartupOptions.parse(['--engram', '/notes/book notes/Atomic']);
+      final options = StartupOptions.parse([
+        '--engram',
+        '/notes/book notes/Atomic',
+      ]);
       expect(options.engramPath, '/notes/book notes/Atomic');
     });
 
@@ -54,6 +61,31 @@ void main() {
       final options = StartupOptions.parse(['--ignore-config']);
       expect(options.ignoreConfig, isTrue);
       expect(options.engramPath, isNull);
+    });
+
+    group('--window-title', () {
+      test('is taken as given, trimmed', () {
+        expect(
+          StartupOptions.parse(['--window-title', 'BrainFrame A']).windowTitle,
+          'BrainFrame A',
+        );
+        expect(
+          StartupOptions.parse(['--window-title= BrainFrame B ']).windowTitle,
+          'BrainFrame B',
+        );
+      });
+
+      test('blank means the application name', () {
+        expect(
+          StartupOptions.parse(['--window-title', '']).windowTitle,
+          isNull,
+        );
+        expect(
+          StartupOptions.parse(['--window-title', '  ']).windowTitle,
+          isNull,
+        );
+        expect(StartupOptions.parse(const []).windowTitle, isNull);
+      });
     });
 
     group('--window-size', () {
@@ -121,8 +153,7 @@ void main() {
     });
 
     test('both options together, in any order', () {
-      final options =
-          StartupOptions.parse(['--ignore-config', '--engram=/z']);
+      final options = StartupOptions.parse(['--ignore-config', '--engram=/z']);
       expect(options.engramPath, '/z');
       expect(options.ignoreConfig, isTrue);
     });
@@ -137,12 +168,18 @@ void main() {
       expect(options.engramPath, isNull);
     });
 
-    test('bare positional arguments are ignored, valid options still apply', () {
-      final options =
-          StartupOptions.parse(['--engram=/z', 'stray', 'positional']);
-      expect(options.engramPath, '/z');
-      expect(options.ignoreConfig, isFalse);
-    });
+    test(
+      'bare positional arguments are ignored, valid options still apply',
+      () {
+        final options = StartupOptions.parse([
+          '--engram=/z',
+          'stray',
+          'positional',
+        ]);
+        expect(options.engramPath, '/z');
+        expect(options.ignoreConfig, isFalse);
+      },
+    );
 
     test('an unknown option never throws — it falls back to defaults', () {
       // Launch-anyway behavior: an unrecognized flag can't stop the app, so the
@@ -153,17 +190,22 @@ void main() {
       expect(options.showHelp, isFalse);
     });
 
-    test('an unknown option alongside valid ones still falls back to defaults',
-        () {
-      // Consequence of using a strict parser with a catch-all: a stray option
-      // resets the batch. Correct invocations are unaffected.
-      final options = StartupOptions.parse(['--engram=/z', '--nope']);
-      expect(options.engramPath, isNull);
-    });
+    test(
+      'an unknown option alongside valid ones still falls back to defaults',
+      () {
+        // Consequence of using a strict parser with a catch-all: a stray option
+        // resets the batch. Correct invocations are unaffected.
+        final options = StartupOptions.parse(['--engram=/z', '--nope']);
+        expect(options.engramPath, isNull);
+      },
+    );
 
     test('a later --engram wins over an earlier one', () {
-      final options =
-          StartupOptions.parse(['--engram=/first', '--engram', '/second']);
+      final options = StartupOptions.parse([
+        '--engram=/first',
+        '--engram',
+        '/second',
+      ]);
       expect(options.engramPath, '/second');
     });
   });

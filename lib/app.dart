@@ -47,6 +47,7 @@ class BrainFrameApp extends StatefulWidget {
     required this.repository,
     this.resolveInitialEngram,
     this.settingsController,
+    this.windowTitle,
   });
 
   /// Discovers and remembers engrams; supplies the startup engram and persists
@@ -63,6 +64,11 @@ class BrainFrameApp extends StatefulWidget {
   /// omit it, in which case a default (system theme, no override, no
   /// persistence) is created and owned here.
   final AppSettingsController? settingsController;
+
+  /// A title for the OS window in place of the localized application name
+  /// — the `--window-title` startup option, for telling two instances
+  /// apart. Null means the application name, in the current locale.
+  final String? windowTitle;
 
   @override
   State<BrainFrameApp> createState() => _BrainFrameAppState();
@@ -117,7 +123,10 @@ class _BrainFrameAppState extends State<BrainFrameApp> {
                 builder: (context) => MaterialApp(
                   // Title is localized: onGenerateTitle runs inside a context that has
                   // the localizations, so it re-resolves when the locale changes.
+                  // An explicit --window-title is a proper name the user chose and
+                  // is not localized.
                   onGenerateTitle: (context) =>
+                      widget.windowTitle ??
                       AppLocalizations.of(context).appTitle,
                   debugShowCheckedModeBanner: false,
                   localizationsDelegates:

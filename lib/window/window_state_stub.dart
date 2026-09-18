@@ -3,7 +3,7 @@ import 'dart:ui' show Size;
 /// Web (and any non-`dart:io`) build: there is no desktop window to manage.
 /// [startupSize] is accepted so the seam presents one API, and ignored — there
 /// is no OS window to size.
-Future<void> initWindowManager({Size? startupSize}) async {}
+Future<void> initWindowManager({Size? startupSize, String? title}) async {}
 
 /// No-op where there is no OS window (see the io implementation).
 void suspendWindowStatePersistence() {}

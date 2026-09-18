@@ -882,7 +882,7 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
 **Steps:**
 
 1. **`--help` (or `-h`):** run the binary with `--help`. Expected: usage text
-   prints to the **terminal** — the app name, a `Usage:` line, the three options
+   prints to the **terminal** — the app name, a `Usage:` line, the options
    (generated from the parser, so they can't drift), and the "desktop builds
    only" note — and **no window opens**; the process exits.
 2. **`--engram <path>`:** run `brainframe --engram=/path/to/folder` pointing at
@@ -925,12 +925,21 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
    must not discard the rest of the command line.
 7. **Bad argument:** run with an unknown flag such as `--nope`. Expected: the app
    still launches normally with defaults — a stray argument never aborts it.
+8. **`--window-title <text>`:** launch with `--window-title="BrainFrame A"`.
+   Expected: the window's frame and its entry in the task switcher / dock read
+   **BrainFrame A** from the first frame on — never the plain name flashing
+   first — and stay so across an engram switch and a locale change (F17), which
+   otherwise re-resolve the title. Switch to a second instance launched with
+   `--window-title="BrainFrame B"` over the same folder (F36): the switcher
+   tells them apart. Relaunch without the flag: the plain localized name is
+   back. `--window-title=""` and `--window-title="  "` are the same as no flag.
 
 **Expected:** summarized per step above — `--help` is terminal-only and never
 starts the UI; `--engram` opens a folder transiently; `--ignore-config` is a
 read-nothing/write-nothing clean-slate session that cannot see or name your real
 engrams; `--window-size` sizes the window for one session without disturbing the
-remembered geometry; unparseable args degrade to defaults.
+remembered geometry; `--window-title` names the window for one session, in the
+frame and the switcher alike; unparseable args degrade to defaults.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1888,11 +1897,16 @@ Set-up (Linux). Two terminals, one shared folder, two data homes:
 cp -r test/fixtures/engram /tmp/shared-engram
 XDG_DATA_HOME=/tmp/deviceA flutter run -d linux \
   --dart-entrypoint-args=--engram --dart-entrypoint-args=/tmp/shared-engram \
-  --dart-entrypoint-args=--ignore-config
+  --dart-entrypoint-args=--ignore-config \
+  --dart-entrypoint-args=--window-title --dart-entrypoint-args="BrainFrame A"
 XDG_DATA_HOME=/tmp/deviceB flutter run -d linux \
   --dart-entrypoint-args=--engram --dart-entrypoint-args=/tmp/shared-engram \
-  --dart-entrypoint-args=--ignore-config
+  --dart-entrypoint-args=--ignore-config \
+  --dart-entrypoint-args=--window-title --dart-entrypoint-args="BrainFrame B"
 ```
+
+The titles (F23 step 8) are what let you tell the two windows apart in the
+switcher; the rest of this case calls them **A** and **B**.
 
 Start **A** first and let it settle before starting **B**. **Never** run
 two instances with the *same* `XDG_DATA_HOME`: that is two writers on one

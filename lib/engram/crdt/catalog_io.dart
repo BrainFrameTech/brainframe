@@ -131,12 +131,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS bf_catalog_findable_path
   /// How many notes this device remembers as deleted.
   int countTombstoned() =>
       database.select('SELECT COUNT(*) AS n FROM bf_catalog WHERE state = ?', [
-        NoteState.tombstoned.name,
-      ]).first['n'] as int;
+            NoteState.tombstoned.name,
+          ]).first['n']
+          as int;
 
   /// Every note that is not tombstoned, ordered by path: the notes whose file
   /// this device expects to find in the folder.
   ///
+  /// Every row whose seed claim is [peer]'s, in every state — the notes
+  /// that device minted, whether they are live, waiting, or tombstoned.
+  ///
+  /// What the identity map owes for this device's own mints, and so what
+  /// the map can be rebuilt from when a write of it was lost: the claims a
+  /// device is answerable for are exactly the rows it seeded. Tombstones
+  /// are included on purpose — a deleted or retired note of ours is a
+  /// claim too, the one that says "deleted".
+  List<CatalogRow> seededBy(PeerId peer) => database
+      .select('SELECT * FROM bf_catalog WHERE seeded_by = ? ORDER BY path', [
+        peer.toString(),
+      ])
+      .map(_rowFrom)
+      .toList();
+
   /// The scan's other input (Decision 7): a findable note whose path is
   /// absent has gone somewhere, and which of the three answers — moved,
   /// deleted, or merely unavailable — is the scan's to work out. Tombstones

@@ -1321,7 +1321,15 @@ folder.
 - Step 12: exactly **one** `<peerId>.db` file per BrainFrame install that has
   ever written to this engram, and nothing else the app did not put there.
   Two installs over one synced folder show two files. It is never renamed,
-  and it is small (kilobytes).
+  and it is small (kilobytes). **It is there even if you quit immediately:**
+  open a fresh copy of a folder and quit within a second or two of the
+  window appearing — inside the map writer's 5 s debounce — and the file
+  must still exist, because quitting flushes it. Then delete the file by
+  hand and relaunch: it is back after the first scan, rebuilt from the
+  catalog, with a row per note this install minted. A defect looks like a
+  folder with no file for an install that has minted notes in it — which,
+  before this, was what a quick launch-and-quit left behind, and what made
+  every other device mint its own identity for every note.
 - Step 13: the viewer shows the new image, and Housekeeping's newest scan
   card counts it — "1 note updated from disk" — the same wording as a text
   note that changed. The file itself is byte-identical to what was copied in:

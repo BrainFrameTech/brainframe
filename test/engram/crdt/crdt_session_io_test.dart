@@ -4,8 +4,10 @@ import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
 import 'package:brainframe/engram/crdt/crdt_session_io.dart';
 import 'package:brainframe/engram/crdt/drift_reconciler_io.dart';
+import 'package:brainframe/engram/crdt/identity_authorship_io.dart';
 import 'package:brainframe/engram/crdt/identity_map_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
+import 'package:brainframe/engram/crdt/note_document_lock.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
@@ -118,6 +120,73 @@ void main() {
     final files = shared.listSync().whereType<File>().toList();
     expect(files, hasLength(1), reason: 'exactly one file, for this device');
     expect(files.single.path, endsWith('.db'));
+  });
+
+  test(
+    'a map write lost to the debounce is rebuilt on the next open',
+    () async {
+      // The process ended inside the writer's debounce — a quit within seconds
+      // of the first scan — so the mints reached the catalog and not the
+      // file. Reproduced with a writer whose timers never fire.
+      final engram = engramWith(readOnly: false);
+      final engramRoot = '${root.path}/engram';
+      final store = await MetadataDatabase.open(
+        engram.id,
+        resolveRoot: resolveRoot,
+      );
+      final unwritten = await AuthoredIdentity.load(
+        IdentityMap(engramRoot: engramRoot, peerId: store.peerId),
+        writer: DebouncedIdentityMapWriter(
+          (_) async => fail('the crash happens before this'),
+          idleDebounce: const Duration(days: 1),
+          maxWait: const Duration(days: 1),
+        ),
+      );
+      final writer = CrdtNoteWriter(
+        database: store,
+        engram: engram.store,
+        lock: NoteDocumentLock(),
+        identity: unwritten,
+      );
+      await writer.write('inbox/today.md', '# Today\n');
+      await writer.write('inbox/later.md', '# Later\n');
+      unwritten.dispose();
+      store.close();
+      final shared = Directory('$engramRoot/.brainframe/shared');
+      expect(shared.existsSync() && shared.listSync().isNotEmpty, isFalse);
+
+      final session = await CrdtSession.openFor(
+        engram,
+        resolveRoot: resolveRoot,
+      );
+      await session!.close();
+
+      final files = shared.listSync().whereType<File>().toList();
+      expect(files, hasLength(1), reason: 'this device\'s map, rebuilt');
+      final peer = files.single.uri.pathSegments.last.replaceAll('.db', '');
+      final rows = await IdentityMap(
+        engramRoot: engramRoot,
+        peerId: PeerId.parse(peer),
+      ).readOurs();
+      expect(
+        rows.map((r) => r.path),
+        containsAll(['inbox/today.md', 'inbox/later.md']),
+      );
+    },
+  );
+
+  test('flush writes the map without closing', () async {
+    final engram = engramWith(readOnly: false);
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    await session!.writer.write('inbox/today.md', '# Today\n');
+    final shared = Directory('${root.path}/engram/.brainframe/shared');
+
+    await session.flush();
+
+    expect(shared.listSync().whereType<File>(), hasLength(1));
+    // Still open: a write after the flush goes through.
+    await session.writer.write('inbox/today.md', '# Today\nmore\n');
+    await session.close();
   });
 
   test('opening labels the store with the engram folder\'s path', () async {

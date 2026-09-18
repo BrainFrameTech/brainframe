@@ -37,10 +37,7 @@ void main() {
     await tester.pumpWidget(
       EngramScope(
         initialEngram: engramNamed('a'),
-        child: CrdtSessionHost(
-          openSession: (_) async => null,
-          child: probe(),
-        ),
+        child: CrdtSessionHost(openSession: (_) async => null, child: probe()),
       ),
     );
     await tester.pumpAndSettle();
@@ -48,17 +45,12 @@ void main() {
     expect(find.text('direct'), findsOneWidget);
   });
 
-  testWidgets('withholds the child until the session resolves', (
-    tester,
-  ) async {
+  testWidgets('withholds the child until the session resolves', (tester) async {
     final gate = Completer<CrdtSession?>();
     await tester.pumpWidget(
       EngramScope(
         initialEngram: engramNamed('a'),
-        child: CrdtSessionHost(
-          openSession: (_) => gate.future,
-          child: probe(),
-        ),
+        child: CrdtSessionHost(openSession: (_) => gate.future, child: probe()),
       ),
     );
     await tester.pump();
@@ -93,8 +85,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('crdt'), findsOneWidget);
 
-    await EngramScope.of(tester.element(find.text('crdt')))
-        .switchTo(engramNamed('b'));
+    await EngramScope.of(
+      tester.element(find.text('crdt')),
+    ).switchTo(engramNamed('b'));
     await tester.pumpAndSettle();
 
     // Two connections to one metadata.db would defeat the single transaction
@@ -150,8 +143,9 @@ void main() {
   });
 
   group('the scan on start', () {
-    testWidgets('starts when the session opens, and the child does not wait',
-        (tester) async {
+    testWidgets('starts when the session opens, and the child does not wait', (
+      tester,
+    ) async {
       // A first scan over a large folder mints every note in it, minutes on
       // the slowest target. The engram is usable throughout: the editor's
       // before-open reconciliation brings in whichever note the user reaches
@@ -344,6 +338,36 @@ void main() {
       expect(log, ['flush', 'scan resume'], reason: 'the trigger is recorded');
     });
 
+    testWidgets('the session\'s map flush joins the flush registry', (
+      tester,
+    ) async {
+      // The desktop close path awaits flushAll before destroying the
+      // window; a session that is not in the registry loses a mint made
+      // within the map writer's debounce.
+      final pendingSaves = PendingSaves();
+      _FakeSession? session;
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async => session = _FakeSession(() {}),
+            pendingSaves: pendingSaves,
+            child: probe(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await pendingSaves.flushAll();
+      expect(session!.flushes, 1);
+
+      // Gone from the registry once the host goes away.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      await pendingSaves.flushAll();
+      expect(session!.flushes, 1, reason: 'unregistered on close');
+    });
+
     testWidgets('other lifecycle states do not scan', (tester) async {
       final reconciler = _RecordingReconciler();
       await tester.pumpWidget(
@@ -431,6 +455,12 @@ class _FakeSession implements CrdtSession {
   @override
   final _RecordingReconciler reconciler;
 
+  /// How many times the host asked the session to flush its map.
+  int flushes = 0;
+
+  @override
+  Future<void> flush() async => flushes++;
+
   @override
   Future<void> close() async => _onClose();
 }
@@ -447,7 +477,9 @@ class _RecordingReconciler implements NoteReconciler {
   DriftScanReport report = DriftScanReport.clean;
 
   @override
-  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async {
+  Future<DriftScanReport> scan({
+    ScanTrigger trigger = ScanTrigger.manual,
+  }) async {
     scans++;
     log.add('scan ${trigger.name}');
     if (gate != null) await gate!.future;
@@ -468,7 +500,8 @@ class _RecordingReconciler implements NoteReconciler {
   Future<void> noteDeleted(String path) async {}
 
   @override
-  Stream<AdoptionProgress?> get adoption => const Stream<AdoptionProgress?>.empty();
+  Stream<AdoptionProgress?> get adoption =>
+      const Stream<AdoptionProgress?>.empty();
 
   @override
   AdoptionProgress? get currentAdoption => null;
@@ -507,7 +540,8 @@ class _RecordingReconciler implements NoteReconciler {
   Stream<String> get reconciled => const Stream<String>.empty();
 
   @override
-  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
+  Stream<DriftScanReport> get scanReports =>
+      const Stream<DriftScanReport>.empty();
 }
 
 class _NoopWriter implements NoteWriter {

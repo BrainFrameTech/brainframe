@@ -95,6 +95,21 @@ class CrdtSession {
             ),
           )
         : null;
+    if (identity != null) {
+      // What the map file should say about this device's own mints is in
+      // the catalog; a write lost to the debounce — a quit within seconds
+      // of the first scan, a crash — is made good here, before anything
+      // reads the map.
+      final repaired = identity.repairFrom(
+        database.catalog.seededBy(database.peerId),
+      );
+      if (repaired > 0) {
+        developer.log(
+          'identity map rebuilt: $repaired claim(s) the file had lost',
+          name: crdtSessionLogName,
+        );
+      }
+    }
     // One lock between the two: a save and a reconciliation of the same note
     // must never overlap, and nothing above the session sequences them.
     final lock = NoteDocumentLock();
@@ -115,6 +130,16 @@ class CrdtSession {
       ),
       identity,
     );
+  }
+
+  /// Writes any identity-map rows still in the timers, without closing.
+  ///
+  /// Registered with the app's flush registry, so the desktop close path and
+  /// the resume scan write the map the way they write unsaved editor text:
+  /// a mint or a rename made seconds before a quit must reach the folder, or
+  /// every other device keeps its own idea of that note.
+  Future<void> flush() async {
+    await _identity?.flush();
   }
 
   /// Writes any identity-map rows still in the timers, closes the

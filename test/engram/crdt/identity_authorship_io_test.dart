@@ -143,6 +143,90 @@ void main() {
     expect(reloaded.rows.keys, unorderedEquals([a.ulid, b.ulid]));
   });
 
+  group('repairFrom', () {
+    test('records our mints the file lacks, tombstones as deleted', () async {
+      // The file is behind the catalog: a write was lost to the debounce.
+      final written = <List<IdentityRow>>[];
+      final authored = await AuthoredIdentity.load(
+        map,
+        writer: immediate(written),
+      );
+      addTearDown(authored.dispose);
+      final minted = note('a.md');
+      final gone = CatalogRow(
+        ulid: newUlid(),
+        path: 'gone.md',
+        mergePolicy: MergePolicy.fugueText,
+        state: NoteState.tombstoned,
+        seedClaim: OperationId(peerA, HybridLogicalClock.now()),
+      );
+
+      expect(authored.repairFrom([minted, gone]), 2);
+      await authored.flush();
+
+      expect(authored.rows.keys, containsAll([minted.ulid, gone.ulid]));
+      expect(authored.rows[minted.ulid]!.deleted, isFalse);
+      expect(authored.rows[gone.ulid]!.deleted, isTrue);
+      expect(authored.rows[gone.ulid]!.path, 'gone.md');
+      expect(written, isNotEmpty, reason: 'a repair is a write');
+    });
+
+    test('leaves rows the file already states alone', () async {
+      final written = <List<IdentityRow>>[];
+      final authored = await AuthoredIdentity.load(
+        map,
+        writer: immediate(written),
+      );
+      addTearDown(authored.dispose);
+      final minted = note('a.md');
+      authored.record(minted, deleted: false);
+      await authored.flush();
+      written.clear();
+
+      expect(authored.repairFrom([minted]), 0);
+      await authored.flush();
+
+      expect(written, isEmpty, reason: 'a healthy open schedules no write');
+    });
+
+    test('re-records a row the catalog states differently', () async {
+      final written = <List<IdentityRow>>[];
+      final authored = await AuthoredIdentity.load(
+        map,
+        writer: immediate(written),
+      );
+      addTearDown(authored.dispose);
+      final minted = note('a.md');
+      authored.record(minted, deleted: false);
+      final moved = CatalogRow(
+        ulid: minted.ulid,
+        path: 'b.md',
+        mergePolicy: minted.mergePolicy,
+        state: NoteState.live,
+        seedClaim: minted.seedClaim,
+      );
+
+      expect(authored.repairFrom([moved]), 1);
+
+      expect(authored.rows[minted.ulid]!.path, 'b.md');
+    });
+
+    test('ignores notes another device seeded', () async {
+      // Those claims are theirs; a rename of ours over one is not knowable
+      // from the catalog alone, and is the flush-on-quit's job.
+      final authored = await AuthoredIdentity.load(map, writer: immediate([]));
+      addTearDown(authored.dispose);
+      final theirs = note(
+        'theirs.md',
+        seed: OperationId(peerB, HybridLogicalClock.now()),
+      );
+
+      expect(authored.repairFrom([theirs]), 0);
+
+      expect(authored.rows, isEmpty);
+    });
+  });
+
   test('dispose drops what was pending without writing it', () async {
     final written = <List<IdentityRow>>[];
     final authored = await AuthoredIdentity.load(

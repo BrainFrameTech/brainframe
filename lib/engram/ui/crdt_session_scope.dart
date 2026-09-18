@@ -100,8 +100,7 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
   Future<void> _swapTo(Engram engram) async {
     // Closed before the next is opened, never after: the outgoing engram's
     // connection must be gone before the incoming one asks for its own.
-    await _session?.close();
-    _session = null;
+    await _closeSession();
     CrdtSession? next;
     try {
       next = await widget.openSession(engram);
@@ -111,6 +110,11 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
           _session = next;
           _resolving = false;
         });
+        // The session's identity-map write joins the flush registry, beside
+        // the editor buffers: the desktop close path awaits it before the
+        // window is destroyed, so a quit within the map writer's debounce
+        // does not strand this device's claims in memory.
+        if (next != null) _pendingSaves.register(next, next.flush);
         // The scan on start, behind the UI. Nothing is registered to flush
         // yet — the child is only now mounting — so Decision 6's first step
         // is vacuously done. The report has no surface until step 13; what
@@ -184,11 +188,20 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
     _scanInBackground(session, ScanTrigger.resume);
   }
 
+  /// Closes the current session, if any, and withdraws its flush.
+  Future<void> _closeSession() async {
+    final session = _session;
+    _session = null;
+    if (session == null) return;
+    _pendingSaves.unregister(session);
+    await session.close();
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     // dispose cannot await; the handle is released with the process anyway.
-    unawaited(_session?.close());
+    unawaited(_closeSession());
     super.dispose();
   }
 

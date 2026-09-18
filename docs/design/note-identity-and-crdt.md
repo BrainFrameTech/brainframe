@@ -806,6 +806,24 @@ three properties decide whether a future table belongs here:
   except where two devices genuinely made claims about one note, which is
   precisely the case the comparator resolves. Nothing is replicated for its
   own sake.
+
+  **The file is a projection of the catalog, for the claims the catalog can
+  name.** It is written through a debounce, and a process can end inside
+  that window — a quit within seconds of the first scan over a folder is
+  the ordinary way, and it leaves every mint of that session in the catalog
+  and none in the file. Two things keep that from being permanent. The
+  session's map flush is registered with the same flush registry as the
+  editor's buffers, so the desktop close path writes it before the window
+  is destroyed. And on every open, the rows this device *seeded* — live,
+  waiting, or tombstoned — are re-recorded into the map wherever the file
+  lacks them or states them differently, so a write that was nonetheless
+  lost costs seconds, not the device's identity. What the catalog cannot
+  name is a claim about a note another device seeded: a rename or a
+  deletion of an adopted note looks, in the catalog, exactly like an
+  unchanged adoption. Those rely on the flush. The failure this closes is
+  not subtle: a second device that never publishes its map is a device
+  every other one mints against forever, and no election can ever retire
+  either side.
 - **Atomically replaced.** Written with `VACUUM INTO` to a temporary name, then
   renamed over the target — `VACUUM INTO` refuses a destination that exists.
   The result is self-contained and internally consistent, with no `-wal` or

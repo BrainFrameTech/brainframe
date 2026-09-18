@@ -1672,6 +1672,9 @@ class _FakeSession implements CrdtSession {
   NoteWriter get writer => _InertWriter();
 
   @override
+  Future<void> flush() async {}
+
+  @override
   Future<void> close() async {}
 }
 

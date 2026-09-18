@@ -81,11 +81,56 @@ class AuthoredIdentity {
     _writer.schedule(_rows.values.toList());
   }
 
+  /// Re-records every claim in [ours] — the catalog rows this device
+  /// seeded, tombstones included — that the loaded file lacks or states
+  /// differently. Returns how many were recorded.
+  ///
+  /// The file is written through a debounce, and a process can end inside
+  /// that window: a device that opened an engram, minted every note in it,
+  /// and quit within five seconds had claims in memory and nothing on disk.
+  /// Before this, those claims were gone for good — [load] takes "ours" from
+  /// the file, and nothing ever asked the catalog what the file should have
+  /// said. So every other device kept minting its own identity for every
+  /// note this one held, and no election could ever retire either side.
+  ///
+  /// The catalog is the truth for a device's own mints, so the file can be
+  /// rebuilt from it: a row seeded by this peer is a claim this peer owes,
+  /// with the path and policy the catalog holds now and "deleted" for a
+  /// tombstone. What this does not cover is a claim about a note another
+  /// device seeded — a rename, or a deletion, of an adopted note — which the
+  /// catalog cannot distinguish from an unchanged adoption; those rely on
+  /// the write reaching the disk, which is what the session's flush on quit
+  /// is for.
+  ///
+  /// Idempotent and quiet: a row already stated the same way is left alone,
+  /// so a healthy open schedules no write.
+  int repairFrom(Iterable<CatalogRow> ours) {
+    var repaired = 0;
+    for (final note in ours) {
+      if (note.seededBy != map.peerId) continue;
+      final deleted = note.state == NoteState.tombstoned;
+      final existing = _rows[note.ulid];
+      if (existing != null &&
+          existing.path == note.path &&
+          existing.mergePolicy == note.mergePolicy &&
+          existing.deleted == deleted &&
+          existing.seedClaim == note.seedClaim) {
+        continue;
+      }
+      record(note, deleted: deleted);
+      repaired++;
+    }
+    return repaired;
+  }
+
   /// Writes now if anything is owed. The session calls this on the way out,
   /// so closing an engram never strands a rename in the timers.
   Future<void> flush() => _writer.flush();
 
   /// Drops any pending write. For a session that is being torn down without
-  /// a chance to flush; the next scan re-derives whatever was lost.
+  /// a chance to flush. What was lost is this device's own claims, which the
+  /// next open rebuilds from the catalog ([repairFrom]); a rename or a
+  /// deletion of an adopted note is not rebuilt, which is why the session
+  /// flushes on quit rather than disposing.
   void dispose() => _writer.dispose();
 }

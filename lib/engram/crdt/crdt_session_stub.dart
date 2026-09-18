@@ -22,5 +22,8 @@ class CrdtSession {
       throw UnsupportedError('No CRDT session on web.');
 
   /// Unreachable, and harmless to call.
+  Future<void> flush() async {}
+
+  /// Unreachable, and harmless to call.
   Future<void> close() async {}
 }

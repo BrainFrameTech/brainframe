@@ -62,3 +62,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# The manual-testing fixture is opened by tool/appshot.sh; the app writes its
+# per-engram shared store there on every run. Device data, never fixture content.
+test/fixtures/engram/.brainframe/shared/

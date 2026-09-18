@@ -63,6 +63,14 @@
 #   XDG_DATA_HOME    passed through untouched — point two instances at two
 #                    device stores to show them converging
 #
+# `launch` remembers all of these (except APPSHOT_DISPLAY, which is how they are
+# found) in the display's state dir, ${TMPDIR:-/tmp}/brainframe-appshot-<N>/
+# session.env, and every later command on that display uses them as defaults —
+# so a stop/launch cycle needs only APPSHOT_DISPLAY. The environment always
+# overrides the file; `quit` removes it. The same directory holds every log
+# (run.log is the app's console; xvfb, wm, x11vnc, viewer, feed .log for the
+# rest) and pidfile, so it is also where to look when something fails.
+#
 # Each capturing command prints the PNG path on stdout. Window pixels map 1:1 to
 # the coordinates you pass: the window is moved to the screen origin at launch
 # and GDK scaling is pinned to 1, so image pixel == window pixel == the (X,Y)
@@ -96,7 +104,9 @@
 # `stop` quits the app and nothing else, so OBS keeps its source, remmina keeps
 # its tab, and `launch` puts the next instance back in exactly the same pixels.
 # That is the restart point for showing convergence: stop, do something in a
-# terminal, launch again. With APPSHOT_SCREEN=fit the display *is* the window,
+# terminal, launch again — and because the display remembers its session, both
+# are just `APPSHOT_DISPLAY=:99 tool/appshot.sh stop` / `… launch`. With
+# APPSHOT_SCREEN=fit the display *is* the window,
 # so `feed` needs no crop and `launch` refuses to reuse a display of the wrong
 # size rather than let the two silently disagree.
 #
@@ -146,6 +156,62 @@
 
 set -uo pipefail
 
+# The display the *human* is sitting in front of. Captured before DISPLAY is
+# redirected below, because the VNC viewer is the one thing that must open on
+# the real desktop rather than inside the sandbox it is there to show.
+readonly HOST_DISPLAY="${DISPLAY:-:0}"
+
+# The private display. Override APPSHOT_DISPLAY to run two sessions at once;
+# its number scopes everything below (state dir, VNC port, process lookups) so
+# the two never see each other. It is the one variable that must be on every
+# command line: it is how the rest are found.
+readonly APPSHOT_DISPLAY="${APPSHOT_DISPLAY:-:99}"
+_dnum="${APPSHOT_DISPLAY#:}"; _dnum="${_dnum%%.*}"
+[[ "$_dnum" =~ ^[0-9]+$ ]] || _dnum=0
+readonly DISPLAY_NUM="$_dnum"
+
+readonly STATE_DIR="${TMPDIR:-/tmp}/brainframe-appshot-${DISPLAY_NUM}"
+readonly SESSION_FILE="$STATE_DIR/session.env"
+mkdir -p "$STATE_DIR"
+
+# ── Session memory ───────────────────────────────────────────────────────────
+# `launch` records the settings it ran with in session.env; every later command
+# on the same display reads them back as *defaults*, so a `stop`/`launch` cycle
+# needs only APPSHOT_DISPLAY and not the half-dozen variables that describe the
+# instance. Anything set in the environment still wins — the file fills gaps,
+# it never overrides — and `quit` removes it. Only known keys are honored, so a
+# stray line cannot become a variable.
+readonly SESSION_KEYS='APPSHOT_WIN_W APPSHOT_WIN_H APPSHOT_SCREEN APPSHOT_WM
+  APPSHOT_VIEW APPSHOT_INPUT APPSHOT_VNC_PORT APPSHOT_TITLE APPSHOT_ENGRAM
+  APPSHOT_V4L2 APPSHOT_FEED_FPS XDG_DATA_HOME'
+load_session() {
+  [ -f "$SESSION_FILE" ] || return 0
+  local line key val
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"; val="${line#*=}"
+    # Membership test on the list with its newlines folded to spaces — a key at
+    # the end of a line in SESSION_KEYS is otherwise followed by a newline, not
+    # the space the pattern needs, and silently never loads.
+    case " ${SESSION_KEYS//[$'\n']/ } " in *" $key "*) ;; *) continue ;; esac
+    [ -z "${!key+x}" ] && printf -v "$key" '%s' "$val"
+  done <"$SESSION_FILE"
+}
+save_session() {
+  local key
+  {
+    echo "# written by tool/appshot.sh launch for $APPSHOT_DISPLAY on $(date -Is)."
+    echo "# Defaults for later commands on this display; the environment overrides."
+    for key in $SESSION_KEYS; do
+      [ -n "${!key:-}" ] && printf '%s=%s\n' "$key" "${!key}"
+    done
+  } >"$SESSION_FILE"
+}
+load_session
+# The one remembered variable the *app* reads rather than this script: a value
+# restored from the file is a plain shell variable until exported.
+[ -n "${XDG_DATA_HOME:-}" ] && export XDG_DATA_HOME
+
 # The real window's title. 'BrainFrame' in every build unless the app is told
 # otherwise with --window-title, which APPSHOT_TITLE passes — so the same value
 # is what we look for.
@@ -166,19 +232,6 @@ readonly TOOL_RE='[f]lutter_tools.snapshot run -d linux'
 # never real data.
 readonly TEST_ENGRAM='test/fixtures/engram'
 readonly APPSHOT_ENGRAM="${APPSHOT_ENGRAM:-}"
-
-# The display the *human* is sitting in front of. Captured before DISPLAY is
-# redirected below, because the VNC viewer is the one thing that must open on
-# the real desktop rather than inside the sandbox it is there to show.
-readonly HOST_DISPLAY="${DISPLAY:-:0}"
-
-# The private display. Override APPSHOT_DISPLAY to run two sessions at once;
-# its number scopes everything below (state dir, VNC port, process lookups) so
-# the two never see each other.
-readonly APPSHOT_DISPLAY="${APPSHOT_DISPLAY:-:99}"
-_dnum="${APPSHOT_DISPLAY#:}"; _dnum="${_dnum%%.*}"
-[[ "$_dnum" =~ ^[0-9]+$ ]] || _dnum=0
-readonly DISPLAY_NUM="$_dnum"
 
 # The window is sized to this on launch so screenshots are byte-comparable
 # between runs regardless of what geometry the toolkit would have picked.
@@ -225,7 +278,6 @@ readonly VNC_PORT="${APPSHOT_VNC_PORT:-$((5900 + DISPLAY_NUM))}"
 readonly FEED_DEV="${APPSHOT_V4L2:-/dev/video10}"
 readonly FEED_FPS="${APPSHOT_FEED_FPS:-30}"
 
-readonly STATE_DIR="${TMPDIR:-/tmp}/brainframe-appshot-${DISPLAY_NUM}"
 readonly PIDFILE="$STATE_DIR/app.pid"
 readonly XVFB_PIDFILE="$STATE_DIR/xvfb.pid"
 readonly WM_PIDFILE="$STATE_DIR/wm.pid"
@@ -241,8 +293,6 @@ readonly VIEWER_LOG="$STATE_DIR/viewer.log"
 readonly FEED_LOG="$STATE_DIR/feed.log"
 readonly MAIM_ERR="$STATE_DIR/maim.err"
 readonly DEFAULT_OUT="$STATE_DIR/shot.png"
-
-mkdir -p "$STATE_DIR"
 
 # Every X client below — xdotool, maim, xdpyinfo, ffmpeg, and the app itself —
 # talks to the private display and nothing else. Exported once, here, so no
@@ -573,6 +623,10 @@ launch() {
   check_deps || return $?
   start_xvfb || return 1
   start_wm || return 1
+  # Remember this launch's settings for the commands that follow it (see
+  # load_session). Written once the display is known good, so a launch that
+  # failed on geometry leaves the previous session's defaults intact.
+  save_session
   if app_running; then
     log "already running"
     local wid; wid=$(find_window)
@@ -734,8 +788,9 @@ quit_all() {
 
   # Sweep any pidfile left behind — including ones written by an older version
   # of this script, which would otherwise sit here forever looking like a
-  # process we failed to reap.
-  rm -f "$STATE_DIR"/*.pid
+  # process we failed to reap. The remembered session goes with it: the next
+  # launch on this display starts from a clean slate.
+  rm -f "$STATE_DIR"/*.pid "$SESSION_FILE"
 
   [ "$rc" = 0 ] && log "quit (clean)"
   return "$rc"
@@ -791,9 +846,10 @@ case "$cmd" in
           # remmina hands off to its own daemon, so its pid proves nothing.
           viewer=0; viewer_connected && viewer=1
           feed=0; feed_up && feed=1
+          session=0; [ -f "$SESSION_FILE" ] && session=1
           running=$(app_pids | grep -c . || true)
           window=$(find_window | grep -c . || true)
-          echo "display=${display} screen=${screen} wm=${wm} running=${running:-0} window=${window:-0} vnc=${vnc} input=${input} viewer=${viewer} feed=${feed}" ;;
+          echo "display=${display} screen=${screen} wm=${wm} running=${running:-0} window=${window:-0} vnc=${vnc} input=${input} viewer=${viewer} feed=${feed} session=${session}" ;;
   *) log "usage: appshot.sh {launch [DIR]|shot [OUT]|run DIR [OUT]|hover X Y [OUT]|click X Y [OUT]|rclick X Y [OUT]|key NAME [OUT]|type TEXT [OUT]|resize W H [OUT]|stop|feed [DEVICE]|unfeed|watch|deps|status|quit}"
      exit 64 ;;
 esac

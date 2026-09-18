@@ -126,10 +126,49 @@ tool/appshot.sh quit                   # tear down viewer, VNC, feed, app, WM, d
 ```
 
 `status` reports `display= screen= wm= running= window= vnc= input= viewer=
-feed=`. `viewer=` is a live TCP connection to the VNC port, not a process we
-started — remmina hands off to its own daemon and exits, so its pid proves
-nothing. `screen=` is the running Xvfb geometry and `input=` the mode the VNC
-server was started in.
+feed= session=`. `viewer=` is a live TCP connection to the VNC port, not a
+process we started — remmina hands off to its own daemon and exits, so its pid
+proves nothing. `screen=` is the running Xvfb geometry, `input=` the mode the
+VNC server was started in, and `session=` whether a remembered session (below)
+is supplying defaults.
+
+### State directory
+
+Everything a display's session owns lives in
+`${TMPDIR:-/tmp}/brainframe-appshot-<N>` — `/tmp/brainframe-appshot-99` for
+`:99`. That is where to look when something fails:
+
+| File | What it is | Look here when… |
+| --- | --- | --- |
+| `run.log` | `flutter run` output: build errors, Dart exceptions, the app's console | the window never appears, or the app misbehaves |
+| `xvfb.log` / `wm.log` | Xvfb and openbox output | `display up` never prints; the window is decorated or off-origin |
+| `x11vnc.log` / `x11vnc.mode` | VNC server output; the `APPSHOT_INPUT` it was started with | `watch` says it did not listen; typing in remmina does nothing |
+| `viewer.log` | remmina launcher output | the tab never opens |
+| `feed.log` / `feed.dev` | ffmpeg output; the device it writes to | OBS shows black; `feed` exits at once |
+| `session.env` | the settings the last `launch` ran with | a bare `launch` opened the wrong engram or size |
+| `maim.err` | the last screenshot error | `shot` fails |
+| `*.pid` | app, Xvfb, WM, x11vnc, feed pids | `status` disagrees with reality |
+
+`run.log` is overwritten on every `launch`, so copy it before relaunching if a
+run went wrong.
+
+### The display remembers its session
+
+`launch` writes the settings it ran with — `APPSHOT_WIN_W/H`, `APPSHOT_SCREEN`,
+`APPSHOT_WM`, `APPSHOT_VIEW`, `APPSHOT_INPUT`, `APPSHOT_VNC_PORT`,
+`APPSHOT_TITLE`, `APPSHOT_ENGRAM`, `APPSHOT_V4L2`, `APPSHOT_FEED_FPS`, and
+`XDG_DATA_HOME` — to `session.env`, and every later command on that display
+reads them back as **defaults**. Anything set in the environment still wins;
+the file only fills gaps. `quit` removes it. So after the first fully-specified
+`launch`, the restart cycle is just:
+
+```bash
+APPSHOT_DISPLAY=:99 tool/appshot.sh stop
+APPSHOT_DISPLAY=:99 tool/appshot.sh launch
+```
+
+`APPSHOT_DISPLAY` is the one variable that must always be passed — it is how
+the state dir, and therefore everything else, is found.
 
 - Capturing subcommands print the PNG path on stdout.
 - **Coordinates are 1:1.** The window is moved to the origin at a fixed
@@ -196,7 +235,8 @@ APPSHOT_DISPLAY=:99 tool/appshot.sh feed /dev/video10
   flush through the normal close path, escalating to signals only if it does
   not exit — and leaves the display, WM, VNC server, remmina tab and feed
   running. That is the restart point: `stop`, do something in a terminal,
-  `launch`, and the next instance lands in exactly the same pixels.
+  `launch`, and the next instance lands in exactly the same pixels — with only
+  `APPSHOT_DISPLAY` on the command line, since the display remembers the rest.
 - `APPSHOT_ENGRAM` opens a folder of your own instead of the fixture
   (`--ignore-config` stays on), `APPSHOT_TITLE` passes `--window-title` and is
   also how the script finds the window, and `XDG_DATA_HOME` passes straight

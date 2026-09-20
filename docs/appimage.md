@@ -48,6 +48,33 @@ as its only stdout line; all logging goes to stderr. It needs `curl`,
 sudo apt install patchelf desktop-file-utils file
 ```
 
+## Raspberry Pi (aarch64)
+
+The same script produces the AppImage for a Raspberry Pi — one **aarch64**
+build serves every ARMv8 Pi (3, 4, 5). Two things follow from how it is made:
+
+- **It is built on the Pi.** Flutter does not cross-compile Linux desktop
+  bundles, and `linuxdeploy`/`appimagetool` are native binaries, so the build
+  runs on an aarch64 host. `--arch` defaults to the host's architecture
+  (`uname -m`), and the script refuses a mismatch up front rather than letting
+  it surface later as an `Exec format error`. A Pi 4 with the Flutter Linux
+  toolchain installed is the intended build box; the same two commands apply:
+
+  ```bash
+  flutter build linux --release
+  tool/appimage/build-appimage.sh      # → build/appimage/BrainFrame-<version>-aarch64.AppImage
+  ```
+
+- **The Pi must run a 64-bit OS.** Flutter has no 32-bit ARM (`armhf`) Linux
+  desktop target, so there is no armhf AppImage. Raspberry Pi OS 64-bit
+  supports the Pi 3 and later; a Pi 3 on the 32-bit image cannot run this
+  build at all. Copy the file from the Pi 4 to the Pi 3 (or any other 64-bit
+  Pi) and run it as on any Linux desktop.
+
+The result carries the build host's glibc as a floor: an AppImage built on
+Raspberry Pi OS runs on that release and newer, not on an older one. Build on
+the oldest OS release you mean to run on.
+
 ## How it works
 
 1. **Assemble an AppDir.** The Flutter release bundle is copied under
@@ -105,7 +132,7 @@ drifts from `pubspec.yaml` the first time someone bumps one and not the other.
 Everything project-specific is a variable with a repo-derived default that an
 environment variable or flag can override: `APP_NAME`, `BIN_NAME` (read from
 `linux/CMakeLists.txt`), `APP_ID`, `VERSION` (from `pubspec.yaml`, or the tag in
-CI), `ICON`, `DESKTOP_FILE`, `ARCH`, and `OUTPUT`. Run
+CI), `ICON`, `DESKTOP_FILE`, `ARCH` (from `uname -m`), and `OUTPUT`. Run
 `tool/appimage/build-appimage.sh --help` for the full list.
 
 ## Bumping the pinned tools
@@ -113,7 +140,9 @@ CI), `ICON`, `DESKTOP_FILE`, `ARCH`, and `OUTPUT`. Run
 `linuxdeploy`, its GTK plugin, `appimagetool`, and the runtime publish only
 rolling `continuous` releases, so the **sha256 checksum is the real pin**: if
 upstream republishes an asset, verification fails and we bump the hash on
-purpose.
+purpose. The pins are per architecture (`x86_64` and `aarch64` assets are
+separate uploads that move independently); the GTK plugin is a shell script,
+the same bytes everywhere, so it is pinned once under `any`.
 
 **Verify before you bump.** A failed check means the bytes changed; it does not
 say *why*. Copying whatever just downloaded into the table turns the pin into
@@ -125,6 +154,9 @@ the bytes you received:
 gh api repos/linuxdeploy/linuxdeploy/releases/tags/continuous \
   --jq '.assets[] | select(.name=="linuxdeploy-x86_64.AppImage") | {digest, size, updated_at}'
 ```
+
+(For the aarch64 pins, the asset names are `linuxdeploy-aarch64.AppImage`,
+`appimagetool-aarch64.AppImage`, and `runtime-aarch64`.)
 
 The `digest` must equal the sha256 the build printed, and `updated_at` should
 show a republish that plausibly explains the change. Only then bump the hash in

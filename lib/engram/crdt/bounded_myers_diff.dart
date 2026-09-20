@@ -49,6 +49,17 @@ const int defaultMyersTraceCellBudget = 4 * 1024 * 1024;
 /// Segments are returned in old-text order; `remove` precedes `insert` for
 /// one changed region, which is the order `lineChunkedDiff` pairs them in.
 ///
+/// **Offsets are UTF-16 code units** — what `String` indexes by and what the
+/// CRDT handler makes one element per — but **no edit ever splits a
+/// surrogate pair**: the search compares code points, and the prefix and
+/// suffix trims back off rather than stop inside a pair. That is the one
+/// place this deliberately differs from crdt_lf's `myersDiff`, which would
+/// turn "😀 → 😁" into "keep the high surrogate, replace the low one" — right
+/// on one replica, and a lone surrogate (`�` on disk) once merged with a
+/// concurrent deletion of the pair. Grapheme clusters are not kept whole;
+/// the handler's element is the code unit, so that is not a property this
+/// layer could promise on its own.
+///
 /// This is [myersDiffWithinBudget] with the coarse answer filled in. A caller
 /// with a cheaper middle ground — `lineChunkedDiff` can pair changed lines
 /// off against each other before giving up on a region — uses the nullable
@@ -104,11 +115,14 @@ List<DiffSegment>? _diff(String oldText, String newText, int maxTraceCells) {
   } else if (bMid.isEmpty && aMid.isNotEmpty) {
     segments.add(_remove(aMid, prefixLen, oldMidEnd, prefixLen));
   } else if (aMid.isNotEmpty || bMid.isNotEmpty) {
-    final a = aMid.codeUnits;
-    final b = bMid.codeUnits;
+    // The search runs over code points, so a surrogate pair is one symbol
+    // and no edit can ever split one; the offsets it reports are mapped
+    // back to code units, which is what the CRDT and its callers count in.
+    final a = _Symbols(aMid);
+    final b = _Symbols(bMid);
     final edits = maxTraceCells < 0
         ? null
-        : _shortestEditScript(a, b, maxTraceCells);
+        : _shortestEditScript(a.points, b.points, maxTraceCells);
     if (edits == null) {
       if (maxTraceCells >= 0) return null;
       // The region as a whole, removed and re-inserted. The insertion sits
@@ -163,15 +177,36 @@ DiffSegment _remove(String text, int os, int oe, int at) => DiffSegment(
   newEnd: at,
 );
 
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
+
+/// Whether a boundary at [i] in [text] would fall between the two halves of
+/// a surrogate pair.
+bool _splitsPair(String text, int i) =>
+    i > 0 &&
+    i < text.length &&
+    _isHighSurrogate(text.codeUnitAt(i - 1)) &&
+    _isLowSurrogate(text.codeUnitAt(i));
+
+/// The common prefix in code units, never ending inside a surrogate pair.
+///
+/// Every emoji in a block shares its high surrogate, so "one emoji changed
+/// to another" is precisely the edit a plain code-unit prefix would cut in
+/// half — keeping the high surrogate and diffing the low one alone. The
+/// resulting script is still correct on one replica; merged with a
+/// concurrent deletion of the whole pair it leaves a lone surrogate behind,
+/// which is not valid text. So the trim backs off to the pair's start.
 int _commonPrefix(String a, String b) {
   final n = math.min(a.length, b.length);
   var i = 0;
   while (i < n && a.codeUnitAt(i) == b.codeUnitAt(i)) {
     i++;
   }
+  if (_splitsPair(a, i) || _splitsPair(b, i)) i--;
   return i;
 }
 
+/// The common suffix in code units, never starting inside a surrogate pair.
 int _commonSuffix(String a, String b, int skipPrefix) {
   final aLen = math.max(0, a.length - skipPrefix);
   final bLen = math.max(0, b.length - skipPrefix);
@@ -181,7 +216,27 @@ int _commonSuffix(String a, String b, int skipPrefix) {
       a.codeUnitAt(a.length - 1 - i) == b.codeUnitAt(b.length - 1 - i)) {
     i++;
   }
+  if (_splitsPair(a, a.length - i) || _splitsPair(b, b.length - i)) i--;
   return i;
+}
+
+/// A string as the symbols the search compares — code points — with the
+/// code-unit offset of each, so results can be reported in code units.
+class _Symbols {
+  _Symbols(String text) {
+    var offset = 0;
+    for (final point in text.runes) {
+      points.add(point);
+      offsets.add(offset);
+      offset += point > 0xFFFF ? 2 : 1;
+    }
+    offsets.add(offset);
+  }
+
+  final points = <int>[];
+
+  /// Code-unit offset of symbol i; one extra entry for the end.
+  final offsets = <int>[];
 }
 
 enum _EditKind { delete, insert }
@@ -269,15 +324,19 @@ List<_Edit> _reconstructEdits(List<List<int>> trace, int n, int m) {
 }
 
 List<DiffSegment> _coalesce(
-  List<int> a,
-  List<int> b,
+  _Symbols a,
+  _Symbols b,
   List<_Edit> edits,
   int oldOffset,
   int newOffset,
 ) {
   final out = <DiffSegment>[];
+  // Positions in symbols; every offset reported below goes through the
+  // symbol tables to become a code-unit offset.
   var ax = 0;
   var by = 0;
+  int oldAt(int symbol) => oldOffset + a.offsets[symbol];
+  int newAt(int symbol) => newOffset + b.offsets[symbol];
 
   void push(DiffOp op, String text, int os, int oe, int ns, int ne) {
     if (text.isEmpty) return;
@@ -309,11 +368,11 @@ List<DiffSegment> _coalesce(
     if (ax < e.x && by < e.y) {
       push(
         DiffOp.equal,
-        String.fromCharCodes(a.getRange(ax, e.x)),
-        oldOffset + ax,
-        oldOffset + e.x,
-        newOffset + by,
-        newOffset + e.y,
+        String.fromCharCodes(a.points.getRange(ax, e.x)),
+        oldAt(ax),
+        oldAt(e.x),
+        newAt(by),
+        newAt(e.y),
       );
       ax = e.x;
       by = e.y;
@@ -321,21 +380,21 @@ List<DiffSegment> _coalesce(
     if (e.kind == _EditKind.delete) {
       push(
         DiffOp.remove,
-        String.fromCharCode(a[ax]),
-        oldOffset + ax,
-        oldOffset + ax + 1,
-        newOffset + by,
-        newOffset + by,
+        String.fromCharCode(a.points[ax]),
+        oldAt(ax),
+        oldAt(ax + 1),
+        newAt(by),
+        newAt(by),
       );
       ax++;
     } else {
       push(
         DiffOp.insert,
-        String.fromCharCode(b[by]),
-        oldOffset + ax,
-        oldOffset + ax,
-        newOffset + by,
-        newOffset + by + 1,
+        String.fromCharCode(b.points[by]),
+        oldAt(ax),
+        oldAt(ax),
+        newAt(by),
+        newAt(by + 1),
       );
       by++;
     }
@@ -343,7 +402,7 @@ List<DiffSegment> _coalesce(
   // With the common suffix trimmed, the script always ends in an edit, so
   // there is never a trailing equal run left to emit.
   assert(
-    ax == a.length && by == b.length,
+    ax == a.points.length && by == b.points.length,
     'edit script did not cover both inputs',
   );
   return out;

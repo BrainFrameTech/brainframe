@@ -32,6 +32,23 @@ void main() {
     return buffer.toString();
   }
 
+  /// Whether [s] contains a surrogate half with no partner — text that is
+  /// not valid UTF-16 and becomes U+FFFD the moment it is written out.
+  bool hasLoneSurrogate(String s) {
+    for (var i = 0; i < s.length; i++) {
+      final u = s.codeUnitAt(i);
+      if (u >= 0xD800 && u <= 0xDBFF) {
+        if (i + 1 >= s.length) return true;
+        final next = s.codeUnitAt(i + 1);
+        if (next < 0xDC00 || next > 0xDFFF) return true;
+        i++;
+      } else if (u >= 0xDC00 && u <= 0xDFFF) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   group('within budget it is crdt_lf\'s diff', () {
     const cases = <(String, String)>[
       ('', ''),
@@ -59,6 +76,8 @@ void main() {
     }
 
     test('random edits agree with crdt_lf and round-trip', () {
+      // ASCII only: on text with surrogate pairs the two deliberately
+      // differ, and the group below says how.
       final random = Random(20260920);
       const alphabet = 'ab\n ';
       String randomText(int length) => String.fromCharCodes([
@@ -72,6 +91,121 @@ void main() {
         expect(ours, myersDiff(old, new_), reason: '"$old" → "$new_"');
         expect(replay(old, ours), new_);
       }
+    });
+  });
+
+  group('never splits a surrogate pair', () {
+    // crdt_lf's diff compares code units, so "one emoji to another" — two
+    // emoji in one block share their high surrogate — keeps the high half
+    // and replaces the low half alone. Correct on one replica; merged with
+    // a concurrent deletion of the pair it leaves a lone surrogate. This
+    // diff compares code points and trims to pair boundaries instead.
+    test('one emoji changed to another is the whole pair', () {
+      expect(boundedMyersDiff('😀', '😁'), [
+        const DiffSegment(
+          op: DiffOp.remove,
+          text: '😀',
+          oldStart: 0,
+          oldEnd: 2,
+          newStart: 0,
+          newEnd: 0,
+        ),
+        const DiffSegment(
+          op: DiffOp.insert,
+          text: '😁',
+          oldStart: 2,
+          oldEnd: 2,
+          newStart: 0,
+          newEnd: 2,
+        ),
+      ]);
+      // For contrast: what the trim would do on code units alone.
+      expect(myersDiff('😀', '😁').first.op, DiffOp.equal);
+    });
+
+    test('offsets stay in code units around the pair', () {
+      expect(boundedMyersDiff('a😀b', 'a😀c'), [
+        const DiffSegment(
+          op: DiffOp.equal,
+          text: 'a😀',
+          oldStart: 0,
+          oldEnd: 3,
+          newStart: 0,
+          newEnd: 3,
+        ),
+        const DiffSegment(
+          op: DiffOp.remove,
+          text: 'b',
+          oldStart: 3,
+          oldEnd: 4,
+          newStart: 3,
+          newEnd: 3,
+        ),
+        const DiffSegment(
+          op: DiffOp.insert,
+          text: 'c',
+          oldStart: 4,
+          oldEnd: 4,
+          newStart: 3,
+          newEnd: 4,
+        ),
+      ]);
+    });
+
+    test('the suffix trim backs off a pair too', () {
+      // Different high surrogates, same low one: a code-unit suffix would
+      // claim the low half. Both pairs must move whole.
+      const old = 'x\u{1F600}'; // D83D DE00
+      const new_ = 'x\u{1F900}'; // D83E DE00
+      final segments = boundedMyersDiff(old, new_);
+      expect(replay(old, segments), new_);
+      for (final s in segments) {
+        expect(hasLoneSurrogate(s.text), isFalse, reason: s.toString());
+      }
+    });
+
+    test('a flag is two code points, each moved whole', () {
+      final segments = boundedMyersDiff('🇺🇸', '🇬🇧');
+      expect(replay('🇺🇸', segments), '🇬🇧');
+      for (final s in segments) {
+        expect(hasLoneSurrogate(s.text), isFalse, reason: s.toString());
+      }
+    });
+
+    test('random emoji edits never emit a lone surrogate', () {
+      final random = Random(20260921);
+      const symbols = ['a', 'b', '😀', '😁', '🇺', 'é', 'e\u0301', '\n'];
+      String randomText(int length) => [
+        for (var i = 0; i < length; i++)
+          symbols[random.nextInt(symbols.length)],
+      ].join();
+      for (var round = 0; round < 300; round++) {
+        final old = randomText(random.nextInt(12));
+        final new_ = randomText(random.nextInt(12));
+        final segments = boundedMyersDiff(old, new_);
+        expect(replay(old, segments), new_, reason: '"$old" → "$new_"');
+        for (final s in segments) {
+          expect(hasLoneSurrogate(s.text), isFalse, reason: '"$old" → "$new_"');
+        }
+        for (final e in lineChunkedDiff(old, new_)) {
+          expect(hasLoneSurrogate(e.insert), isFalse);
+          expect(
+            hasLoneSurrogate(
+              old.substring(e.offset, e.offset + e.removeLength),
+            ),
+            isFalse,
+            reason: 'a removal split a pair: "$old" → "$new_"',
+          );
+        }
+      }
+    });
+
+    test('a combining mark is still edited on its own', () {
+      // Clusters are not kept whole: the handler's element is the code unit,
+      // so that is not a promise this layer can make. Recorded, not hidden.
+      final segments = boundedMyersDiff('e\u0301', 'e\u0300');
+      expect(segments.first.op, DiffOp.equal);
+      expect(segments.first.text, 'e');
     });
   });
 

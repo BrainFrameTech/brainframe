@@ -17,6 +17,7 @@ class StartupOptions {
     this.ignoreConfig = false,
     this.windowSize,
     this.windowTitle,
+    this.traceScan = false,
     this.showHelp = false,
   });
 
@@ -56,13 +57,20 @@ class StartupOptions {
   /// anywhere but the window frame and the switcher.
   final String? windowTitle;
 
+  /// Narrate the drift scan on standard error, one line per note, before the
+  /// note is touched (`--trace-scan`). A diagnostic for a target with no
+  /// debugger attached: when a scan takes the process down — out of memory
+  /// on a small board — the last line names the file it was on, which the
+  /// kernel's report never does.
+  final bool traceScan;
+
   /// Print [usage] and exit without starting the app (`--help` or `-h`). When
   /// set it takes precedence over every other option.
   final bool showHelp;
 
   /// Parses [args] with [ArgParser], recognizing `--engram <path>` /
-  /// `--engram=<path>`, `--ignore-config`, `--window-size <W>x<H>`, and
-  /// `--help` / `-h`.
+  /// `--engram=<path>`, `--ignore-config`, `--window-size <W>x<H>`,
+  /// `--window-title <text>`, `--trace-scan`, and `--help` / `-h`.
   ///
   /// Never throws: if [args] can't be parsed — an unknown option, a malformed
   /// value — it falls back to defaults so a stray or injected argument can never
@@ -88,6 +96,7 @@ class StartupOptions {
       ignoreConfig: results['ignore-config'] as bool,
       windowSize: _parseWindowSize(results['window-size'] as String?),
       windowTitle: (title != null && title.isNotEmpty) ? title : null,
+      traceScan: results['trace-scan'] as bool,
       showHelp: results['help'] as bool,
     );
   }
@@ -141,6 +150,15 @@ final ArgParser _parser = ArgParser(usageLineLength: 80)
     help:
         'Title the desktop window <text> instead of the application name, '
         'to tell two instances apart. Transient: not remembered.',
+  )
+  ..addFlag(
+    'trace-scan',
+    negatable: false,
+    help:
+        'Narrate the drift scan on standard error: one line per note, '
+        'written before the note is touched, so a scan that crashes the '
+        'process leaves the name of the file it was on. Diagnostic; noisy '
+        'on a large engram.',
   )
   ..addFlag(
     'help',

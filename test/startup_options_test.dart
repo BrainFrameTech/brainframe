@@ -11,7 +11,16 @@ void main() {
       expect(options.ignoreConfig, isFalse);
       expect(options.windowSize, isNull);
       expect(options.windowTitle, isNull);
+      expect(options.traceScan, isFalse);
       expect(options.showHelp, isFalse);
+    });
+
+    test('--trace-scan turns the scan narration on', () {
+      expect(StartupOptions.parse(['--trace-scan']).traceScan, isTrue);
+      expect(
+        StartupOptions.parse(['--trace-scan', '--engram', '/x']).engramPath,
+        '/x',
+      );
     });
 
     test('--help and -h both request help', () {
@@ -35,6 +44,7 @@ void main() {
       expect(StartupOptions.usage, contains('--ignore-config'));
       expect(StartupOptions.usage, contains('--window-size'));
       expect(StartupOptions.usage, contains('--window-title'));
+      expect(StartupOptions.usage, contains('--trace-scan'));
       expect(StartupOptions.usage, contains('--help'));
     });
 

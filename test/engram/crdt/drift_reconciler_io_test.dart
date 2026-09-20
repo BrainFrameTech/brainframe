@@ -56,6 +56,7 @@ void main() {
     String? engramId,
     EngramStore? over,
     int ceiling = defaultNoteSizeCeilingBytes,
+    void Function(String line)? trace,
   }) async {
     final files = over ?? engram;
     final store = await MetadataDatabase.open(
@@ -87,6 +88,7 @@ void main() {
         lock: lock,
         identity: identity,
         noteSizeCeilingBytes: ceiling,
+        trace: trace,
       ),
     );
     addTearDown(d.close);
@@ -98,6 +100,43 @@ void main() {
       .changeStorageForDocument(d.store.catalog.byPath(path)!.ulid)
       .getChanges()
       .length;
+
+  group('--trace-scan narration', () {
+    test('names each note before touching it, then sums up', () async {
+      // The whole point: a scan that dies leaves the name of the file it
+      // was on. So the line for a note must precede the work on it — and
+      // "start" must precede the first note, or a death on the first one
+      // is indistinguishable from a death before the scan.
+      final lines = <String>[];
+      final d = await device(trace: lines.add);
+      await d.writer.write('kept.md', 'one\n');
+      await d.writer.write('gone.md', 'two\n');
+      await engram.delete('gone.md');
+      await engram.writeString('fresh.md', 'three\n');
+
+      await d.reconciler.scan();
+
+      expect(lines.first, 'scan: start — 2 in catalog, 2 on disk');
+      expect(lines, contains('scan: catalogued kept.md'));
+      expect(lines, contains('scan: catalogued gone.md'));
+      expect(lines, contains('scan: new file fresh.md (6 bytes)'));
+      expect(lines, contains('scan: missing gone.md'));
+      expect(
+        lines.last,
+        'scan: done — 0 reconciled, 1 created, 0 adopted, 0 oversized, '
+        '0 moved, 1 tombstoned, 0 failed',
+      );
+      // Phase order is the loop order: catalogued, new, missing.
+      expect(
+        lines.indexWhere((l) => l.startsWith('scan: catalogued')),
+        lessThan(lines.indexWhere((l) => l.startsWith('scan: new file'))),
+      );
+      expect(
+        lines.indexWhere((l) => l.startsWith('scan: new file')),
+        lessThan(lines.indexWhere((l) => l.startsWith('scan: missing'))),
+      );
+    });
+  });
 
   group('one note', () {
     test('an unchanged file is not reconciled', () async {

@@ -194,6 +194,15 @@ arguments after it go to the engine and the app:
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90 -- --engram /home/pi/notes
 ```
 
+When the app dies during the open-time scan — the OOM killer on a 512 MB
+board names the process and nothing else — `--trace-scan` (an app option, so
+after `--`) narrates the scan on stderr, one line per note *before* the note
+is touched, so the last line is the file it died on:
+
+```bash
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -- --trace-scan 2>scan.log
+```
+
 `FLUTTER_PI=/path/to/flutter-pi` runs a flutter-pi of your own against the
 bundled engine and app, for a build without GStreamer, say. The FUSE notes
 above apply unchanged: the static runtime needs only the kernel `fuse` module

@@ -61,6 +61,29 @@ void main() {
     expect(find.text('Tutorial'), findsNothing);
   });
 
+  testWidgets('openSession override is what the startup gate opens with',
+      (tester) async {
+    // Mirrors how `main` supplies --trace-scan: a session opener handed to
+    // BrainFrameApp reaches the gate, which asks it for every engram it
+    // opens. The built-ins are read-only, so the real opener would answer
+    // null too; what is asserted is that the override is the one asked.
+    final asked = <String>[];
+    await tester.pumpWidget(BrainFrameApp(
+      repository: EngramRepository(
+        preferences: SharedPreferencesAsync(),
+        containerPathResolver: () async =>
+            throw UnsupportedError('no filesystem in widget tests'),
+      ),
+      openSession: (engram) async {
+        asked.add(engram.displayName);
+        return null;
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    expect(asked, ['Tutorial']);
+  });
+
   testWidgets('window title resolves through AppLocalizations', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();

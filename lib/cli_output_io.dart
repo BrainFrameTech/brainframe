@@ -10,3 +10,10 @@ void printHelpAndExit(String message) {
   stdout.writeln(message);
   exit(0);
 }
+
+/// Writes [line] to standard error, for diagnostics that must reach a console
+/// with nothing else attached — `--trace-scan`. Unbuffered by design: a line
+/// held in a buffer when the OOM killer arrives is a line nobody reads.
+void traceLine(String line) {
+  stderr.writeln(line);
+}

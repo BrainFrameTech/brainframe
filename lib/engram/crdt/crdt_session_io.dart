@@ -52,9 +52,13 @@ class CrdtSession {
   /// point at a temporary directory instead of the real app-data one. This
   /// is the app's edge: the platform's answer is applied here, once, and
   /// handed down to a store that never asks for it.
+  ///
+  /// [trace] is handed to the reconciler as the scan's narration sink — the
+  /// `--trace-scan` startup option; see [DriftReconciler.trace].
   static Future<CrdtSession?> openFor(
     Engram engram, {
     AppDataRootResolver? resolveRoot,
+    void Function(String line)? trace,
   }) async {
     if (engram.readOnly) return null;
     final root = resolveRoot ?? appDataRootResolver();
@@ -127,6 +131,7 @@ class CrdtSession {
         lock: lock,
         identity: identity,
         noteSizeCeilingBytes: engram.noteSizeCeilingBytes,
+        trace: trace,
       ),
       identity,
     );

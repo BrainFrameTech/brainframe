@@ -933,17 +933,27 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
    `--window-title="BrainFrame B"` over the same folder (F36): the switcher
    tells them apart. Relaunch without the flag: the plain localized name is
    back. `--window-title=""` and `--window-title="  "` are the same as no flag.
+9. **`--trace-scan`:** launch from a terminal with `--trace-scan --engram
+   /path/to/a/folder` that holds a few notes, with **stderr visible**. Expected:
+   as the engram opens, stderr shows `scan: start — N in catalog, M on disk`,
+   then one line per note **before** anything is done to it (`scan: catalogued
+   <path>`, `scan: new file <path> (<bytes> bytes)`, `scan: missing <path>`),
+   then `scan: done — …` with the counts. Nothing appears in the UI. Relaunch
+   without the flag: stderr is silent through the same open. The line order is
+   the contract — this exists so a scan that kills the process (out of memory
+   on a small board) leaves the name of the note it died on as the last line.
 
 **Expected:** summarized per step above — `--help` is terminal-only and never
 starts the UI; `--engram` opens a folder transiently; `--ignore-config` is a
 read-nothing/write-nothing clean-slate session that cannot see or name your real
 engrams; `--window-size` sizes the window for one session without disturbing the
 remembered geometry; `--window-title` names the window for one session, in the
-frame and the switcher alike; unparseable args degrade to defaults.
+frame and the switcher alike; `--trace-scan` narrates the open-time scan on
+stderr and nowhere else; unparseable args degrade to defaults.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | **N/A** — the OS launches the app with no argv; no supported way to pass these flags | same as Android | same as Android | ✓ — flutter-pi forwards Dart entrypoint args (after the embedder's `--` separator); `--help` prints to the controlling terminal |
+| ✓ | ✓ | ✓ | **N/A** — the OS launches the app with no argv; no supported way to pass these flags | same as Android | same as Android | ✓ — flutter-pi forwards Dart entrypoint args (after the embedder's `--` separator); `--help` prints to the controlling terminal. Step 9 is the case this flag was written for: on the flutter-pi AppImage, `./BrainFrame-….AppImage -- --trace-scan 2>scan.log` |
 
 - **Modes / most probes N/A:** this is a launch-time behavior, so the global
   Master-detail / Full-panel columns and the in-UI bug-class probes don't apply.

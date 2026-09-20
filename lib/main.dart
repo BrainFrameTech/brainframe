@@ -6,6 +6,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'app.dart';
 import 'cli_output.dart';
 import 'engram/container_resolver.dart';
+import 'engram/crdt/crdt_session.dart';
 import 'engram/engram.dart';
 import 'engram/engram_repository.dart';
 import 'settings/app_settings_controller.dart';
@@ -76,6 +77,11 @@ Future<void> main(List<String> args) async {
       resolveInitialEngram: _initialEngramResolver(options, repository),
       settingsController: settingsController,
       windowTitle: options.windowTitle,
+      // --trace-scan: the reconciler narrates each note on stderr before
+      // touching it. The only startup option that reaches below the UI.
+      openSession: options.traceScan
+          ? (engram) => CrdtSession.openFor(engram, trace: traceLine)
+          : null,
     ),
   );
 }

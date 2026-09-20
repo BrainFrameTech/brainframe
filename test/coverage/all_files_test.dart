@@ -6,6 +6,7 @@
 // ignore_for_file: unused_import
 
 import 'package:brainframe/about/about_screen.dart';
+import 'package:brainframe/about/third_party_notices.dart';
 import 'package:brainframe/app.dart';
 import 'package:brainframe/cli_output.dart';
 import 'package:brainframe/cli_output_io.dart';

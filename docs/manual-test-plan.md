@@ -853,21 +853,30 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
 
 1. Settings → **About**.
 2. Confirm: logo tile, app name, tagline, a **version pill** reading
-   `v<version> · build <n>`, a links card (**Website**, **Contact**), and a
-   copyright footer.
+   `v<version> · build <n>`, a links card (**Website**, **Contact**,
+   **Licenses**), and a copyright footer.
 3. Tap **Website** → opens `https://brainframe.tech/` in the external browser.
 4. Tap **Contact** → opens a mail composer to `getbrainframe@gmail.com`.
+5. Tap **Licenses** (`Open-source notices`) → an in-app page, not a browser,
+   titled with the app name and version, listing every package the build
+   depends on. Find **`crdt_lf (Myers diff, ported into
+   bounded_myers_diff.dart)`** among them and open it: an MIT notice,
+   `Copyright (c) 2025 Mattia`. That entry is not a package — it is code
+   carried in this repository — and it is the reason the page exists.
+   Back returns to About.
 
 **Expected:** identity plus the real version/build (from `package_info`); links
-open externally via the platform handler; the footer shows the founding year, or
-a `2026–<year>` range once the year advances.
+open externally via the platform handler; the licenses page opens in-app and
+carries the ported-code notice; the footer shows the founding year, or a
+`2026–<year>` range once the year advances.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ for display; links **N/A / degraded** — flutter-pi usually has no browser or mail client, so the launch may do nothing. Verify content renders; don't expect the links to open |
+| ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ for display and for step 5, which is in-app; steps 3–4 **N/A / degraded** — flutter-pi usually has no browser or mail client, so those launches may do nothing. Verify content renders; don't expect the external links to open |
 
 - **A11y:** the version pill carries a spoken label; link rows are buttons
-  labeled "Website: …" / "Contact: …". Raise text scale → the card reflows.
+  labeled "Website: …" / "Contact: …" / "Licenses: …". Raise text scale →
+  the card reflows.
 - **By design:** the logo tile keeps a fixed near-black background in both
   themes (the PNG has a baked-in dark background) — not a high-contrast/theme
   bug.

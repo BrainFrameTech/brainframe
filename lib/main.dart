@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
+import 'about/third_party_notices.dart';
 import 'app.dart';
 import 'cli_output.dart';
 import 'engram/container_resolver.dart';
@@ -31,6 +32,11 @@ Future<void> main(List<String> args) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Notices for third-party code carried in this repository (not packages —
+  // the build collects those). Once, before anything can open the About
+  // screen's licenses page.
+  registerThirdPartyNotices();
 
   // --ignore-config: back every SharedPreferencesAsync in the app with an
   // ephemeral in-memory store, so no saved configuration (engram registry,

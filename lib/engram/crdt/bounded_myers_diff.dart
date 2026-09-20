@@ -1,6 +1,54 @@
+/// A memory-bounded Myers diff, derived from crdt_lf.
+///
+/// **Provenance.** The algorithm here — the common-prefix and common-suffix
+/// trim, the shortest-edit-script search with its saved frontier, the
+/// backtracking reconstruction, and the coalescing of single-character edits
+/// into segments — is ported from `crdt_lf` 3.5.0's
+/// `lib/src/algorithm/meyers_diff/meyers_diff.dart`
+/// (<https://github.com/MattiaPispisa/crdt/tree/main/packages/crdt_lf>),
+/// copyright (c) 2025 Mattia, released under the MIT License reproduced in
+/// [crdtLfLicense] below. Several functions are close to verbatim. What this
+/// file adds on top is BrainFrame's: the windowed frontier rows, the trace
+/// cell budget and the coarse fallback past it, the nullable within-budget
+/// form, the search over code points with the mapping back to code units,
+/// and the trims that never stop inside a surrogate pair. The doc comments
+/// on [boundedMyersDiff] say why each exists.
+///
+/// The notice is also registered with Flutter's `LicenseRegistry` at start-up
+/// (see `lib/about/third_party_notices.dart`), so it appears on the About
+/// screen's licenses page alongside the package notices — where a user of a
+/// built app can find it, since a source header is not shipped.
+library;
+
 import 'dart:math' as math;
 
 import 'package:crdt_lf/crdt_lf.dart' show DiffOp, DiffSegment;
+
+/// The MIT License under which the ported portions of this file are used.
+/// Kept verbatim: the license's own condition is that this notice accompany
+/// copies or substantial portions of the software.
+const String crdtLfLicense = '''
+MIT License
+
+Copyright (c) 2025 Mattia
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.''';
 
 /// The default ceiling on the frontier cells a diff may keep for backtracking.
 ///

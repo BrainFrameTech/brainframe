@@ -14,7 +14,7 @@
 # assets, and the native-asset libraries (libsqlite3.so) — under
 # build/flutter-pi/<target>:
 #
-#   dart pub global activate flutterpi_tool
+#   flutter pub global activate flutterpi_tool   # flutter, not dart: needs the SDK
 #   flutterpi_tool build --arch=arm64 --cpu=pi3 --release
 #   tool/appimage/build-flutterpi-appimage.sh --arch arm64 --cpu pi3
 #

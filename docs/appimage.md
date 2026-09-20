@@ -96,6 +96,28 @@ tool/appimage/build-flutterpi-appimage.sh --arch arm64 --cpu pi3
 #   → build/appimage/BrainFrame-<version>-flutterpi-pi3-64.AppImage
 ```
 
+Two things about that activation, both learned the hard way:
+
+- **`flutter pub global`, not `dart pub global`.** `flutterpi_tool` links
+  Flutter's own `flutter_tools`, which `dart pub` cannot supply; the wrapper
+  it writes fails at every run with *"requires the Flutter SDK, which is
+  unsupported for global executables"*. Re-activating does **not** replace a
+  wrapper that already exists — pub says so in passing — so if `dart` was
+  used once, `flutter pub global deactivate flutterpi_tool` first.
+- **It compiles against the installed Flutter SDK's internals**, so each
+  `flutterpi_tool` release supports a range of Flutter versions and a newer
+  SDK breaks the build with errors deep in `flutter_tools` (`Couldn't find
+  constructor 'DartBuildForNative'` and the like). When the pub.dev release
+  trails your SDK, activate from upstream `main`, pinned to a commit:
+
+  ```bash
+  flutter pub global deactivate flutterpi_tool
+  flutter pub global activate -sgit https://github.com/ardera/flutterpi_tool --git-ref <sha>
+  ```
+
+  Re-activate after every Flutter upgrade either way; a stale snapshot fails
+  the same way.
+
 `--arch`/`--cpu` take `flutterpi_tool`'s own spellings and default to
 `arm64`/`pi3`; the script finds the bundle at `build/flutter-pi/<target>` from
 them (`pi3-64`, `pi4-64`, `aarch64-generic`, …), or take `--bundle DIR`. The

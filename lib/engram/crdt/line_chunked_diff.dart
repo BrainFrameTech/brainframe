@@ -28,8 +28,23 @@
 /// serve — so these are the common path, not an exotic one.
 ///
 /// So: **chunk by line, refine by character.** Line sequences are diffed
-/// first, and `myersDiff` is called only within a changed region, which bounds
-/// `D` to one region instead of the note.
+/// first, and the character diff is called only within a changed region,
+/// which bounds `D` to one region instead of the note.
+///
+/// **Chunking bounds the dispersed case and not the concentrated one.** One
+/// region rewritten almost entirely — a single 8190-character line replaced
+/// by 58 characters, which is what a note looks like after a broken text
+/// input has doubled its backslashes a dozen times and the user has cut the
+/// mess out — is `D ≈ 8100` inside one region, and Myers wanted 1.07 GB for
+/// it. On a 448 MB Raspberry Pi the kernel killed the app on every open of
+/// that engram. So the character diff is bounded ([boundedMyersDiff]), and a
+/// changed region that does not fit the budget whole is diffed line pair by
+/// line pair before anything is given up on — so a dispersed edit stays
+/// minimal — and only a single line rewritten almost entirely is reported as
+/// one removal and one insertion, which for a line with no surviving
+/// elements is the honest script, not replace-all. The line pass uses the
+/// same bounded diff, because every line of a large file replaced at once is
+/// the identical hazard one level up, and lands in the same pairing.
 ///
 /// **The line-ending case is handled upstream and no longer arrives here.**
 /// Decision 10 normalizes terminators to LF on ingest, so a CRLF round-trip —
@@ -39,8 +54,11 @@
 /// reach this code unchanged, and nothing upstream bounds them.
 library;
 
+import 'dart:math' as math;
+
 import 'package:crdt_lf/crdt_lf.dart';
 
+import 'bounded_myers_diff.dart';
 import 'line_terminators.dart';
 
 /// One character-level edit against the old text.
@@ -88,7 +106,17 @@ class TextEdit {
 ///
 /// Lines are aligned on their content, ignoring the terminator. Aligned lines
 /// whose full text differs, and runs with no counterpart, are each refined
-/// with `myersDiff` over that region alone.
+/// with [boundedMyersDiff] over that region alone.
+///
+/// **Both passes are bounded.** Myers keeps a frontier row per step of the
+/// edit distance, and a region that is almost entirely replaced — 8190
+/// characters of one line against 58 — needs a gigabyte of them, which on
+/// a 448 MB board is the process. A region over budget is refined line pair
+/// by line pair instead ([_refineRegion]), and a single pair over budget is
+/// reported as one removal and one insertion; see [boundedMyersDiff] for why
+/// that loses nothing a CRDT would have kept. The line pass has the same
+/// hazard one level up (every line of a large file replaced) and the same
+/// guard.
 ///
 /// **Excluding the terminator from the key still pays when every terminator is
 /// already LF**, which after Decision 10 is the only input that reaches here.
@@ -116,7 +144,7 @@ List<TextEdit> lineChunkedDiff(String oldText, String newText) {
   final keys = _LineKeys();
 
   final edits = <TextEdit>[];
-  final segments = myersDiff(
+  final segments = boundedMyersDiff(
     keys.stringFor(oldText, oldLines),
     keys.stringFor(newText, newLines),
   );
@@ -147,14 +175,12 @@ List<TextEdit> lineChunkedDiff(String oldText, String newText) {
         // replace-all at the scale of a region.
         final next = i + 1 < segments.length ? segments[i + 1] : null;
         if (next != null && next.op == DiffOp.insert) {
-          _refine(
+          _refineRegion(
             edits,
-            oldText.substring(removedFrom, removedTo),
-            newText.substring(
-              newLines[next.newStart].start,
-              newLines[next.newEnd - 1].end,
-            ),
-            removedFrom,
+            oldText,
+            newText,
+            oldLines.sublist(segment.oldStart, segment.oldEnd),
+            newLines.sublist(next.newStart, next.newEnd),
           );
           i++; // The insertion was consumed as the other half of this region.
         } else {
@@ -180,12 +206,63 @@ List<TextEdit> lineChunkedDiff(String oldText, String newText) {
   return edits;
 }
 
-/// Refines one changed region character by character, appending to [edits].
+/// Refines a changed region — a run of removed lines paired with a run of
+/// inserted ones — appending to [edits], by the cheapest route that fits.
 ///
-/// This is the only call to `myersDiff`, and it never sees more than one
-/// region — which is the entire point of the line pass above.
-void _refine(List<TextEdit> edits, String before, String after, int base) {
-  for (final segment in myersDiff(before, after)) {
+/// The region is diffed whole first, which finds matches across line
+/// boundaries (a reflowed paragraph) and is the minimal script when it fits
+/// the budget. When it does not, the lines are paired off positionally and
+/// each pair diffed on its own: a dispersed edit — every line losing its
+/// trailing whitespace, every line of a large file replaced — is then D per
+/// *line* rather than D per region, which is what keeps it both cheap and
+/// minimal. Only a single pair that is itself over budget (one line rewritten
+/// almost entirely) ends up coarse, and only that pair.
+void _refineRegion(
+  List<TextEdit> edits,
+  String oldText,
+  String newText,
+  List<_Line> removed,
+  List<_Line> inserted,
+) {
+  final removedFrom = removed.first.start;
+  final removedTo = removed.last.end;
+  final before = oldText.substring(removedFrom, removedTo);
+  final after = newText.substring(inserted.first.start, inserted.last.end);
+  final whole = myersDiffWithinBudget(before, after);
+  if (whole != null) {
+    _emit(edits, whole, removedFrom);
+    return;
+  }
+  final pairs = math.min(removed.length, inserted.length);
+  for (var k = 0; k < pairs; k++) {
+    final beforeLine = removed[k].textIn(oldText);
+    final afterLine = inserted[k].textIn(newText);
+    if (beforeLine != afterLine) {
+      _refine(edits, beforeLine, afterLine, removed[k].start);
+    }
+  }
+  if (removed.length > pairs) {
+    final from = removed[pairs].start;
+    edits.add(TextEdit.remove(from, removedTo - from));
+  } else if (inserted.length > pairs) {
+    edits.add(
+      TextEdit.insert(
+        removedTo,
+        newText.substring(inserted[pairs].start, inserted.last.end),
+      ),
+    );
+  }
+}
+
+/// Refines one line (or one region a caller has already decided on)
+/// character by character, appending to [edits]; past the budget the line is
+/// reported as one removal and one insertion.
+void _refine(List<TextEdit> edits, String before, String after, int base) =>
+    _emit(edits, boundedMyersDiff(before, after), base);
+
+/// Turns [segments] over a region starting at old offset [base] into edits.
+void _emit(List<TextEdit> edits, List<DiffSegment> segments, int base) {
+  for (final segment in segments) {
     switch (segment.op) {
       case DiffOp.equal:
         break;
@@ -295,7 +372,7 @@ List<_Line> _splitLines(String text) {
 }
 
 /// Maps line contents to single code units, so the line pass can reuse
-/// `myersDiff` rather than a second Myers implementation living here.
+/// [boundedMyersDiff] rather than a second Myers implementation living here.
 ///
 /// Distinct contents get distinct units until the budget is exhausted, after
 /// which they wrap and collide. A collision costs alignment quality and never

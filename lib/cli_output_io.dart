@@ -17,3 +17,8 @@ void printHelpAndExit(String message) {
 void traceLine(String line) {
   stderr.writeln(line);
 }
+
+/// The raw `BRAINFRAME_ARGS` environment variable, or null when unset — the
+/// argument channel for a host that gives `main` no `argv` (flutter-pi). See
+/// [StartupOptions.splitEnvironmentArgs] for how it is read.
+String? environmentArgs() => Platform.environment['BRAINFRAME_ARGS'];

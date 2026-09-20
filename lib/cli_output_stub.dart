@@ -6,3 +6,6 @@ void printHelpAndExit(String message) {}
 
 /// Web has no standard error to write to, and no scan to narrate.
 void traceLine(String line) {}
+
+/// Web has no process environment to read.
+String? environmentArgs() => null;

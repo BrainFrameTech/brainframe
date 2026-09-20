@@ -15,8 +15,13 @@ import 'startup_options.dart';
 import 'window/window_state.dart';
 
 Future<void> main(List<String> args) async {
-  // Desktop forwards argv here; mobile and web start with an empty list.
-  final options = StartupOptions.parse(args);
+  // Desktop forwards argv here; mobile and web start with an empty list —
+  // and so does flutter-pi, which passes nothing to the Dart entrypoint.
+  // BRAINFRAME_ARGS is the channel for that host; an explicit argument wins.
+  final options = StartupOptions.parse([
+    ...StartupOptions.splitEnvironmentArgs(environmentArgs()),
+    ...args,
+  ]);
 
   // --help: print usage to stdout and exit before any Flutter setup, so no
   // window is created. A no-op on web (no stdout, no argv).

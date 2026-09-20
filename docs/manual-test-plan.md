@@ -942,6 +942,13 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
    without the flag: stderr is silent through the same open. The line order is
    the contract — this exists so a scan that kills the process (out of memory
    on a small board) leaves the name of the note it died on as the last line.
+10. **`BRAINFRAME_ARGS`:** launch with **no** arguments but
+    `BRAINFRAME_ARGS="--trace-scan --engram /path/to/a/folder"` in the
+    environment. Expected: exactly as step 9 — the variable is read on every
+    platform, whitespace-split. Then launch with
+    `BRAINFRAME_ARGS="--engram /a" --engram /path/to/a/folder`: the folder on
+    the command line opens, not `/a` (an explicit argument wins). Unset, the
+    variable changes nothing.
 
 **Expected:** summarized per step above — `--help` is terminal-only and never
 starts the UI; `--engram` opens a folder transiently; `--ignore-config` is a
@@ -949,11 +956,12 @@ read-nothing/write-nothing clean-slate session that cannot see or name your real
 engrams; `--window-size` sizes the window for one session without disturbing the
 remembered geometry; `--window-title` names the window for one session, in the
 frame and the switcher alike; `--trace-scan` narrates the open-time scan on
-stderr and nowhere else; unparseable args degrade to defaults.
+stderr and nowhere else; `BRAINFRAME_ARGS` is the same options by another
+road, for a host that passes no argv; unparseable args degrade to defaults.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | **N/A** — the OS launches the app with no argv; no supported way to pass these flags | same as Android | same as Android | ✓ — flutter-pi forwards Dart entrypoint args (after the embedder's `--` separator); `--help` prints to the controlling terminal. Step 9 is the case this flag was written for: on the flutter-pi AppImage, `./BrainFrame-….AppImage -- --trace-scan 2>scan.log` |
+| ✓ | ✓ | ✓ | **N/A** — the OS launches the app with no argv; no supported way to pass these flags | same as Android | same as Android | ✓ **via `BRAINFRAME_ARGS` only** — flutter-pi passes *nothing* to the Dart entrypoint (`dart_entrypoint_argc = 0` in its source); anything after the bundle path is an engine switch, so an app flag there is silently ignored — an earlier version of this cell claimed the opposite and was wrong. Every step here runs as `BRAINFRAME_ARGS="<the flags>" ./BrainFrame-….AppImage`; `--help` prints to the controlling terminal. Step 9 is the case the variable was written for: `BRAINFRAME_ARGS="--trace-scan" ./BrainFrame-….AppImage 2>scan.log` |
 
 - **Modes / most probes N/A:** this is a launch-time behavior, so the global
   Master-detail / Full-panel columns and the in-UI bug-class probes don't apply.

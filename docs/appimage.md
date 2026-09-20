@@ -177,30 +177,40 @@ app comes up with no `metadata.db`. A bundle run by hand works only because
 one runs it from inside the bundle. The launcher therefore starts flutter-pi
 with the bundle as its working directory (and puts the bundle on
 `LD_LIBRARY_PATH` too, for a VM that one day collapses the path to a bare
-name). One consequence: **file paths passed after `--` must be absolute**,
-or they resolve inside the read-only image.
+name). One consequence: **a file path in `BRAINFRAME_ARGS` must be absolute**,
+or it resolves inside the read-only image.
 
 ### Running it
 
 Run it from a console — a TTY, an SSH session, a systemd unit — **not** from
 inside a desktop session, as a user in the `video`, `render` and `input`
 groups. Arguments before a literal `--` are flutter-pi's own options;
-arguments after it go to the engine and the app:
+arguments after it go to the **engine** as switches:
 
 ```bash
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage                       # just run it
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90                 # rotate the UI
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage --videomode 1280x720
-./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90 -- --engram /home/pi/notes
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -- --old-gen-heap-size=128
+```
+
+**The app's own options do not go on the command line at all.** flutter-pi
+passes nothing to the Dart entrypoint — `main(args)` gets an empty list, and
+an app option after `--` is just an unknown engine switch, ignored. The app
+therefore reads `BRAINFRAME_ARGS` from the environment on every platform,
+whitespace-separated, ahead of whatever `argv` it was given:
+
+```bash
+BRAINFRAME_ARGS="--engram /home/pi/notes" ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage
 ```
 
 When the app dies during the open-time scan — the OOM killer on a 512 MB
-board names the process and nothing else — `--trace-scan` (an app option, so
-after `--`) narrates the scan on stderr, one line per note *before* the note
-is touched, so the last line is the file it died on:
+board names the process and nothing else — `--trace-scan` narrates the scan
+on stderr, one line per note *before* the note is touched, so the last line
+is the file it died on:
 
 ```bash
-./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -- --trace-scan 2>scan.log
+BRAINFRAME_ARGS="--trace-scan" ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage 2>scan.log
 ```
 
 `FLUTTER_PI=/path/to/flutter-pi` runs a flutter-pi of your own against the

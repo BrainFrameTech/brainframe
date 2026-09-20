@@ -208,8 +208,13 @@ cat > "$APPDIR/usr/bin/$BIN_NAME" <<LAUNCHER
 #   --videomode 1280x720   pick an output mode
 #   -d "155,86"            display size in mm, if the panel misreports it
 # Arguments after \`--\` follow the bundle path, where flutter-pi hands them to
-# the engine. With no \`--\`, every argument is a flutter-pi option. Any file
-# path among them must be absolute: flutter-pi runs with the bundle as its
+# the ENGINE as switches (e.g. --old-gen-heap-size=128). They never reach the
+# app: flutter-pi passes nothing to the Dart entrypoint. The app's own options
+# (--engram, --trace-scan, ...) go in the BRAINFRAME_ARGS environment
+# variable instead, whitespace-separated:
+#   BRAINFRAME_ARGS="--trace-scan --engram /home/pi/notes" ./BrainFrame.AppImage
+# With no \`--\`, every argument is a flutter-pi option. A file path in
+# BRAINFRAME_ARGS must be absolute: flutter-pi runs with the bundle as its
 # working directory (see below), so a relative path would resolve inside the
 # read-only image.
 #

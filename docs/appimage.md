@@ -157,11 +157,28 @@ script fetches `appimagetool` for the **host** and the static runtime for the
 **target**, and an x86_64 desktop produces a valid aarch64 AppImage. The
 `flutterpi_tool` bundle is copied under `usr/lib/brainframe/` **whole and
 untouched**: flutter-pi looks for `libflutter_engine.so` beside the assets it
-is handed, and `NativeAssetsManifest.json` points at `./libsqlite3.so`
-relative to the same directory. The script refuses a bundle whose manifest
-does not list `libsqlite3.so` — that is the native-asset step not having run,
-and the failure it would ship is the silent one described under
+is handed. The script refuses a bundle whose manifest does not list
+`libsqlite3.so` — that is the native-asset step not having run, and the
+failure it would ship is the silent one described under
 [How it works](#how-it-works).
+
+That library has a catch of its own. The manifest lists it as
+`["relative", "./libsqlite3.so"]`, and the engine resolves `relative` against
+the isolate's *advisory script URI* — which an embedder-API host like
+flutter-pi leaves at the engine's default, a bare `main.dart` with no
+directory. With no directory to merge in, the VM keeps the path as given,
+and its dot-segment removal does not strip a leading `./` (it compares three
+bytes, so only the exact string `./` matches). What reaches `dlopen()` is
+therefore `./libsqlite3.so` — relative to the process's **working
+directory**, not to the bundle, and never searched on any library path. The
+failure reads `Failed to load dynamic library './libsqlite3.so' relative to
+'main.dart'`, and it is an unhandled exception in the CRDT session, so the
+app comes up with no `metadata.db`. A bundle run by hand works only because
+one runs it from inside the bundle. The launcher therefore starts flutter-pi
+with the bundle as its working directory (and puts the bundle on
+`LD_LIBRARY_PATH` too, for a VM that one day collapses the path to a bare
+name). One consequence: **file paths passed after `--` must be absolute**,
+or they resolve inside the read-only image.
 
 ### Running it
 

@@ -182,8 +182,10 @@ chmod +x "$APPIMAGETOOL"
 # ── Assemble the AppDir ──────────────────────────────────────────────────────
 # The flutterpi_tool bundle is copied whole and untouched under usr/lib: the
 # flutter-pi binary looks for libflutter_engine.so beside the assets it is
-# handed, and NativeAssetsManifest.json points at ./libsqlite3.so relative to
-# the same directory. Moving any piece breaks that resolution.
+# handed, and the launcher runs flutter-pi from inside the same directory for
+# the native-asset libraries dart:ffi opens by a "./" path (see the launcher
+# for why the manifest's "relative" entry ends up working-directory-relative
+# under an embedder-API host). Moving any piece breaks one of those lookups.
 log "==> assembling AppDir"
 rm -rf "$APPDIR"
 LIB_DIR="$APPDIR/usr/lib/$BIN_NAME"
@@ -206,15 +208,38 @@ cat > "$APPDIR/usr/bin/$BIN_NAME" <<LAUNCHER
 #   --videomode 1280x720   pick an output mode
 #   -d "155,86"            display size in mm, if the panel misreports it
 # Arguments after \`--\` follow the bundle path, where flutter-pi hands them to
-# the engine. With no \`--\`, every argument is a flutter-pi option.
+# the engine. With no \`--\`, every argument is a flutter-pi option. Any file
+# path among them must be absolute: flutter-pi runs with the bundle as its
+# working directory (see below), so a relative path would resolve inside the
+# read-only image.
 #
 # FLUTTER_PI=/path/to/flutter-pi runs a flutter-pi of your own (say, one built
 # without GStreamer) against the bundled engine and app instead of the
 # flutter-pi that flutterpi_tool put in the bundle.
 set -e
 HERE="\$(cd "\$(dirname "\$(readlink -f "\$0")")" && pwd)"
-BUNDLE="\$HERE/../lib/$BIN_NAME"
+BUNDLE="\$(cd "\$HERE/../lib/$BIN_NAME" && pwd)"
 FLUTTER_PI="\${FLUTTER_PI:-\$BUNDLE/flutter-pi}"
+
+# Where dart:ffi finds the native-asset libraries (libsqlite3.so). The
+# manifest lists ["relative", "./libsqlite3.so"], and the engine resolves
+# \`relative\` against the isolate's advisory script URI — which an
+# embedder-API host like flutter-pi leaves at the engine's default, a bare
+# "main.dart" with no directory. With no directory to merge, the VM keeps
+# the path as given, and its dot-segment removal does not strip a leading
+# "./" (it compares three bytes, so only the exact string "./" matches).
+# What reaches dlopen() is therefore "./libsqlite3.so": relative to the
+# process's WORKING DIRECTORY, not to the bundle, and not searched on any
+# library path — the error reads "Failed to load dynamic library
+# './libsqlite3.so' relative to 'main.dart'". A bundle run by hand works
+# only because one runs it from inside the bundle. Do the same here — which
+# is why file paths given after \`--\` must be absolute — and put the bundle
+# on LD_LIBRARY_PATH as well, so a VM that one day does collapse the path
+# to a bare name still finds it, the way the desktop AppImage's AppRun hook
+# finds its lib/.
+cd "\$BUNDLE"
+LD_LIBRARY_PATH="\$BUNDLE\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
 
 # Rebuild the argument list with \`--release <bundle>\` in place of the first
 # \`--\`, or appended when there is none.

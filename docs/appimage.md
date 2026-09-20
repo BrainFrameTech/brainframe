@@ -4,7 +4,8 @@ BrainFrame ships on Linux as an [AppImage][appimage] — a single executable
 file that runs on most desktop distributions with no install step. It is built
 by [`tool/appimage/build-appimage.sh`](../tool/appimage/build-appimage.sh),
 locally or from the tag-triggered [`release`](../.github/workflows/release.yml)
-workflow.
+workflow. A Pi with no desktop environment gets a different AppImage, built
+around flutter-pi — see [below](#raspberry-pi-without-a-desktop-flutter-pi).
 
 ## The FUSE 2 vs FUSE 3 problem (and how we avoid it)
 
@@ -75,6 +76,91 @@ The result carries the build host's glibc as a floor: an AppImage built on
 Raspberry Pi OS runs on that release and newer, not on an older one. Build on
 the oldest OS release you mean to run on.
 
+## Raspberry Pi without a desktop (flutter-pi)
+
+The AppImage above needs a desktop: its embedder is GTK, which needs X11 or
+Wayland underneath. A Pi with no desktop environment — Raspberry Pi OS Lite, a
+kiosk, the e-ink target — runs BrainFrame through [flutter-pi][flutter-pi]
+instead, an embedder that opens the display through DRM/KMS and reads input
+through libinput, with nothing X11, Wayland or GTK involved.
+[`tool/appimage/build-flutterpi-appimage.sh`](../tool/appimage/build-flutterpi-appimage.sh)
+packages that.
+
+Its input is a [`flutterpi_tool`][flutterpi_tool] bundle. `flutterpi_tool`
+cross-compiles from any host, so this is one command on the desktop:
+
+```bash
+dart pub global activate flutterpi_tool
+flutterpi_tool build --arch=arm64 --cpu=pi3 --release
+tool/appimage/build-flutterpi-appimage.sh --arch arm64 --cpu pi3
+#   → build/appimage/BrainFrame-<version>-flutterpi-pi3-64.AppImage
+```
+
+`--arch`/`--cpu` take `flutterpi_tool`'s own spellings and default to
+`arm64`/`pi3`; the script finds the bundle at `build/flutter-pi/<target>` from
+them (`pi3-64`, `pi4-64`, `aarch64-generic`, …), or take `--bundle DIR`. The
+target name is kept in the file name because it says which **engine tuning**
+is inside: `flutterpi_tool` builds an engine tuned for the CPU you name, and
+one tuned for a Pi 3 is not expected to run on a Pi 4, or vice versa. A
+`--cpu=generic` build runs on any Pi of that architecture.
+
+### Why this one builds on the desktop
+
+Unlike the desktop AppImage, this one does **not** run `linuxdeploy`, and so
+needs no aarch64 host. The libraries flutter-pi links fall into two groups,
+neither of which is bundled:
+
+- **The Mesa stack** (`libEGL`, `libGLESv2`, `libgbm`, `libdrm`) has to be the
+  Pi's own. `libgbm` and `libEGL` `dlopen` the DRI driver for the GPU they are
+  running on (`vc4`/`v3d` on a Pi), and a copy carried in from another machine
+  does not match it. This is the same reason `linuxdeploy` refuses to bundle
+  them on the desktop.
+- **The rest** are ordinary distro packages that a Pi already running
+  flutter-pi has. On Raspberry Pi OS:
+
+  ```bash
+  sudo apt install libdrm2 libgbm1 libegl1 libgles2 libgl1-mesa-dri \
+    libinput10 libudev1 libxkbcommon0 libsystemd0 libvulkan1 libatomic1 \
+    libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libglib2.0-0
+  ```
+
+  (That is the `NEEDED` list of the `flutter-pi` binary `flutterpi_tool`
+  ships, mapped to package names. GStreamer is linked, not used — flutter-pi
+  is built with its video-player support in, and the loader wants the
+  libraries present either way.)
+
+With nothing to bundle, the only native tool left is `appimagetool`, which
+only packs a squashfs and takes the target architecture from `$ARCH`. So the
+script fetches `appimagetool` for the **host** and the static runtime for the
+**target**, and an x86_64 desktop produces a valid aarch64 AppImage. The
+`flutterpi_tool` bundle is copied under `usr/lib/brainframe/` **whole and
+untouched**: flutter-pi looks for `libflutter_engine.so` beside the assets it
+is handed, and `NativeAssetsManifest.json` points at `./libsqlite3.so`
+relative to the same directory. The script refuses a bundle whose manifest
+does not list `libsqlite3.so` — that is the native-asset step not having run,
+and the failure it would ship is the silent one described under
+[How it works](#how-it-works).
+
+### Running it
+
+Run it from a console — a TTY, an SSH session, a systemd unit — **not** from
+inside a desktop session, as a user in the `video`, `render` and `input`
+groups. Arguments before a literal `--` are flutter-pi's own options;
+arguments after it go to the engine and the app:
+
+```bash
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage                       # just run it
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90                 # rotate the UI
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage --videomode 1280x720
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90 -- --engram /home/pi/notes
+```
+
+`FLUTTER_PI=/path/to/flutter-pi` runs a flutter-pi of your own against the
+bundled engine and app, for a build without GStreamer, say. The FUSE notes
+above apply unchanged: the static runtime needs only the kernel `fuse` module
+and `fusermount3`, and `--appimage-extract-and-run` is the fallback without
+them.
+
 ## How it works
 
 1. **Assemble an AppDir.** The Flutter release bundle is copied under
@@ -140,9 +226,13 @@ CI), `ICON`, `DESKTOP_FILE`, `ARCH` (from `uname -m`), and `OUTPUT`. Run
 `linuxdeploy`, its GTK plugin, `appimagetool`, and the runtime publish only
 rolling `continuous` releases, so the **sha256 checksum is the real pin**: if
 upstream republishes an asset, verification fails and we bump the hash on
-purpose. The pins are per architecture (`x86_64` and `aarch64` assets are
-separate uploads that move independently); the GTK plugin is a shell script,
-the same bytes everywhere, so it is pinned once under `any`.
+purpose. Both build scripts read the pins from one table in
+[`tool/appimage/common.sh`](../tool/appimage/common.sh). The pins are per
+architecture (`x86_64` and `aarch64` assets are separate uploads that move
+independently); the GTK plugin is a shell script, the same bytes everywhere,
+so it is pinned once under `any`. `linuxdeploy` and `appimagetool` run on the
+build host, so they are pinned for host architectures; the runtime is
+embedded in the result, so it is pinned for every target, `armhf` included.
 
 **Verify before you bump.** A failed check means the bytes changed; it does not
 say *why*. Copying whatever just downloaded into the table turns the pin into
@@ -160,9 +250,9 @@ gh api repos/linuxdeploy/linuxdeploy/releases/tags/continuous \
 
 The `digest` must equal the sha256 the build printed, and `updated_at` should
 show a republish that plausibly explains the change. Only then bump the hash in
-the `SHA256` table at the top of the script, and say in the commit what you
-checked. The other pins are worth a glance at the same time — a single moved
-asset is routine, several at once is worth a harder look.
+the `SHA256` table in `common.sh`, and say in the commit what you checked. The
+other pins are worth a glance at the same time — a single moved asset is
+routine, several at once is worth a harder look.
 
 Also worth knowing what this can and cannot tell you: the digest confirms your
 download matches the official asset GitHub is serving. It does **not** attest
@@ -179,3 +269,5 @@ APPIMAGE_ALLOW_UNPINNED=1 tool/appimage/build-appimage.sh
 
 [appimage]: https://appimage.org/
 [type2]: https://github.com/AppImage/type2-runtime
+[flutter-pi]: https://github.com/ardera/flutter-pi
+[flutterpi_tool]: https://pub.dev/packages/flutterpi_tool

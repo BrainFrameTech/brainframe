@@ -41,37 +41,11 @@
 
 set -euo pipefail
 
-log() { printf '%s\n' "$*" >&2; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-
-# ── Pinned tools ─────────────────────────────────────────────────────────────
-# These tools ship only rolling `continuous` releases, so the *checksum* is the
-# real pin: if upstream republishes, verification fails and we bump the hash
-# deliberately. To bootstrap or refresh a pin, run once with
-# APPIMAGE_ALLOW_UNPINNED=1 and copy the printed sha256 values here.
-LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-%ARCH%.AppImage"
-# The GTK plugin has no release assets; it lives as a raw script on master,
-# pinned here to a commit for reproducibility (bump alongside its checksum).
-LINUXDEPLOY_GTK_URL="https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/7a3fbc31a9e5075073ff8790f26effbac5f84453/linuxdeploy-plugin-gtk.sh"
-APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-%ARCH%.AppImage"
-RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-%ARCH%"
-
-# sha256 pins (empty = unpinned; requires APPIMAGE_ALLOW_UNPINNED=1). Per-arch
-# via an associative array keyed "<tool>:<arch>"; a tool that is the same bytes
-# on every architecture (the GTK plugin is a shell script) is keyed "<tool>:any".
-declare -A SHA256=(
-  [linuxdeploy:x86_64]="36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62"
-  [linuxdeploy:aarch64]="556ab80baa98e600aa80f0dcedfb70bca0e1ce7e9f147fb345be3fcc3e91b2b1"
-  [linuxdeploy-gtk:any]="b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171"
-  [appimagetool:x86_64]="a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"
-  [appimagetool:aarch64]="1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe"
-  [runtime:x86_64]="1cc49bcf1e2ccd593c379adb17c9f85a36d619088296504de95b1d06215aebbf"
-  [runtime:aarch64]="7d5d772b7c32f0c84caf0a452a3072a5709027d7eac5856feb89a7a7a8881372"
-)
-
 # ── Locate the project ───────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR_DEFAULT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Logging, the pinned tools with their checksums, and the verified fetch().
+. "$SCRIPT_DIR/common.sh"
 
 usage() {
   cat >&2 <<EOF
@@ -93,9 +67,8 @@ EOF
 
 PROJECT_DIR="${PROJECT_DIR:-$PROJECT_DIR_DEFAULT}"
 # The build is native (see the header), so the host's architecture is the
-# default target. `arm64` is what some kernels and Docker call aarch64.
-HOST_ARCH="$(uname -m)"
-[ "$HOST_ARCH" = arm64 ] && HOST_ARCH=aarch64
+# default target.
+HOST_ARCH="$(host_arch)"
 ARCH="${ARCH:-$HOST_ARCH}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -168,36 +141,16 @@ log "==> AppImage build: $APP_NAME $VERSION ($ARCH)"
 log "    bin=$BIN_NAME app_id=$APP_ID bundle=$BUNDLE_DIR icon=${ICON_SIZE}px"
 
 # ── Fetch pinned tools ───────────────────────────────────────────────────────
-fetch() { # key url dest
-  local key="$1" url="$2" dest="$3"
-  local expected="${SHA256[$1:$ARCH]:-${SHA256[$1:any]:-}}"
-  url="${url//%ARCH%/$ARCH}"
-  if [ -f "$dest" ] && [ -n "$expected" ] && echo "$expected  $dest" | sha256sum -c - >/dev/null 2>&1; then
-    log "    cached $(basename "$dest")"
-  else
-    log "    downloading $(basename "$dest")"
-    curl -fSL --retry 3 -o "$dest.part" "$url" || die "download failed: $url"
-    mv "$dest.part" "$dest"
-  fi
-  local actual; actual="$(sha256sum "$dest" | cut -d' ' -f1)"
-  if [ -n "$expected" ]; then
-    [ "$actual" = "$expected" ] || die "checksum mismatch for $(basename "$dest"): got $actual, pinned $expected"
-  elif [ "${APPIMAGE_ALLOW_UNPINNED:-0}" = 1 ]; then
-    log "    UNPINNED $(basename "$dest") sha256=$actual  (pin this in SHA256[])"
-  else
-    die "no pinned checksum for $key:$ARCH — set APPIMAGE_ALLOW_UNPINNED=1 to bootstrap, then pin the printed sha256"
-  fi
-}
-
+# Host and target are the same architecture here (checked above).
 mkdir -p "$TOOLS_DIR"
 LINUXDEPLOY="$TOOLS_DIR/linuxdeploy-$ARCH.AppImage"
 LINUXDEPLOY_GTK="$TOOLS_DIR/linuxdeploy-plugin-gtk.sh"
 APPIMAGETOOL="$TOOLS_DIR/appimagetool-$ARCH.AppImage"
 RUNTIME="$TOOLS_DIR/runtime-$ARCH"
-fetch linuxdeploy     "$LINUXDEPLOY_URL"     "$LINUXDEPLOY"
-fetch linuxdeploy-gtk "$LINUXDEPLOY_GTK_URL" "$LINUXDEPLOY_GTK"
-fetch appimagetool    "$APPIMAGETOOL_URL"    "$APPIMAGETOOL"
-fetch runtime         "$RUNTIME_URL"         "$RUNTIME"
+fetch linuxdeploy     "$LINUXDEPLOY_URL"     "$LINUXDEPLOY"     "$ARCH"
+fetch linuxdeploy-gtk "$LINUXDEPLOY_GTK_URL" "$LINUXDEPLOY_GTK" "$ARCH"
+fetch appimagetool    "$APPIMAGETOOL_URL"    "$APPIMAGETOOL"    "$ARCH"
+fetch runtime         "$RUNTIME_URL"         "$RUNTIME"         "$ARCH"
 chmod +x "$LINUXDEPLOY" "$LINUXDEPLOY_GTK" "$APPIMAGETOOL"
 
 # ── Assemble the AppDir ──────────────────────────────────────────────────────

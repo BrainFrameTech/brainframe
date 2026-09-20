@@ -11,6 +11,15 @@
 #   flutter build linux --release
 #   tool/appimage/build-appimage.sh
 #
+# ── Architectures ────────────────────────────────────────────────────────────
+# x86_64 and aarch64 are supported, and the target defaults to the host: an
+# AppImage is built *on* the architecture it is for. Flutter does not
+# cross-compile Linux desktop bundles, and linuxdeploy/appimagetool are native
+# binaries, so an aarch64 build (Raspberry Pi 4/5, or a Pi 3 on a 64-bit OS)
+# runs this script on an aarch64 host — the Pi itself, typically. One aarch64
+# AppImage serves every ARMv8 Pi; there is no 32-bit ARM build because Flutter
+# has no armhf Linux desktop target.
+#
 # ── FUSE 2 vs FUSE 3 ─────────────────────────────────────────────────────────
 # The classic AppImage runtime dynamically links libfuse.so.2 (FUSE 2), which
 # Ubuntu 24.04+ no longer ships. We avoid that on both ends:
@@ -48,12 +57,16 @@ APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/con
 RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-%ARCH%"
 
 # sha256 pins (empty = unpinned; requires APPIMAGE_ALLOW_UNPINNED=1). Per-arch
-# via an associative array keyed "<tool>:<arch>".
+# via an associative array keyed "<tool>:<arch>"; a tool that is the same bytes
+# on every architecture (the GTK plugin is a shell script) is keyed "<tool>:any".
 declare -A SHA256=(
-  [linuxdeploy:x86_64]="421ca71d5c69ea97c6309276232990d43df1dcece0edfaa26bbf926ff96ed12e"
-  [linuxdeploy-gtk:x86_64]="b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171"
+  [linuxdeploy:x86_64]="36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62"
+  [linuxdeploy:aarch64]="556ab80baa98e600aa80f0dcedfb70bca0e1ce7e9f147fb345be3fcc3e91b2b1"
+  [linuxdeploy-gtk:any]="b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171"
   [appimagetool:x86_64]="a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"
+  [appimagetool:aarch64]="1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe"
   [runtime:x86_64]="1cc49bcf1e2ccd593c379adb17c9f85a36d619088296504de95b1d06215aebbf"
+  [runtime:aarch64]="7d5d772b7c32f0c84caf0a452a3072a5709027d7eac5856feb89a7a7a8881372"
 )
 
 # ── Locate the project ───────────────────────────────────────────────────────
@@ -67,7 +80,7 @@ Usage: build-appimage.sh [options]
 Options (all also settable via the matching UPPER_CASE env var):
   --project-dir DIR   Flutter project root         (default: repo of this script)
   --version VER       Version string in the name   (default: pubspec version)
-  --arch ARCH         Target arch: x86_64|aarch64  (default: x86_64)
+  --arch ARCH         Target arch: x86_64|aarch64  (default: the host's, uname -m)
   --output PATH       Output .AppImage path         (default: build/appimage/...)
   --bundle DIR        Flutter release bundle dir   (default: build/linux/<a>/release/bundle)
   -h, --help          Show this help
@@ -79,7 +92,11 @@ EOF
 }
 
 PROJECT_DIR="${PROJECT_DIR:-$PROJECT_DIR_DEFAULT}"
-ARCH="${ARCH:-x86_64}"
+# The build is native (see the header), so the host's architecture is the
+# default target. `arm64` is what some kernels and Docker call aarch64.
+HOST_ARCH="$(uname -m)"
+[ "$HOST_ARCH" = arm64 ] && HOST_ARCH=aarch64
+ARCH="${ARCH:-$HOST_ARCH}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --project-dir) PROJECT_DIR="$2"; shift 2 ;;
@@ -99,6 +116,11 @@ case "$ARCH" in
   aarch64) FLUTTER_ARCH="arm64" ;;
   *) die "unsupported arch: $ARCH (want x86_64 or aarch64)" ;;
 esac
+# A mismatch would otherwise surface later as an opaque "Exec format error"
+# from linuxdeploy, or as a missing bundle directory. Say what is actually
+# wrong: this script has to run on the architecture it is packaging for.
+[ "$ARCH" = "$HOST_ARCH" ] \
+  || die "building for $ARCH on a $HOST_ARCH host: Flutter does not cross-compile Linux desktop bundles and the AppImage tools are native binaries, so run this script (and 'flutter build linux') on a $ARCH machine"
 
 # ── Resolve config from the repo (each overridable by env) ───────────────────
 read_cmake() { # var name → value from linux/CMakeLists.txt: set(NAME "value")
@@ -147,7 +169,8 @@ log "    bin=$BIN_NAME app_id=$APP_ID bundle=$BUNDLE_DIR icon=${ICON_SIZE}px"
 
 # ── Fetch pinned tools ───────────────────────────────────────────────────────
 fetch() { # key url dest
-  local key="$1" url="$2" dest="$3" expected="${SHA256[$1:$ARCH]:-}"
+  local key="$1" url="$2" dest="$3"
+  local expected="${SHA256[$1:$ARCH]:-${SHA256[$1:any]:-}}"
   url="${url//%ARCH%/$ARCH}"
   if [ -f "$dest" ] && [ -n "$expected" ] && echo "$expected  $dest" | sha256sum -c - >/dev/null 2>&1; then
     log "    cached $(basename "$dest")"

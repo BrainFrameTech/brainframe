@@ -90,7 +90,7 @@ Its input is a [`flutterpi_tool`][flutterpi_tool] bundle. `flutterpi_tool`
 cross-compiles from any host, so this is one command on the desktop:
 
 ```bash
-dart pub global activate flutterpi_tool
+flutter pub global activate flutterpi_tool   # flutter, not dart: it needs the Flutter SDK
 flutterpi_tool build --arch=arm64 --cpu=pi3 --release
 tool/appimage/build-flutterpi-appimage.sh --arch arm64 --cpu pi3
 #   → build/appimage/BrainFrame-<version>-flutterpi-pi3-64.AppImage

@@ -402,6 +402,16 @@
     "description": "Display text of the contact email link. An address constant — translators normally leave it unchanged."
   },
 
+  "aboutLicensesLabel": "Licenses",
+  "@aboutLicensesLabel": {
+    "description": "Uppercase label above the row on the About screen's links card that opens the open-source license notices."
+  },
+
+  "aboutLicensesValue": "Open-source notices",
+  "@aboutLicensesValue": {
+    "description": "Display text of the row that opens the page listing every third-party license the app ships under — the packages it depends on and the code it carries from other projects."
+  },
+
   "aboutFooter": "© {year} BrainFrame · Made for minds that never stop.",
   "@aboutFooter": {
     "description": "Footer line at the bottom of the About screen. {year} is the copyright span: the founding year alone (e.g. '2026') or a range once the calendar advances (e.g. '2026–2028').",

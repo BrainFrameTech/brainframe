@@ -6,6 +6,7 @@
 // ignore_for_file: unused_import
 
 import 'package:brainframe/about/about_screen.dart';
+import 'package:brainframe/about/third_party_notices.dart';
 import 'package:brainframe/app.dart';
 import 'package:brainframe/cli_output.dart';
 import 'package:brainframe/cli_output_io.dart';
@@ -24,6 +25,7 @@ import 'package:brainframe/engram/crdt/app_data_resolver_stub.dart';
 import 'package:brainframe/engram/crdt/app_data_source.dart';
 import 'package:brainframe/engram/crdt/blob_document_io.dart';
 import 'package:brainframe/engram/crdt/blob_note_writer_io.dart';
+import 'package:brainframe/engram/crdt/bounded_myers_diff.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
 import 'package:brainframe/engram/crdt/catalog_io.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';

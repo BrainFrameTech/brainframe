@@ -68,7 +68,20 @@ class DriftReconciler implements NoteReconciler {
     required this.lock,
     required this.identity,
     this.noteSizeCeilingBytes = defaultNoteSizeCeilingBytes,
+    this.trace,
   });
+
+  /// Where a running scan narrates itself, one line per note, **before**
+  /// the note is touched — so that if the process dies mid-scan, the last
+  /// line names the file it died on. Null (the default) is silent.
+  ///
+  /// This is the `--trace-scan` startup option's sink: `stderr`, on the
+  /// targets that have one. It exists because `developer.log` reaches only
+  /// an attached DevTools, and the failure this was written for — a scan
+  /// that exhausts a 448 MB board on one particular note — happens on a
+  /// console with no debugger, where the OOM killer's report names the
+  /// process and nothing else.
+  final void Function(String line)? trace;
 
   /// The engram's catalog and op-log.
   final MetadataDatabase database;
@@ -424,11 +437,18 @@ class DriftReconciler implements NoteReconciler {
         ? mergeIdentity(await map!.map.readEveryDevicesRows())
         : null;
 
+    final catalogued = database.catalog.findable();
+    trace?.call(
+      'scan: start — ${catalogued.length} in catalog, '
+      '${complete ? onDisk.length : "?"} on disk',
+    );
+
     // Phase 1: every note the catalog expects to find. Present notes get
     // Decision 6; absent ones are held as candidates for Decision 7.
     final missing = <CatalogRow>[];
-    for (final row in database.catalog.findable()) {
+    for (final row in catalogued) {
       if (_closed) break;
+      trace?.call('scan: catalogued ${row.path}');
       try {
         if (merged != null && merged.retired.contains(row.ulid)) {
           // A lost election: the loser retires, before anything else is
@@ -516,6 +536,7 @@ class DriftReconciler implements NoteReconciler {
       if (unknown.isNotEmpty) report();
       for (final path in unknown) {
         if (_closed) break;
+        trace?.call('scan: new file $path (${sizes[path] ?? "?"} bytes)');
         try {
           // One pass over the file, shared by the match and the mint: a
           // blob is digested over a stream and its bytes are never held;
@@ -566,6 +587,7 @@ class DriftReconciler implements NoteReconciler {
       // 2, though: a file that would have matched a missing note was never
       // looked at, and tombstoning the note now would lose its history.
       for (final row in _closed ? const <CatalogRow>[] : missing) {
+        trace?.call('scan: missing ${row.path}');
         try {
           await _tombstone(row);
           tombstoned.add(row.path);
@@ -583,6 +605,12 @@ class DriftReconciler implements NoteReconciler {
       }
     }
 
+    trace?.call(
+      'scan: done — ${reconciled.length} reconciled, ${created.length} '
+      'created, ${adopted.length} adopted, ${oversized.length} oversized, '
+      '${moved.length} moved, ${tombstoned.length} tombstoned, '
+      '${failed.length} failed${_closed ? " (cut short)" : ""}',
+    );
     return DriftScanReport(
       reconciled: reconciled,
       failed: failed,

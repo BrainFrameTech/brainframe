@@ -11,7 +11,16 @@ void main() {
       expect(options.ignoreConfig, isFalse);
       expect(options.windowSize, isNull);
       expect(options.windowTitle, isNull);
+      expect(options.traceScan, isFalse);
       expect(options.showHelp, isFalse);
+    });
+
+    test('--trace-scan turns the scan narration on', () {
+      expect(StartupOptions.parse(['--trace-scan']).traceScan, isTrue);
+      expect(
+        StartupOptions.parse(['--trace-scan', '--engram', '/x']).engramPath,
+        '/x',
+      );
     });
 
     test('--help and -h both request help', () {
@@ -30,11 +39,47 @@ void main() {
       expect(options.ignoreConfig, isTrue);
     });
 
+    group('splitEnvironmentArgs (BRAINFRAME_ARGS)', () {
+      test('unset is no arguments', () {
+        expect(StartupOptions.splitEnvironmentArgs(null), isEmpty);
+        expect(StartupOptions.splitEnvironmentArgs(''), isEmpty);
+        expect(StartupOptions.splitEnvironmentArgs('   '), isEmpty);
+      });
+
+      test('splits on any whitespace and feeds parse', () {
+        final args = StartupOptions.splitEnvironmentArgs(
+          '  --trace-scan\t--engram=/home/pi/notes \n --ignore-config ',
+        );
+        expect(args, [
+          '--trace-scan',
+          '--engram=/home/pi/notes',
+          '--ignore-config',
+        ]);
+        final options = StartupOptions.parse(args);
+        expect(options.traceScan, isTrue);
+        expect(options.engramPath, '/home/pi/notes');
+        expect(options.ignoreConfig, isTrue);
+      });
+
+      test('an explicit argument after it wins', () {
+        // main prepends the environment to argv, so a value given on the
+        // command line is the later one, and ArgParser keeps the last.
+        final options = StartupOptions.parse([
+          ...StartupOptions.splitEnvironmentArgs('--engram /a'),
+          '--engram',
+          '/b',
+        ]);
+        expect(options.engramPath, '/b');
+      });
+    });
+
     test('the usage text names every option', () {
       expect(StartupOptions.usage, contains('--engram'));
       expect(StartupOptions.usage, contains('--ignore-config'));
       expect(StartupOptions.usage, contains('--window-size'));
       expect(StartupOptions.usage, contains('--window-title'));
+      expect(StartupOptions.usage, contains('--trace-scan'));
+      expect(StartupOptions.usage, contains('BRAINFRAME_ARGS'));
       expect(StartupOptions.usage, contains('--help'));
     });
 

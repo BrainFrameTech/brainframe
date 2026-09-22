@@ -157,24 +157,60 @@ script fetches `appimagetool` for the **host** and the static runtime for the
 **target**, and an x86_64 desktop produces a valid aarch64 AppImage. The
 `flutterpi_tool` bundle is copied under `usr/lib/brainframe/` **whole and
 untouched**: flutter-pi looks for `libflutter_engine.so` beside the assets it
-is handed, and `NativeAssetsManifest.json` points at `./libsqlite3.so`
-relative to the same directory. The script refuses a bundle whose manifest
-does not list `libsqlite3.so` — that is the native-asset step not having run,
-and the failure it would ship is the silent one described under
+is handed. The script refuses a bundle whose manifest does not list
+`libsqlite3.so` — that is the native-asset step not having run, and the
+failure it would ship is the silent one described under
 [How it works](#how-it-works).
+
+That library has a catch of its own. The manifest lists it as
+`["relative", "./libsqlite3.so"]`, and the engine resolves `relative` against
+the isolate's *advisory script URI* — which an embedder-API host like
+flutter-pi leaves at the engine's default, a bare `main.dart` with no
+directory. With no directory to merge in, the VM keeps the path as given,
+and its dot-segment removal does not strip a leading `./` (it compares three
+bytes, so only the exact string `./` matches). What reaches `dlopen()` is
+therefore `./libsqlite3.so` — relative to the process's **working
+directory**, not to the bundle, and never searched on any library path. The
+failure reads `Failed to load dynamic library './libsqlite3.so' relative to
+'main.dart'`, and it is an unhandled exception in the CRDT session, so the
+app comes up with no `metadata.db`. A bundle run by hand works only because
+one runs it from inside the bundle. The launcher therefore starts flutter-pi
+with the bundle as its working directory (and puts the bundle on
+`LD_LIBRARY_PATH` too, for a VM that one day collapses the path to a bare
+name). One consequence: **a file path in `BRAINFRAME_ARGS` must be absolute**,
+or it resolves inside the read-only image.
 
 ### Running it
 
 Run it from a console — a TTY, an SSH session, a systemd unit — **not** from
 inside a desktop session, as a user in the `video`, `render` and `input`
 groups. Arguments before a literal `--` are flutter-pi's own options;
-arguments after it go to the engine and the app:
+arguments after it go to the **engine** as switches:
 
 ```bash
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage                       # just run it
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90                 # rotate the UI
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage --videomode 1280x720
-./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -r 90 -- --engram /home/pi/notes
+./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage -- --old-gen-heap-size=128
+```
+
+**The app's own options do not go on the command line at all.** flutter-pi
+passes nothing to the Dart entrypoint — `main(args)` gets an empty list, and
+an app option after `--` is just an unknown engine switch, ignored. The app
+therefore reads `BRAINFRAME_ARGS` from the environment on every platform,
+whitespace-separated, ahead of whatever `argv` it was given:
+
+```bash
+BRAINFRAME_ARGS="--engram /home/pi/notes" ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage
+```
+
+When the app dies during the open-time scan — the OOM killer on a 512 MB
+board names the process and nothing else — `--trace-scan` narrates the scan
+on stderr, one line per note *before* the note is touched, so the last line
+is the file it died on:
+
+```bash
+BRAINFRAME_ARGS="--trace-scan" ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage 2>scan.log
 ```
 
 `FLUTTER_PI=/path/to/flutter-pi` runs a flutter-pi of your own against the

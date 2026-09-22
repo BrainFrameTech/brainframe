@@ -853,21 +853,30 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
 
 1. Settings → **About**.
 2. Confirm: logo tile, app name, tagline, a **version pill** reading
-   `v<version> · build <n>`, a links card (**Website**, **Contact**), and a
-   copyright footer.
+   `v<version> · build <n>`, a links card (**Website**, **Contact**,
+   **Licenses**), and a copyright footer.
 3. Tap **Website** → opens `https://brainframe.tech/` in the external browser.
 4. Tap **Contact** → opens a mail composer to `getbrainframe@gmail.com`.
+5. Tap **Licenses** (`Open-source notices`) → an in-app page, not a browser,
+   titled with the app name and version, listing every package the build
+   depends on. Find **`crdt_lf (Myers diff, ported into
+   bounded_myers_diff.dart)`** among them and open it: an MIT notice,
+   `Copyright (c) 2025 Mattia`. That entry is not a package — it is code
+   carried in this repository — and it is the reason the page exists.
+   Back returns to About.
 
 **Expected:** identity plus the real version/build (from `package_info`); links
-open externally via the platform handler; the footer shows the founding year, or
-a `2026–<year>` range once the year advances.
+open externally via the platform handler; the licenses page opens in-app and
+carries the ported-code notice; the footer shows the founding year, or a
+`2026–<year>` range once the year advances.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ for display; links **N/A / degraded** — flutter-pi usually has no browser or mail client, so the launch may do nothing. Verify content renders; don't expect the links to open |
+| ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ for display and for step 5, which is in-app; steps 3–4 **N/A / degraded** — flutter-pi usually has no browser or mail client, so those launches may do nothing. Verify content renders; don't expect the external links to open |
 
 - **A11y:** the version pill carries a spoken label; link rows are buttons
-  labeled "Website: …" / "Contact: …". Raise text scale → the card reflows.
+  labeled "Website: …" / "Contact: …" / "Licenses: …". Raise text scale →
+  the card reflows.
 - **By design:** the logo tile keeps a fixed near-black background in both
   themes (the PNG has a baked-in dark background) — not a high-contrast/theme
   bug.
@@ -933,17 +942,35 @@ not inside the running UI. Run the built desktop binary with the flag (e.g.
    `--window-title="BrainFrame B"` over the same folder (F36): the switcher
    tells them apart. Relaunch without the flag: the plain localized name is
    back. `--window-title=""` and `--window-title="  "` are the same as no flag.
+9. **`--trace-scan`:** launch from a terminal with `--trace-scan --engram
+   /path/to/a/folder` that holds a few notes, with **stderr visible**. Expected:
+   as the engram opens, stderr shows `scan: start — N in catalog, M on disk`,
+   then one line per note **before** anything is done to it (`scan: catalogued
+   <path>`, `scan: new file <path> (<bytes> bytes)`, `scan: missing <path>`),
+   then `scan: done — …` with the counts. Nothing appears in the UI. Relaunch
+   without the flag: stderr is silent through the same open. The line order is
+   the contract — this exists so a scan that kills the process (out of memory
+   on a small board) leaves the name of the note it died on as the last line.
+10. **`BRAINFRAME_ARGS`:** launch with **no** arguments but
+    `BRAINFRAME_ARGS="--trace-scan --engram /path/to/a/folder"` in the
+    environment. Expected: exactly as step 9 — the variable is read on every
+    platform, whitespace-split. Then launch with
+    `BRAINFRAME_ARGS="--engram /a" --engram /path/to/a/folder`: the folder on
+    the command line opens, not `/a` (an explicit argument wins). Unset, the
+    variable changes nothing.
 
 **Expected:** summarized per step above — `--help` is terminal-only and never
 starts the UI; `--engram` opens a folder transiently; `--ignore-config` is a
 read-nothing/write-nothing clean-slate session that cannot see or name your real
 engrams; `--window-size` sizes the window for one session without disturbing the
 remembered geometry; `--window-title` names the window for one session, in the
-frame and the switcher alike; unparseable args degrade to defaults.
+frame and the switcher alike; `--trace-scan` narrates the open-time scan on
+stderr and nowhere else; `BRAINFRAME_ARGS` is the same options by another
+road, for a host that passes no argv; unparseable args degrade to defaults.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | **N/A** — the OS launches the app with no argv; no supported way to pass these flags | same as Android | same as Android | ✓ — flutter-pi forwards Dart entrypoint args (after the embedder's `--` separator); `--help` prints to the controlling terminal |
+| ✓ | ✓ | ✓ | **N/A** — the OS launches the app with no argv; no supported way to pass these flags | same as Android | same as Android | ✓ **via `BRAINFRAME_ARGS` only** — flutter-pi passes *nothing* to the Dart entrypoint (`dart_entrypoint_argc = 0` in its source); anything after the bundle path is an engine switch, so an app flag there is silently ignored — an earlier version of this cell claimed the opposite and was wrong. Every step here runs as `BRAINFRAME_ARGS="<the flags>" ./BrainFrame-….AppImage`; `--help` prints to the controlling terminal. Step 9 is the case the variable was written for: `BRAINFRAME_ARGS="--trace-scan" ./BrainFrame-….AppImage 2>scan.log` |
 
 - **Modes / most probes N/A:** this is a launch-time behavior, so the global
   Master-detail / Full-panel columns and the in-UI bug-class probes don't apply.

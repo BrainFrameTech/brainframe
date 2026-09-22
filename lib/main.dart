@@ -3,9 +3,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
+import 'about/third_party_notices.dart';
 import 'app.dart';
 import 'cli_output.dart';
 import 'engram/container_resolver.dart';
+import 'engram/crdt/crdt_session.dart';
 import 'engram/engram.dart';
 import 'engram/engram_repository.dart';
 import 'settings/app_settings_controller.dart';
@@ -14,8 +16,13 @@ import 'startup_options.dart';
 import 'window/window_state.dart';
 
 Future<void> main(List<String> args) async {
-  // Desktop forwards argv here; mobile and web start with an empty list.
-  final options = StartupOptions.parse(args);
+  // Desktop forwards argv here; mobile and web start with an empty list —
+  // and so does flutter-pi, which passes nothing to the Dart entrypoint.
+  // BRAINFRAME_ARGS is the channel for that host; an explicit argument wins.
+  final options = StartupOptions.parse([
+    ...StartupOptions.splitEnvironmentArgs(environmentArgs()),
+    ...args,
+  ]);
 
   // --help: print usage to stdout and exit before any Flutter setup, so no
   // window is created. A no-op on web (no stdout, no argv).
@@ -25,6 +32,11 @@ Future<void> main(List<String> args) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Notices for third-party code carried in this repository (not packages —
+  // the build collects those). Once, before anything can open the About
+  // screen's licenses page.
+  registerThirdPartyNotices();
 
   // --ignore-config: back every SharedPreferencesAsync in the app with an
   // ephemeral in-memory store, so no saved configuration (engram registry,
@@ -76,6 +88,11 @@ Future<void> main(List<String> args) async {
       resolveInitialEngram: _initialEngramResolver(options, repository),
       settingsController: settingsController,
       windowTitle: options.windowTitle,
+      // --trace-scan: the reconciler narrates each note on stderr before
+      // touching it. The only startup option that reaches below the UI.
+      openSession: options.traceScan
+          ? (engram) => CrdtSession.openFor(engram, trace: traceLine)
+          : null,
     ),
   );
 }

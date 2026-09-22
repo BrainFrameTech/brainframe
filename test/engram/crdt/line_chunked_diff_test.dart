@@ -237,6 +237,46 @@ void main() {
       expect(textA.value, 'one\ntwo\nthree\n');
     });
 
+    test('an emoji changed on one device and deleted on another merges to '
+        'valid text', () {
+      // The case the pair-safe diff exists for. Device A replaces an emoji
+      // (the reconciler's diff of an external edit); device B concurrently
+      // deletes it. A code-unit diff would have kept the high surrogate and
+      // replaced only the low one, and B's deletion of both original
+      // halves would leave A's new low half alone — a lone surrogate, which
+      // is U+FFFD once written to disk.
+      final (documentA, textA) = replica(peerA, seed: 'hi 😀 there\n');
+      final (documentB, textB) = replica(peerB);
+      documentB.importChanges(documentA.exportChanges());
+
+      applyExternalText(documentA, textA, 'hi 😁 there\n');
+      textB.delete(3, 2); // B deletes the whole pair, both code units.
+
+      documentA.importChanges(documentB.exportChanges());
+      documentB.importChanges(documentA.exportChanges());
+
+      expect(textA.value, textB.value);
+      for (var i = 0; i < textA.value.length; i++) {
+        final u = textA.value.codeUnitAt(i);
+        if (u >= 0xD800 && u <= 0xDBFF) {
+          expect(i + 1, lessThan(textA.value.length));
+          final next = textA.value.codeUnitAt(++i);
+          expect(
+            next >= 0xDC00 && next <= 0xDFFF,
+            isTrue,
+            reason: 'lone high surrogate at $i',
+          );
+        } else {
+          expect(
+            u >= 0xDC00 && u <= 0xDFFF,
+            isFalse,
+            reason: 'lone low surrogate at $i',
+          );
+        }
+      }
+      expect(textA.value, 'hi 😁 there\n');
+    });
+
     test('a lone carriage return is still content and still diffs', () {
       // Normalization takes \r\n and nothing else, so a bare \r is a real
       // edit and must survive as one.

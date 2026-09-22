@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'commands/app_commands.dart';
 import 'commands/app_menu_bar.dart';
 import 'commands/app_shortcuts.dart';
+import 'engram/crdt/crdt_session.dart';
 import 'engram/engram.dart';
 import 'engram/engram_repository.dart';
 import 'engram/engram_scope.dart';
@@ -48,6 +49,7 @@ class BrainFrameApp extends StatefulWidget {
     this.resolveInitialEngram,
     this.settingsController,
     this.windowTitle,
+    this.openSession,
   });
 
   /// Discovers and remembers engrams; supplies the startup engram and persists
@@ -69,6 +71,12 @@ class BrainFrameApp extends StatefulWidget {
   /// — the `--window-title` startup option, for telling two instances
   /// apart. Null means the application name, in the current locale.
   final String? windowTitle;
+
+  /// How the CRDT session for an engram is opened, handed down to
+  /// [EngramStartupGate]. Null means the gate's default, `CrdtSession.openFor`
+  /// as is; `main` supplies a closure for `--trace-scan`, which is the one
+  /// startup option that reaches the reconciler.
+  final Future<CrdtSession?> Function(Engram engram)? openSession;
 
   @override
   State<BrainFrameApp> createState() => _BrainFrameAppState();
@@ -148,6 +156,7 @@ class _BrainFrameAppState extends State<BrainFrameApp> {
                     resolveInitialEngram:
                         widget.resolveInitialEngram ??
                         widget.repository.openInitialEngram,
+                    openSession: widget.openSession ?? CrdtSession.openFor,
                     onSwitched: (engram) =>
                         widget.repository.setLastOpened(engram.id),
                     child: _ActiveEngramThemeReporter(

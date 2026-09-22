@@ -11,8 +11,12 @@ import '../note_writer.dart';
 class CrdtSession {
   const CrdtSession._();
 
-  /// Always null on web.
-  static Future<CrdtSession?> openFor(Engram engram) async => null;
+  /// Always null on web. [trace] is accepted for signature parity with the
+  /// `dart:io` implementation and never called: there is no scan to narrate.
+  static Future<CrdtSession?> openFor(
+    Engram engram, {
+    void Function(String line)? trace,
+  }) async => null;
 
   /// Unreachable: no session is ever created here.
   NoteWriter get writer => throw UnsupportedError('No CRDT session on web.');

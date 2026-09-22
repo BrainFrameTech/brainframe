@@ -125,6 +125,20 @@ class AboutView extends StatelessWidget {
                     value: l10n.aboutContactValue,
                     onTap: () => launcher(_contactUri),
                   ),
+                  // Flutter's own page: every package notice the build
+                  // collected, plus what `registerThirdPartyNotices` adds
+                  // for code carried in this repository. In-app, not a
+                  // link out, so it works where no browser exists.
+                  _LinkRowData(
+                    icon: Icons.balance_outlined,
+                    label: l10n.aboutLicensesLabel,
+                    value: l10n.aboutLicensesValue,
+                    onTap: () => showLicensePage(
+                      context: context,
+                      applicationName: l10n.appTitle,
+                      applicationVersion: version,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 28),

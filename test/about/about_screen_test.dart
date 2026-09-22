@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:brainframe/about/about_screen.dart';
+import 'package:brainframe/about/third_party_notices.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,12 +20,12 @@ class _LogoManifest implements AssetManifest {
 
   @override
   List<AssetMetadata> getAssetVariants(String key) => const [
-        AssetMetadata(
-          key: 'brainframe.png',
-          targetDevicePixelRatio: null,
-          main: true,
-        ),
-      ];
+    AssetMetadata(
+      key: 'brainframe.png',
+      targetDevicePixelRatio: null,
+      main: true,
+    ),
+  ];
 }
 
 /// Serves the real `brainframe.png` bytes so the About logo resolves in widget
@@ -53,20 +54,19 @@ void main() {
   /// a [Scaffold] (Material ancestor) — [AboutView] has no scaffold of its own,
   /// so its link-row InkWells need one, as the Settings screen provides in-app.
   Widget host(Widget child, {Locale? locale}) => DefaultAssetBundle(
-        bundle: _LogoBundle(logoBytes),
-        child: localizedApp(home: Scaffold(body: child), locale: locale),
-      );
+    bundle: _LogoBundle(logoBytes),
+    child: localizedApp(
+      home: Scaffold(body: child),
+      locale: locale,
+    ),
+  );
 
-  Widget aboutView({
-    UriLauncher? launcher,
-    int? currentYear,
-  }) =>
-      AboutView(
-        version: '2.4.1',
-        buildNumber: '1847',
-        launcher: launcher ?? (_) async => true,
-        currentYear: currentYear,
-      );
+  Widget aboutView({UriLauncher? launcher, int? currentYear}) => AboutView(
+    version: '2.4.1',
+    buildNumber: '1847',
+    launcher: launcher ?? (_) async => true,
+    currentYear: currentYear,
+  );
 
   testWidgets('shows app identity and tagline', (tester) async {
     await tester.pumpWidget(host(aboutView()));
@@ -78,8 +78,9 @@ void main() {
     );
   });
 
-  testWidgets('version pill shows version, build, and a screen-reader label',
-      (tester) async {
+  testWidgets('version pill shows version, build, and a screen-reader label', (
+    tester,
+  ) async {
     await tester.pumpWidget(host(aboutView()));
 
     // The pill renders as rich text: 'v2.4.1 · build 1847'.
@@ -92,13 +93,20 @@ void main() {
     expect(find.bySemanticsLabel('Version 2.4.1, build 1847'), findsOneWidget);
   });
 
-  testWidgets('website row launches the site in the external browser',
-      (tester) async {
+  testWidgets('website row launches the site in the external browser', (
+    tester,
+  ) async {
     final launched = <Uri>[];
-    await tester.pumpWidget(host(aboutView(launcher: (uri) async {
-      launched.add(uri);
-      return true;
-    })));
+    await tester.pumpWidget(
+      host(
+        aboutView(
+          launcher: (uri) async {
+            launched.add(uri);
+            return true;
+          },
+        ),
+      ),
+    );
 
     await tester.ensureVisible(find.text('brainframe.tech'));
     await tester.tap(find.text('brainframe.tech'));
@@ -109,10 +117,16 @@ void main() {
 
   testWidgets('contact row launches a mailto link', (tester) async {
     final launched = <Uri>[];
-    await tester.pumpWidget(host(aboutView(launcher: (uri) async {
-      launched.add(uri);
-      return true;
-    })));
+    await tester.pumpWidget(
+      host(
+        aboutView(
+          launcher: (uri) async {
+            launched.add(uri);
+            return true;
+          },
+        ),
+      ),
+    );
 
     await tester.ensureVisible(find.text('getbrainframe@gmail.com'));
     await tester.tap(find.text('getbrainframe@gmail.com'));
@@ -129,10 +143,38 @@ void main() {
       find.bySemanticsLabel('Contact: getbrainframe@gmail.com'),
       findsOneWidget,
     );
+    expect(
+      find.bySemanticsLabel('Licenses: Open-source notices'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('footer shows only the founding year during that year',
-      (tester) async {
+  testWidgets('licenses row opens the license page with the ported notice', (
+    tester,
+  ) async {
+    // The page is Flutter's own, fed by the LicenseRegistry: the packages'
+    // notices the build collects, plus what registerThirdPartyNotices adds
+    // for code carried in this repository. In a test nothing has collected
+    // package notices, so what the page lists is exactly what was
+    // registered — which is the assertion.
+    registerThirdPartyNotices();
+    await tester.pumpWidget(host(aboutView()));
+
+    await tester.ensureVisible(find.text('Open-source notices'));
+    await tester.tap(find.text('Open-source notices'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LicensePage), findsOneWidget);
+    expect(find.text('BrainFrame'), findsWidgets);
+    expect(
+      find.textContaining('crdt_lf (Myers diff, ported into'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('footer shows only the founding year during that year', (
+    tester,
+  ) async {
     await tester.pumpWidget(host(aboutView(currentYear: 2026)));
 
     expect(find.textContaining('© 2026 BrainFrame'), findsOneWidget);
@@ -144,31 +186,35 @@ void main() {
     expect(find.textContaining('© 2026–2031 BrainFrame'), findsOneWidget);
   });
 
-  testWidgets('footer never shows a backwards range on an early clock',
-      (tester) async {
+  testWidgets('footer never shows a backwards range on an early clock', (
+    tester,
+  ) async {
     await tester.pumpWidget(host(aboutView(currentYear: 2020)));
 
     expect(find.textContaining('© 2026 BrainFrame'), findsOneWidget);
   });
 
-  testWidgets('footer defaults to the real current year when none is given',
-      (tester) async {
+  testWidgets('footer defaults to the real current year when none is given', (
+    tester,
+  ) async {
     await tester.pumpWidget(host(aboutView()));
 
     final now = DateTime.now().year;
-    final expected =
-        now <= 2026 ? '© 2026 BrainFrame' : '© 2026–$now BrainFrame';
+    final expected = now <= 2026
+        ? '© 2026 BrainFrame'
+        : '© 2026–$now BrainFrame';
     expect(find.textContaining(expected), findsOneWidget);
   });
 
-  testWidgets('AboutPane loads real app info and shows the About content',
-      (tester) async {
+  testWidgets('AboutPane loads real app info and shows the About content', (
+    tester,
+  ) async {
     Future<PackageInfo> fakeInfo() async => PackageInfo(
-          appName: 'BrainFrame',
-          packageName: 'tech.brainframe.app',
-          version: '9.9.9',
-          buildNumber: '4242',
-        );
+      appName: 'BrainFrame',
+      packageName: 'tech.brainframe.app',
+      version: '9.9.9',
+      buildNumber: '4242',
+    );
 
     await tester.pumpWidget(
       host(AboutPane(loadInfo: fakeInfo, launcher: (_) async => true)),

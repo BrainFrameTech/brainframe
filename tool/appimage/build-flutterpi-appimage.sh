@@ -195,74 +195,15 @@ cp -a "$BUNDLE_DIR" "$LIB_DIR"
 # Hidden build bookkeeping from flutterpi_tool has no business in the image.
 rm -f "$LIB_DIR/.last_build_id"
 
-# The launcher. The .desktop file's Exec= names the binary, so it lives at
-# usr/bin/<bin>, and AppRun is a symlink to it — one script, two names.
-cat > "$APPDIR/usr/bin/$BIN_NAME" <<LAUNCHER
-#!/bin/sh
-# $APP_NAME on flutter-pi: no desktop environment, the app draws straight to
-# the display through DRM/KMS. Run it from a console (not from inside X11 or
-# Wayland) as a user in the video, render and input groups.
-#
-# Arguments before a literal \`--\` are flutter-pi's own options, e.g.
-#   -r 90                  rotate the UI
-#   --videomode 1280x720   pick an output mode
-#   -d "155,86"            display size in mm, if the panel misreports it
-# Arguments after \`--\` follow the bundle path, where flutter-pi hands them to
-# the ENGINE as switches (e.g. --old-gen-heap-size=128). They never reach the
-# app: flutter-pi passes nothing to the Dart entrypoint. The app's own options
-# (--engram, --trace-scan, ...) go in the BRAINFRAME_ARGS environment
-# variable instead, whitespace-separated:
-#   BRAINFRAME_ARGS="--trace-scan --engram /home/pi/notes" ./BrainFrame.AppImage
-# With no \`--\`, every argument is a flutter-pi option. A file path in
-# BRAINFRAME_ARGS must be absolute: flutter-pi runs with the bundle as its
-# working directory (see below), so a relative path would resolve inside the
-# read-only image.
-#
-# FLUTTER_PI=/path/to/flutter-pi runs a flutter-pi of your own (say, one built
-# without GStreamer) against the bundled engine and app instead of the
-# flutter-pi that flutterpi_tool put in the bundle.
-set -e
-HERE="\$(cd "\$(dirname "\$(readlink -f "\$0")")" && pwd)"
-BUNDLE="\$(cd "\$HERE/../lib/$BIN_NAME" && pwd)"
-FLUTTER_PI="\${FLUTTER_PI:-\$BUNDLE/flutter-pi}"
-
-# Where dart:ffi finds the native-asset libraries (libsqlite3.so). The
-# manifest lists ["relative", "./libsqlite3.so"], and the engine resolves
-# \`relative\` against the isolate's advisory script URI — which an
-# embedder-API host like flutter-pi leaves at the engine's default, a bare
-# "main.dart" with no directory. With no directory to merge, the VM keeps
-# the path as given, and its dot-segment removal does not strip a leading
-# "./" (it compares three bytes, so only the exact string "./" matches).
-# What reaches dlopen() is therefore "./libsqlite3.so": relative to the
-# process's WORKING DIRECTORY, not to the bundle, and not searched on any
-# library path — the error reads "Failed to load dynamic library
-# './libsqlite3.so' relative to 'main.dart'". A bundle run by hand works
-# only because one runs it from inside the bundle. Do the same here — which
-# is why file paths given after \`--\` must be absolute — and put the bundle
-# on LD_LIBRARY_PATH as well, so a VM that one day does collapse the path
-# to a bare name still finds it, the way the desktop AppImage's AppRun hook
-# finds its lib/.
-cd "\$BUNDLE"
-LD_LIBRARY_PATH="\$BUNDLE\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
-export LD_LIBRARY_PATH
-
-# Rebuild the argument list with \`--release <bundle>\` in place of the first
-# \`--\`, or appended when there is none.
-seen=0
-for a in "\$@"; do
-  shift
-  if [ "\$seen" = 0 ] && [ "\$a" = -- ]; then
-    set -- "\$@" --release "\$BUNDLE"
-    seen=1
-  else
-    set -- "\$@" "\$a"
-  fi
-done
-[ "\$seen" = 1 ] || set -- "\$@" --release "\$BUNDLE"
-
-exec "\$FLUTTER_PI" "\$@"
-LAUNCHER
-chmod +x "$APPDIR/usr/bin/$BIN_NAME"
+# The launcher (flutterpi-launcher.sh) and the console guard it starts the app
+# under (flutterpi-console-guard.py) ship from this directory. The .desktop
+# file's Exec= names the binary, so the launcher lives at usr/bin/<bin> and
+# derives the bundle location from that; AppRun is a symlink to it — one
+# script, two names. The guard sits beside it under the name the launcher
+# looks for.
+install -m 0755 "$SCRIPT_DIR/flutterpi-launcher.sh" "$APPDIR/usr/bin/$BIN_NAME"
+install -m 0755 "$SCRIPT_DIR/flutterpi-console-guard.py" \
+  "$APPDIR/usr/bin/${BIN_NAME}-console-guard"
 ln -s "usr/bin/$BIN_NAME" "$APPDIR/AppRun"
 
 # Desktop entry and icon: appimagetool wants both at the AppDir root, with the

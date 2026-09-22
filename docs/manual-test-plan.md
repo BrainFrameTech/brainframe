@@ -2046,6 +2046,66 @@ guards against.
   each scan did, and `changes` grows only on the side that has a history. A
   note reloaded without history changes nothing but the row's recorded hash.
 
+### F37 — Keystrokes stay out of the console (flutter-pi AppImage)
+
+This is a Pi-only case, and the one place in the matrix where the thing under
+test is the **packaging**, not the app: the flutter-pi AppImage
+([docs/appimage.md](appimage.md), "Keystrokes and the console") runs the app
+under a guard that turns the console's keyboard off while it runs. Without
+it, everything typed into the app is also queued on the console's tty and
+handed to the shell when the app exits — a username and password typed into a
+note became a console login, which is what this case was written for.
+
+**Setup:** a Pi with no desktop environment, a keyboard attached, and the
+flutter-pi AppImage copied onto it. Log in **on the Pi's own console**
+(tty1), not over SSH.
+
+**Steps:**
+
+1. From the console login shell, run the AppImage with no arguments. Confirm
+   the app comes up and that the launcher printed **no** warning about the
+   console keyboard before it did (nothing on the screen but the app).
+2. Open an engram and a note; enter edit mode. Type a distinctive line that
+   would be harmful as a shell command if it leaked — e.g.
+   `echo LEAKED > /tmp/leaked.txt` — followed by **Enter**. Confirm it lands
+   in the note.
+3. Press **Ctrl+C** with the editor focused. Confirm the app keeps running
+   (the console never saw it).
+4. Press **Ctrl+Alt+F2**. Confirm the console does **not** switch (the
+   kernel ignores VT switching while the keyboard is off) and the app keeps
+   running.
+5. Quit the app from inside it. Back at the shell prompt, confirm **no
+   command ran**: `ls /tmp/leaked.txt` reports no such file, and the shell
+   shows nothing queued (no stray characters at the prompt, nothing in
+   `history` beyond what you typed at the prompt yourself).
+6. Confirm the keyboard works at the prompt again (the guard restored the
+   mode): type a command and run it.
+7. Repeat step 1 **over SSH** instead. Confirm the launcher prints the
+   warning that it cannot turn the console keyboard off, and that the app
+   still comes up on the Pi's screen. (The leak is real in this shape and
+   is documented; the point of the step is that it is *announced*, never
+   silent.)
+8. Optional: `BRAINFRAME_CONSOLE_GUARD=0` and repeat steps 1–5 from the
+   console. This should reproduce the leak — `/tmp/leaked.txt` exists after
+   quitting — which proves the guard is what prevents it, not the app.
+
+**Expected:** steps 1–6 leave the console untouched; step 7 warns; step 8
+leaks.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| **N/A** — no console underneath a desktop app | **N/A** | **N/A** — the desktop AppImage's GTK embedder runs inside a compositor, which owns the keyboard | **N/A** | **N/A** | **N/A** | ✓ — the case this was written for. Also holds for any DRM/KMS launch without the desktop environment, e-ink or HDMI |
+
+- **Why the guard, not the app:** flutter-pi reads input through libinput
+  and never sets the VT's keyboard mode
+  ([flutter-pi #298](https://github.com/ardera/flutter-pi/issues/298));
+  the app has no way to reach that layer from Dart. Every KMS compositor
+  does this itself; the guard does it for flutter-pi until upstream does.
+- **If step 6 fails** — the keyboard is dead at the prompt — the guard did
+  not get to restore the mode (killed outright, most likely). From another
+  machine, `sudo kbd_mode -u -C /dev/tty1` recovers it. That is a bug in
+  the guard's exit path if the app quit normally.
+
 ---
 
 ## Bug-class deep-dives

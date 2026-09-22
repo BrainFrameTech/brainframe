@@ -182,10 +182,13 @@ or it resolves inside the read-only image.
 
 ### Running it
 
-Run it from a console — a TTY, an SSH session, a systemd unit — **not** from
-inside a desktop session, as a user in the `video`, `render` and `input`
-groups. Arguments before a literal `--` are flutter-pi's own options;
-arguments after it go to the **engine** as switches:
+Run it **from a login on the Pi's own console** (or a systemd unit — see
+below), **not** from inside a desktop session and preferably not over SSH,
+as a user in the `video`, `render` and `input` groups. Which console it is
+launched from matters, for a reason given under [Keystrokes and the
+console](#keystrokes-and-the-console). Arguments before a literal `--` are
+flutter-pi's own options; arguments after it go to the **engine** as
+switches:
 
 ```bash
 ./BrainFrame-0.0.1-flutterpi-pi3-64.AppImage                       # just run it
@@ -218,6 +221,66 @@ bundled engine and app, for a build without GStreamer, say. The FUSE notes
 above apply unchanged: the static runtime needs only the kernel `fuse` module
 and `fusermount3`, and `--appimage-extract-and-run` is the fallback without
 them.
+
+### Keystrokes and the console
+
+flutter-pi reads the keyboard through libinput, straight from evdev, and
+never tells the kernel's virtual terminal that it has taken the keyboard
+over. So the VT keeps translating every key press and queuing the characters
+on the console's tty **in parallel**. Nothing reads them while the app runs;
+the moment it exits, whatever owns that console — the shell you launched
+from, or a login prompt — reads the lot and acts on it. A username and
+password typed into a note become a login on tty1. Ctrl+C typed into a text
+field reaches the same tty and kills the app. This is
+[flutter-pi issue #298][flutterpi-298], open since 2022; the durable fix
+belongs there.
+
+Until it lands, the AppImage closes the hole itself. The launcher runs
+flutter-pi under a small guard
+([`flutterpi-console-guard.py`](../tool/appimage/flutterpi-console-guard.py))
+that does what every KMS compositor does: it puts the controlling VT's
+keyboard into **`K_OFF`** (the `KDSKBMODE` ioctl), under which the kernel
+discards key events before they become characters, and restores the previous
+mode when the app exits. libinput is untouched, so the app still sees every
+key. Consequences worth knowing:
+
+- **Launch from a login on the console itself.** The guard configures the VT
+  through the controlling terminal, which needs no privileges when that is
+  the console you logged in on. Over SSH the controlling terminal is a pty,
+  the keyboard belongs to whatever is on the Pi's screen (usually a login
+  prompt), and the guard cannot reach it without `CAP_SYS_TTY_CONFIG`. It
+  then **prints a warning and runs the app anyway** — read stderr.
+- **Ctrl+Alt+Fn cannot switch consoles while the app runs.** That is the
+  kernel's `K_OFF`, not a choice here. Quit the app, or come in over SSH.
+- **If the guard is killed outright** (SIGKILL, an OOM kill on a small
+  board) the mode is not restored and the console's keyboard stays dead.
+  From another machine: `sudo kbd_mode -u -C /dev/tty1`.
+- It needs `python3`, which Raspberry Pi OS ships, Lite included. Without it
+  the launcher warns and runs unguarded. `BRAINFRAME_CONSOLE_GUARD=0` skips
+  the guard deliberately, for debugging it.
+
+For an appliance, a systemd unit that owns the console is the tidiest shape:
+no getty, so there is no shell for keystrokes to fall into even if the guard
+could not run, and `TTYPath=` makes the console the controlling terminal so
+that it can.
+
+```ini
+[Unit]
+Description=BrainFrame (flutter-pi)
+Conflicts=getty@tty1.service
+After=systemd-user-sessions.service
+
+[Service]
+User=pi
+TTYPath=/dev/tty1
+StandardInput=tty
+Environment=BRAINFRAME_ARGS=--engram /home/pi/notes
+ExecStart=/home/pi/BrainFrame-0.0.1-flutterpi-pi3-64.AppImage
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## How it works
 
@@ -328,4 +391,5 @@ APPIMAGE_ALLOW_UNPINNED=1 tool/appimage/build-appimage.sh
 [appimage]: https://appimage.org/
 [type2]: https://github.com/AppImage/type2-runtime
 [flutter-pi]: https://github.com/ardera/flutter-pi
+[flutterpi-298]: https://github.com/ardera/flutter-pi/issues/298
 [flutterpi_tool]: https://pub.dev/packages/flutterpi_tool

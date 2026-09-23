@@ -24,7 +24,7 @@ The **columns** are the seven target platforms plus the two layout modes:
 | **Android** | Android phone (small screen, touch) |
 | **PixelTab** | Pixel Tablet / any large-screen Android (touch, often no keyboard) |
 | **iOS** | iPhone or iPad |
-| **Pi/eink** | Raspberry Pi + Waveshare e-ink via flutter-pi |
+| **Pi/eink** | Raspberry Pi with no desktop, via flutter-pi on a DRM/KMS display. The SPI e-ink panel is **not** this column — it needs a different embedder ([design](design/eink-embedder.md)), so panel-refresh verdicts here describe the app's behaviour, not the panel's |
 | **Master-detail** | Wide layout: sidebar + reader side-by-side (window ≥ 720 px) |
 | **Full-panel** | Narrow layout: reader fills the pane, sidebar is an off-canvas drawer (window < 720 px) |
 
@@ -2183,10 +2183,12 @@ did not actually change — or a repaint happened with no real delta. Probes:
 ### D2 — E-ink push timing (mostly frontier)
 
 **Reality check:** there is **no e-ink frame-push logic in the repo yet.** The
-flutter-pi embedder integration, the partial/full-refresh driver, and the
+embedder that would own the panel, the partial/full-refresh driver, and the
 "editor is active" refresh-policy signal are all unbuilt (see
 [docs/design/markdown-editing.md](design/markdown-editing.md)
-"E-ink open item"). So the literal test — "does the panel refresh on the
+"E-ink open item", and
+[docs/design/eink-embedder.md](design/eink-embedder.md) for why that embedder
+is not flutter-pi). So the literal test — "does the panel refresh on the
 deliberate action and not on internal rebuilds?" — cannot be executed today; it
 belongs in [Not yet testable](#not-yet-testable-the-frontier).
 
@@ -2270,7 +2272,7 @@ cases for these until the code exists.
 
 | Feature | Why it's not testable yet |
 | --- | --- |
-| **E-ink panel refresh (full/partial), page-turn/pen-lift push** | No flutter-pi embedder integration or refresh driver in the repo; the app only *respects* `disableAnimations`. See design doc "E-ink open item". Use the D2 proxy meanwhile. |
+| **E-ink panel refresh (full/partial), page-turn/pen-lift push** | No panel embedder or refresh driver in the repo; the app only *respects* `disableAnimations`. flutter-pi cannot supply this — see [eink-embedder.md](design/eink-embedder.md). Use the D2 proxy meanwhile. |
 | **Live editing on e-ink** | The keystroke-per-frame vs panel-push tension is an explicitly-recorded open item owned by the embedder work, not solved. |
 | **RTL / right-to-left** | No RTL locale bundled and no in-app locale switcher — the sidebar-flip can't be reached through the UI (D3). |
 | **Handwriting / stylus annotation** | Core to the Supernote-style vision (CLAUDE.md) but no capture/ink surface exists. Requires touch/stylus hardware too. |

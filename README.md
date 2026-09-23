@@ -8,8 +8,12 @@ handwriting markup).
 ## Platforms
 
 Built with Flutter for Windows, macOS, Linux, Android, iOS, and the web.
-Raspberry Pi + e-ink (via flutter-pi) is a planned target and reuses the Linux
-desktop build.
+Raspberry Pi is a planned target and reuses the Linux desktop build: a
+no-desktop Pi runs through [flutter-pi](docs/appimage.md), which is the
+low-resource rehearsal for the eventual e-ink device. The e-ink panel itself
+needs a different embedder — flutter-pi requires a GPU-backed DRM/KMS display,
+which an SPI e-paper panel is not. See
+[docs/design/eink-embedder.md](docs/design/eink-embedder.md).
 
 ## Architecture notes
 

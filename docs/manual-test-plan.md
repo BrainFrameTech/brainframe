@@ -2106,6 +2106,56 @@ leaks.
   machine, `sudo kbd_mode -u -C /dev/tty1` recovers it. That is a bug in
   the guard's exit path if the app quit normally.
 
+### F38 — Text is not corrupted by editing it (flutter-pi AppImage)
+
+Pi-only, and packaging rather than app code: the AppImage carries a
+**patched flutter-pi**, because the stock one's JSON parser never decodes
+string escapes and so corrupts every text field it touches
+([docs/appimage.md](appimage.md), "The text-input corruption"). This case is
+what proves the binary in the image is the patched one.
+
+**Setup:** a Pi with no desktop environment and the flutter-pi AppImage on
+it. Make a throwaway engram so nothing real is at risk, with a note that has
+both of the characters at issue — a newline and a double quote:
+
+```bash
+mkdir -p ~/bs-test
+printf 'line one\nline two\nsay "hello" here\nlast line\n' > ~/bs-test/probe.md
+```
+
+**Steps:**
+
+1. From a login on the console, run
+   `BRAINFRAME_ARGS="--engram /home/pi/bs-test" ./BrainFrame-….AppImage`.
+2. Open `probe.md`. Confirm it shows **four lines**, with `say "hello" here`
+   reading as typed — quotes as quotes, no stray `\n`, no tabs.
+3. Click at the **end of the last line**, press **backspace once**, and quit.
+4. On disk: `od -c ~/bs-test/probe.md`. Expected — **exactly one character
+   gone, the final `e`**: `last line` → `last lin`. Every `\n` in the dump is
+   a real newline (byte 0a), the two `"` are still `"`, and the file is one
+   byte shorter (44).
+5. Press backspace a few more times, quit, and check again: the file loses
+   one character per press and gains nothing.
+
+**Expected:** editing removes exactly what was asked for and changes nothing
+else. Any of these means the image has the **stock** binary, not ours:
+newlines rendering or saving as literal `\n`; the file *growing* after a
+backspace; the wrong character disappearing (off by one per newline before
+the caret); the quotes becoming tabs.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| **N/A** — the corruption is flutter-pi's JSON codec; no other platform uses it | **N/A** | **N/A** | **N/A** | **N/A** | **N/A** | ✓ — the case this was written for |
+
+- **To see the bug it fixes**, rebuild with `FLUTTER_PI_BINARY=` (empty) to
+  take the bundle's stock binary, and run steps 1–4 again: the newlines
+  become `\n`, then `\\n` on the next edit, and the caret drifts.
+- **Why it mattered:** a note left to double this way reached 8190 bytes of
+  backslashes, and reconciling that against its trimmed version needed about
+  a gigabyte in the diff — which is what was killing the app on open before
+  [bounded_myers_diff.dart](../lib/engram/crdt/bounded_myers_diff.dart)
+  bounded it (F29 covers the scan itself).
+
 ---
 
 ## Bug-class deep-dives

@@ -58,13 +58,15 @@ Options (all also settable via the matching UPPER_CASE env var):
   --arch ARCH         flutterpi_tool --arch: arm64|arm|x64      (default: arm64)
   --cpu CPU           flutterpi_tool --cpu: generic|pi3|pi4|pi5 (default: pi3)
   --bundle DIR        flutterpi_tool output dir (default: build/flutter-pi/<target>)
+  --flutter-pi PATH   Use this flutter-pi binary instead of the bundle's
+                      (default: \$FLUTTER_PI_BINARY, else the bundle's own)
   --project-dir DIR   Flutter project root      (default: repo of this script)
   --version VER       Version string in the name (default: pubspec version)
   --output PATH       Output .AppImage path      (default: build/appimage/...)
   -h, --help          Show this help
 
 Environment overrides: APP_NAME BIN_NAME APP_ID VERSION ARCH CPU ICON
-  DESKTOP_FILE PROJECT_DIR BUNDLE_DIR OUTPUT. Set APPIMAGE_ALLOW_UNPINNED=1 to
+  DESKTOP_FILE PROJECT_DIR BUNDLE_DIR OUTPUT FLUTTER_PI_BINARY. Set APPIMAGE_ALLOW_UNPINNED=1 to
   download tools without a pinned checksum (prints the sha256 to pin).
 EOF
 }
@@ -79,6 +81,7 @@ while [ $# -gt 0 ]; do
     --arch)        ARCH="$2"; shift 2 ;;
     --cpu)         CPU="$2"; shift 2 ;;
     --bundle)      BUNDLE_DIR="$2"; shift 2 ;;
+    --flutter-pi)  FLUTTER_PI_BINARY="$2"; shift 2 ;;
     --output)      OUTPUT="$2"; shift 2 ;;
     -h|--help)     usage; exit 0 ;;
     *) usage; die "unknown argument: $1" ;;
@@ -115,6 +118,11 @@ APP_NAME="${APP_NAME:-BrainFrame}"
 ICON="${ICON:-$PROJECT_DIR/web/icons/Icon-512.png}"
 DESKTOP_FILE="${DESKTOP_FILE:-$PROJECT_DIR/linux/packaging/${APP_ID}.desktop}"
 BUNDLE_DIR="${BUNDLE_DIR:-$PROJECT_DIR/build/flutter-pi/$TARGET}"
+# A flutter-pi of our own, in place of the one flutterpi_tool downloads. The
+# default is the patched build (see tool/appimage/build-flutter-pi.sh and
+# patches/), because the stock binary corrupts text input; empty means use
+# whatever is in the bundle.
+FLUTTER_PI_BINARY="${FLUTTER_PI_BINARY-$PROJECT_DIR/build/flutter-pi-patched/$TARGET/flutter-pi}"
 
 WORK_DIR="$PROJECT_DIR/build/appimage"
 TOOLS_DIR="$WORK_DIR/tools"      # shared with build-appimage.sh: same pins, same names
@@ -194,6 +202,26 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" "$APPDIR/usr/share/applications" "$
 cp -a "$BUNDLE_DIR" "$LIB_DIR"
 # Hidden build bookkeeping from flutterpi_tool has no business in the image.
 rm -f "$LIB_DIR/.last_build_id"
+
+# Swap in our own flutter-pi, if there is one. It must be the architecture we
+# are packaging for; a mismatch here would only surface on the Pi as an
+# "Exec format error" with nothing to point at.
+if [ -n "$FLUTTER_PI_BINARY" ]; then
+  [ -x "$FLUTTER_PI_BINARY" ] \
+    || die "no flutter-pi at $FLUTTER_PI_BINARY — build it with tool/appimage/build-flutter-pi.sh, or pass FLUTTER_PI_BINARY= to use the bundle's"
+  case "$(file -b "$FLUTTER_PI_BINARY")" in
+    *"ARM aarch64"*) OURS=arm64 ;;
+    *"ARM,"*|*"ARM EABI"*) OURS=arm ;;
+    *"x86-64"*) OURS=x64 ;;
+    *) OURS=unknown ;;
+  esac
+  [ "$OURS" = "$ARCH" ] \
+    || die "$FLUTTER_PI_BINARY is a $OURS binary, but --arch is $ARCH"
+  install -m 0755 "$FLUTTER_PI_BINARY" "$LIB_DIR/flutter-pi"
+  log "    flutter-pi: $FLUTTER_PI_BINARY (ours)"
+else
+  log "    flutter-pi: the bundle's (stock; text input is known broken)"
+fi
 
 # The launcher (flutterpi-launcher.sh) and the console guard it starts the app
 # under (flutterpi-console-guard.py) ship from this directory. The .desktop

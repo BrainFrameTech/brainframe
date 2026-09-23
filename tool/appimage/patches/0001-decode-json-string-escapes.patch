@@ -1,0 +1,193 @@
+Decode JSON string escapes, and escape a quote as a quote
+
+Applies to: flutter-pi, tag release/1.1.1
+            https://github.com/ardera/flutter-pi
+            MIT, Copyright (c) 2019 Hannes Winkler
+
+flutter-pi's JSON parser never decodes string escapes. jsmn locates a
+string's bytes and platch_decode_value_json hands them over as they are --
+the "use zero-copy approach" comment -- so `{"text":"a\nb"}` arrives as four
+characters: 'a', a backslash, an 'n', 'b'. The encoder then escapes that
+backslash correctly on the way out, so the peer gets a literal backslash
+where its newline was, and every round trip doubles it. In a text field that
+turns a document's newlines into \n and then \\n, drifts the caret by one
+per newline (flutter-pi's buffer is longer than the text whose offsets it is
+given), and ends at TEXT_INPUT_MAX_CHARS.
+
+This decodes the escapes in place. Decoding only shortens -- the shortest
+escape is two bytes for one, a surrogate pair twelve for four -- so the
+result fits over the token it came from and the zero-copy pointer stays
+valid. \uXXXX is handled, including surrogate pairs; a lone surrogate
+becomes U+FFFD rather than invalid UTF-8; an unrecognized escape is kept
+verbatim rather than dropped.
+
+Also: the encoder wrote a double quote as backslash-'t', turning every `"`
+into a tab.
+
+Carried by BrainFrame because the binary flutterpi_tool downloads is
+unusable for text editing without it; see docs/appimage.md. Not yet
+submitted upstream.
+
+diff --git a/src/platformchannel.c b/src/platformchannel.c
+index 4bc13be..7b40b78 100644
+--- a/src/platformchannel.c
++++ b/src/platformchannel.c
+@@ -510,7 +510,7 @@ int platch_write_value_to_buffer_json(struct json_value *value, uint8_t **pbuffe
+                         break;
+                     case '\"':
+                         *((*pbuffer)++) = '\\';
+-                        *((*pbuffer)++) = 't';
++                        *((*pbuffer)++) = '\"';
+                         break;
+                     case '\\':
+                         *((*pbuffer)++) = '\\';
+@@ -722,6 +722,132 @@ int platch_decode_value_std(const uint8_t **pbuffer, size_t *premaining, struct
+ 
+     return 0;
+ }
++
++/**
++ * @brief Parse exactly four hex digits at @p s into @p out.
++ *
++ * @return true if all four were hex digits.
++ */
++static bool json_parse_hex4(const char *s, uint32_t *out) {
++    uint32_t v = 0;
++
++    for (int i = 0; i < 4; i++) {
++        char c = s[i];
++
++        v <<= 4;
++        if (c >= '0' && c <= '9') {
++            v |= (uint32_t) (c - '0');
++        } else if (c >= 'a' && c <= 'f') {
++            v |= (uint32_t) (c - 'a' + 10);
++        } else if (c >= 'A' && c <= 'F') {
++            v |= (uint32_t) (c - 'A' + 10);
++        } else {
++            return false;
++        }
++    }
++
++    *out = v;
++    return true;
++}
++
++/**
++ * @brief Decode JSON string escapes in @p s, in place.
++ *
++ * jsmn is a tokenizer: it locates a string's bytes and never decodes what is
++ * inside them. Handing those bytes straight to the caller — the zero-copy
++ * approach in platch_decode_value_json — therefore yields a backslash and an
++ * 'n' where the sender wrote a newline. The encoder on the way back out then
++ * escapes that backslash correctly, so the peer receives a literal backslash
++ * where its newline used to be, and every round trip doubles it. In a text
++ * field that turns a document's newlines into "\n", then "\\n", moving the
++ * caret off by one per newline as it goes, until the editing-state buffer
++ * fills up.
++ *
++ * Decoding only ever shortens: the shortest escape is two bytes for one, and
++ * a surrogate pair is twelve bytes for the four of its UTF-8 encoding. The
++ * result always fits over the original, so the caller's pointer into the
++ * message buffer stays valid and nothing needs freeing.
++ *
++ * An unrecognized escape is kept verbatim, backslash and all, rather than
++ * dropped: silently losing a byte would be the worse failure.
++ */
++static void json_unescape_in_place(char *s) {
++    char *r = s;
++    char *w = s;
++
++    while (*r) {
++        if (*r != '\\') {
++            *w++ = *r++;
++            continue;
++        }
++
++        r++;
++        switch (*r) {
++            case '"': *w++ = '"'; r++; break;
++            case '\\': *w++ = '\\'; r++; break;
++            case '/': *w++ = '/'; r++; break;
++            case 'b': *w++ = '\b'; r++; break;
++            case 'f': *w++ = '\f'; r++; break;
++            case 'n': *w++ = '\n'; r++; break;
++            case 'r': *w++ = '\r'; r++; break;
++            case 't': *w++ = '\t'; r++; break;
++            case 'u': {
++                uint32_t cp;
++
++                if (!json_parse_hex4(r + 1, &cp)) {
++                    // Not a well-formed \uXXXX; keep the backslash and let
++                    // the next iteration copy what follows.
++                    *w++ = '\\';
++                    break;
++                }
++                r += 5;
++
++                // A high surrogate is half a character: take the low one that
++                // the spec requires to follow, if it is there.
++                if (cp >= 0xD800 && cp <= 0xDBFF && r[0] == '\\' && r[1] == 'u') {
++                    uint32_t low;
++
++                    if (json_parse_hex4(r + 2, &low) && low >= 0xDC00 && low <= 0xDFFF) {
++                        cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
++                        r += 6;
++                    }
++                }
++
++                // A surrogate left unpaired cannot be encoded, and passing it
++                // on would make the string invalid UTF-8 for every reader
++                // downstream. U+FFFD is what a decoder is expected to
++                // substitute.
++                if (cp >= 0xD800 && cp <= 0xDFFF) {
++                    cp = 0xFFFD;
++                }
++
++                if (cp < 0x80) {
++                    *w++ = (char) cp;
++                } else if (cp < 0x800) {
++                    *w++ = (char) (0xC0 | (cp >> 6));
++                    *w++ = (char) (0x80 | (cp & 0x3F));
++                } else if (cp < 0x10000) {
++                    *w++ = (char) (0xE0 | (cp >> 12));
++                    *w++ = (char) (0x80 | ((cp >> 6) & 0x3F));
++                    *w++ = (char) (0x80 | (cp & 0x3F));
++                } else {
++                    *w++ = (char) (0xF0 | (cp >> 18));
++                    *w++ = (char) (0x80 | ((cp >> 12) & 0x3F));
++                    *w++ = (char) (0x80 | ((cp >> 6) & 0x3F));
++                    *w++ = (char) (0x80 | (cp & 0x3F));
++                }
++                break;
++            }
++            default:
++                // Unknown escape, or a trailing backslash at end of string.
++                *w++ = '\\';
++                break;
++        }
++    }
++
++    *w = '\0';
++}
++
+ int platch_decode_value_json(char *message, size_t size, jsmntok_t **pptoken, size_t *ptokensremaining, struct json_value *value_out) {
+     jsmntok_t *ptoken;
+     int result, ok;
+@@ -776,11 +902,15 @@ int platch_decode_value_json(char *message, size_t size, jsmntok_t **pptoken, si
+ 
+                 break;
+             case JSMN_STRING:;
+-                // use zero-copy approach.
++                // Still zero-copy: jsmn locates the string's bytes but never
++                // decodes what is inside it, so the escapes are decoded in
++                // place, over the token they came from.
+ 
+                 message[ptoken->end] = '\0';
+                 char *string = message + ptoken->start;
+ 
++                json_unescape_in_place(string);
++
+                 value_out->type = kJsonString;
+                 value_out->string_value = string;
+ 

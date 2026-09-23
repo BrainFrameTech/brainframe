@@ -92,9 +92,16 @@ cross-compiles from any host, so this is one command on the desktop:
 ```bash
 flutter pub global activate flutterpi_tool   # flutter, not dart: it needs the Flutter SDK
 flutterpi_tool build --arch=arm64 --cpu=pi3 --release
+tool/appimage/build-flutter-pi.sh --arch arm64 --cpu pi3
 tool/appimage/build-flutterpi-appimage.sh --arch arm64 --cpu pi3
 #   → build/appimage/BrainFrame-<version>-flutterpi-pi3-64.AppImage
 ```
+
+The third line builds a **patched flutter-pi**, which the fourth picks up
+automatically. The stock one corrupts every text field — see
+[The text-input corruption](#the-text-input-corruption) — so the AppImage
+does not ship it. Everything happens on the development machine and needs
+no root; `build-flutter-pi.sh --clean` starts over if a build goes wrong.
 
 Two things about that activation, both learned the hard way:
 
@@ -142,14 +149,14 @@ neither of which is bundled:
 
   ```bash
   sudo apt install libdrm2 libgbm1 libegl1 libgles2 libgl1-mesa-dri \
-    libinput10 libudev1 libxkbcommon0 libsystemd0 libvulkan1 libatomic1 \
-    libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libglib2.0-0
+    libinput10 libudev1 libxkbcommon0 libsystemd0
   ```
 
-  (That is the `NEEDED` list of the `flutter-pi` binary `flutterpi_tool`
-  ships, mapped to package names. GStreamer is linked, not used — flutter-pi
-  is built with its video-player support in, and the loader wants the
-  libraries present either way.)
+  (That is the `NEEDED` list of the `flutter-pi` we build, mapped to package
+  names. It is shorter than the stock binary's, which also wants Vulkan,
+  GStreamer and glib: we turn those off, because BrainFrame uses none of them
+  and each one left on is a package the Pi has to carry. A stock binary on a
+  Pi that lacks them will not start.)
 
 With nothing to bundle, the only native tool left is `appimagetool`, which
 only packs a squashfs and takes the target architecture from `$ARCH`. So the
@@ -179,6 +186,60 @@ with the bundle as its working directory (and puts the bundle on
 `LD_LIBRARY_PATH` too, for a VM that one day collapses the path to a bare
 name). One consequence: **a file path in `BRAINFRAME_ARGS` must be absolute**,
 or it resolves inside the read-only image.
+
+### The text-input corruption
+
+The flutter-pi that `flutterpi_tool` downloads **cannot be used to edit
+text**, which is why the AppImage carries one we build instead.
+
+Its JSON parser does not decode string escapes. jsmn, the tokenizer it uses,
+only locates a string's bytes, and `platch_decode_value_json` hands those
+bytes to the caller as they are — the comment there says *"use zero-copy
+approach"*. So when the framework sends the editing state of a note,
+`{"text":"a\nb"}` arrives as **four characters**: `a`, a backslash, an `n`,
+`b`. The encoder on the way back out is correct and escapes that backslash,
+so the app receives a literal backslash where its newline used to be, and
+every round trip doubles it: one edit turns each newline into `\n`, the next
+into `\\n`, and so on until `TEXT_INPUT_MAX_CHARS` (8192) caps it.
+
+Two things follow that look like unrelated bugs:
+
+- **The caret lands in the wrong place.** flutter-pi's buffer is longer than
+  the app's text by one character per newline, but the cursor offset it is
+  given counts the app's. A backspace at the end of a two-line note deletes
+  the second-to-last character instead of the last.
+- **A double quote becomes a tab.** In the encoder, `case '\"'` emits `\`
+  followed by `t`.
+
+On this project it showed up as a note that grew to 8190 bytes of
+backslashes, which then took out a 448 MB Pi 3 on open — the CRDT had to
+diff the long version against the short one, and Myers' diff is O(D·(N+M))
+in memory. That half is fixed separately (see
+`lib/engram/crdt/bounded_myers_diff.dart`); this is the half that was
+producing the input.
+
+[`patches/0001-decode-json-string-escapes.patch`](../tool/appimage/patches/0001-decode-json-string-escapes.patch)
+decodes the escapes in place — decoding only ever shortens, so it fits over
+the token it came from and the zero-copy pointer stays valid — and fixes the
+quote. `build-flutter-pi.sh` applies it to a pinned upstream tag and
+cross-builds the result:
+
+- **No root, no new packages.** clang is already required for Flutter's Linux
+  desktop toolchain and is a cross-compiler; it only lacks a target assembler
+  and linker, which come from a `binutils-aarch64-linux-gnu` package
+  unpacked into `build/` with `apt-get download` and `dpkg-deb -x`.
+- **The sysroot is Debian's, not the host's.** The target headers and
+  libraries are Debian `.deb`s unpacked the same way, so the binary asks for
+  the glibc and SONAMEs Raspberry Pi OS has rather than Ubuntu's. Build it
+  against the host and it will not start on the Pi.
+- **The tag is pinned** to the release `flutterpi_tool` downloads, so the
+  binary we ship and the engine it runs come from the same upstream version.
+  `flutterpi_tool` records that release in
+  `$FLUTTER_ROOT/bin/cache/flutter-pi.stamp`; if it moves, set
+  `FLUTTER_PI_TAG` and expect the patch to need rebasing.
+
+`FLUTTER_PI_BINARY=` (empty) reverts to the bundle's stock binary, for
+confirming that a bug is ours and not the patch's.
 
 ### Running it
 

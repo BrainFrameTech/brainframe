@@ -5,9 +5,9 @@
 /// The counterpart of [NoteWriter](note_writer.dart), and a seam for the same
 /// reason: the UI needs to ask for a scan on resume and for one note before it
 /// opens it, and it must be able to do that without importing the `dart:io`
-/// implementation that reaches SQLite. On web and in a read-only engram there
-/// is nothing behind this at all, which the session expresses by publishing
-/// no reconciler rather than an inert one.
+/// implementation that reaches SQLite. In a read-only engram there is nothing
+/// behind this at all, which the session expresses by publishing no reconciler
+/// rather than an inert one.
 library;
 
 /// What one scan did (Decisions 6 and 7).

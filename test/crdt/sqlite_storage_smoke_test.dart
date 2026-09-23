@@ -13,9 +13,9 @@
 // without this test the first thing to discover an unloadable sqlite3 would be
 // the sync layer, at runtime. Here it fails loudly at `flutter test` instead.
 //
-// PLATFORM SCOPE: dart:ffi does not exist on the web, so this package (and
-// anything importing it) is desktop/mobile only and must never be reached from
-// shared code on a web build.
+// PLATFORM SCOPE: this package rides on dart:ffi, so anything importing it is
+// dart:io-only and carries the `_io` suffix that marks it — see
+// docs/design/no-web.md.
 //
 // NO NATIVE-BUNDLING PACKAGE IS NEEDED, and one must not be added.
 // `package:sqlite3` v3 ships its own sqlite3 with the app on every platform

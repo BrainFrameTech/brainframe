@@ -1,11 +1,161 @@
-/// Conditional-export seam for the active engram's op-log session, mirroring
-/// [metadata_db.dart](metadata_db.dart): the real `dart:io` implementation on
-/// native platforms, a null-returning stub on web.
-///
-/// The seam exists so the UI can ask for a session without importing anything
-/// that reaches SQLite. What it gets back is a [NoteWriter] — pure — so the
-/// editor stays ignorant of whether an op-log is behind its saves.
-library;
+import 'dart:developer' as developer;
 
-export 'crdt_session_stub.dart'
-    if (dart.library.io) 'crdt_session_io.dart';
+import '../engram.dart';
+import '../fs/fs_store_io.dart';
+import '../note_reconciler.dart';
+import '../note_writer.dart';
+import 'app_data_resolver.dart';
+import 'crdt_note_writer_io.dart';
+import 'drift_reconciler_io.dart';
+import 'identity_authorship_io.dart';
+import 'identity_map_io.dart';
+import 'metadata_db_io.dart';
+import 'note_document_lock.dart';
+
+/// The `dart:developer` log name for the session's own messages.
+const String crdtSessionLogName = 'brainframe.engram.session';
+
+/// One engram's open op-log, for as long as that engram is the active one.
+///
+/// The database is a process-wide resource with a lifetime, which nothing in
+/// the app owned before this: steps 0–8 built every piece of the CRDT layer and
+/// left it unreachable, because opening it is only worth doing once something
+/// writes through it. That is step 9.
+///
+/// **One session per engram, closed on the way out.** SQLite connections are
+/// not free and two connections to one `metadata.db` would defeat the single
+/// transaction boundary the schema depends on, so switching engrams closes the
+/// outgoing session before the incoming one opens.
+class CrdtSession {
+  CrdtSession._(this._database, this.writer, this._reconciler, this._identity);
+
+  final MetadataDatabase _database;
+  final AuthoredIdentity? _identity;
+
+  /// How the editor should save into this engram.
+  final NoteWriter writer;
+
+  final DriftReconciler _reconciler;
+
+  /// How the app brings files that changed outside it back into history.
+  NoteReconciler get reconciler => _reconciler;
+
+  /// Opens the op-log for [engram], or returns null if it should not have one.
+  ///
+  /// Null for a read-only engram: the built-ins ship as assets, cannot be
+  /// edited, and nothing is ever written into their `.brainframe/`. A null
+  /// session is the normal answer for them rather than a failure, and the
+  /// editor writes directly — which for a read-only engram means it never
+  /// writes at all.
+  ///
+  /// [resolveRoot] overrides where `metadata.db` is looked for, so a test can
+  /// point at a temporary directory instead of the real app-data one. This
+  /// is the app's edge: the platform's answer is applied here, once, and
+  /// handed down to a store that never asks for it.
+  ///
+  /// [trace] is handed to the reconciler as the scan's narration sink — the
+  /// `--trace-scan` startup option; see [DriftReconciler.trace].
+  static Future<CrdtSession?> openFor(
+    Engram engram, {
+    AppDataRootResolver? resolveRoot,
+    void Function(String line)? trace,
+  }) async {
+    if (engram.readOnly) return null;
+    final root = resolveRoot ?? appDataRootResolver();
+    final database = await MetadataDatabase.open(engram.id, resolveRoot: root);
+    // Old scan records go on open, before anything reads them: a year of
+    // ordinary scans, never the ones that lost history or failed.
+    database.scans.prune();
+    // The shared identity map lives inside the engram folder, so it exists
+    // only for an engram that has one. Every writable engram today is a
+    // filesystem engram; the seam allows otherwise, and such an engram would
+    // get drift reconciliation and nothing that needs a listing.
+    final store = engram.store;
+    if (store is FileSystemEngramStore) {
+      // Label the store with the folder it belongs to, for whoever is
+      // looking at the app-data directory by hand. A debugging aid: the
+      // engram opens whether or not it could be written, and the failure is
+      // logged rather than raised.
+      try {
+        await recordEngramPath(
+          engram.id,
+          store.location.path,
+          resolveRoot: root,
+        );
+      } on Object catch (error, stack) {
+        developer.log(
+          'could not record the folder path in the engram store',
+          name: crdtSessionLogName,
+          error: error,
+          stackTrace: stack,
+        );
+      }
+    }
+    final identity = store is FileSystemEngramStore
+        ? await AuthoredIdentity.load(
+            IdentityMap(
+              engramRoot: store.location.path,
+              peerId: database.peerId,
+            ),
+          )
+        : null;
+    if (identity != null) {
+      // What the map file should say about this device's own mints is in
+      // the catalog; a write lost to the debounce — a quit within seconds
+      // of the first scan, a crash — is made good here, before anything
+      // reads the map.
+      final repaired = identity.repairFrom(
+        database.catalog.seededBy(database.peerId),
+      );
+      if (repaired > 0) {
+        developer.log(
+          'identity map rebuilt: $repaired claim(s) the file had lost',
+          name: crdtSessionLogName,
+        );
+      }
+    }
+    // One lock between the two: a save and a reconciliation of the same note
+    // must never overlap, and nothing above the session sequences them.
+    final lock = NoteDocumentLock();
+    return CrdtSession._(
+      database,
+      CrdtNoteWriter(
+        database: database,
+        engram: store,
+        lock: lock,
+        identity: identity,
+      ),
+      DriftReconciler(
+        database: database,
+        engram: store,
+        lock: lock,
+        identity: identity,
+        noteSizeCeilingBytes: engram.noteSizeCeilingBytes,
+        trace: trace,
+      ),
+      identity,
+    );
+  }
+
+  /// Writes any identity-map rows still in the timers, without closing.
+  ///
+  /// Registered with the app's flush registry, so the desktop close path and
+  /// the resume scan write the map the way they write unsaved editor text:
+  /// a mint or a rename made seconds before a quit must reach the folder, or
+  /// every other device keeps its own idea of that note.
+  Future<void> flush() async {
+    await _identity?.flush();
+  }
+
+  /// Writes any identity-map rows still in the timers, closes the
+  /// reconciler's event stream, and closes the database. Safe to call twice.
+  ///
+  /// The map is flushed *before* the database closes, and awaited: a rename
+  /// recorded seconds before the engram was switched away from must reach
+  /// the folder, or every other device keeps the old path.
+  Future<void> close() async {
+    await _identity?.flush();
+    await _reconciler.close();
+    _database.close();
+  }
+}

@@ -1,10 +1,9 @@
 /// One note's CRDT document, over the device-local op-log.
 ///
 /// `dart:io`-only, because the op-log is SQLite and `crdt_lf_sqlite` rides on
-/// `dart:ffi`. Nothing here is exported through `metadata_db.dart`'s seam:
-/// a live document cannot exist on web at all, so code that touches one is
-/// `dart:io`-only too and imports this file directly, the way
-/// `fs_store_io.dart` is imported directly.
+/// `dart:ffi`. Nothing here is re-exported through `metadata_db.dart`: code
+/// that touches a live document is `dart:io`-only too, so it imports this file
+/// directly, the way `fs_store_io.dart` is imported directly.
 library;
 
 import 'package:crdt_lf/crdt_lf.dart';

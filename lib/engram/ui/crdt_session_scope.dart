@@ -19,9 +19,8 @@ import '../note_writer.dart';
 ///
 /// **It publishes a [NoteWriter] and a [NoteReconciler], not the session.**
 /// Everything below is UI and has no business knowing whether an op-log
-/// exists — the editor asks how to save and gets an answer, and on web or a
-/// read-only engram that answer is simply "there is nothing here, write to
-/// the store".
+/// exists — the editor asks how to save and gets an answer, and in a read-only
+/// engram that answer is simply "there is nothing here, write to the store".
 ///
 /// **It also owns two of the scan's three triggers** (Decision 6): the scan
 /// on app start — which, from here, is the moment a session opens, so an
@@ -253,8 +252,8 @@ class CrdtSessionScope extends InheritedWidget {
   /// is not under one at all.
   ///
   /// Null is an ordinary answer, not a failure: it means "write to the store",
-  /// which is correct for a read-only engram, for web, and for any widget test
-  /// that did not install a host.
+  /// which is correct for a read-only engram and for any widget test that did
+  /// not install a host.
   static NoteWriter? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<CrdtSessionScope>()?.writer;
 

@@ -115,7 +115,7 @@ APP_ID="${APP_ID:-$(read_cmake APPLICATION_ID)}"
 # pubspec `version: 1.2.3+4` → strip the +build metadata for a clean file name.
 VERSION="${VERSION:-$(sed -n 's/^version: *\([^ +]*\).*/\1/p' "$PROJECT_DIR/pubspec.yaml" | head -n1)}"
 APP_NAME="${APP_NAME:-BrainFrame}"
-ICON="${ICON:-$PROJECT_DIR/web/icons/Icon-512.png}"
+ICON="${ICON:-$PROJECT_DIR/linux/packaging/brainframe-512.png}"
 DESKTOP_FILE="${DESKTOP_FILE:-$PROJECT_DIR/linux/packaging/${APP_ID}.desktop}"
 BUNDLE_DIR="${BUNDLE_DIR:-$PROJECT_DIR/build/flutter-pi/$TARGET}"
 # A flutter-pi of our own, in place of the one flutterpi_tool downloads. The

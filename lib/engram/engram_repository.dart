@@ -29,7 +29,7 @@ const int _warning = 900;
 /// is platform-agnostic. The container path is injected (via
 /// [containerPathResolver]) rather than hard-wired, so desktop/mobile can use
 /// `applicationEngramContainerPath` while the Pi supplies its own configured
-/// mount and web can decline; a resolver that throws simply yields the built-ins.
+/// mount; a resolver that throws simply yields the built-ins.
 class EngramRepository {
   EngramRepository({
     required SharedPreferencesAsync preferences,
@@ -74,7 +74,7 @@ class EngramRepository {
         if (seenIds.add(engram.id)) available.add(engram);
       }
     } catch (error, stackTrace) {
-      // No filesystem (web), or a missing/unreadable container — the built-ins
+      // A missing or unreadable container — the built-ins
       // still stand. Discovery never crashes over a bad container, but the skip
       // is logged rather than swallowed silently.
       developer.log(
@@ -374,7 +374,7 @@ class EngramRepository {
 /// Derives a display name from an absolute folder [path] — its final segment,
 /// tolerating either separator and any trailing slashes, falling back to
 /// `Engram` for a root or otherwise nameless path. Kept as plain string work so
-/// the repository stays platform-agnostic (no `dart:io`, usable on web).
+/// the repository stays free of `dart:io`, and unit-testable without one.
 String _folderDisplayName(String path) {
   var normalized = path.replaceAll('\\', '/');
   while (normalized.length > 1 && normalized.endsWith('/')) {

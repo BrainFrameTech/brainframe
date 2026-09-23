@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
@@ -16,24 +15,16 @@ import 'adopt_folder_dialog.dart';
 /// the app-level actions `New engram` and — on desktop — `Open folder…`. It
 /// captures the [EngramScope] before opening the sheet, because the sheet is
 /// pushed above the app content and no longer has the scope as an ancestor.
-///
-/// On web there is no user-engram filesystem (the store throws), so `New engram`
-/// is hidden and only the built-in tutorial and help are switchable.
 class EngramSwitcher extends StatelessWidget {
   const EngramSwitcher({
     super.key,
     required this.repository,
     required this.current,
-    this.allowCreateEngram = !kIsWeb,
     this.folderPicker,
   });
 
   final EngramRepository repository;
   final Engram current;
-
-  /// Whether creating a new engram is offered. False on web, where the
-  /// filesystem store is unsupported. Injectable so both branches are testable.
-  final bool allowCreateEngram;
 
   /// The directory chooser behind **Open folder…**, or the native dialog when
   /// null. Injected so the adoption confirmation can be driven in a test.
@@ -98,12 +89,10 @@ class EngramSwitcher extends StatelessWidget {
           Navigator.of(sheetContext).pop();
           scope.switchTo(engram);
         },
-        onNewEngram: allowCreateEngram
-            ? () async {
-                Navigator.of(sheetContext).pop();
-                await _createEngram(context, scope);
-              }
-            : null,
+        onNewEngram: () async {
+          Navigator.of(sheetContext).pop();
+          await _createEngram(context, scope);
+        },
         onOpenFolder: isDesktopFolderAdoptionSupported
             ? () async {
                 Navigator.of(sheetContext).pop();

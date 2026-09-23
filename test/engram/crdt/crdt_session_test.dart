@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
-import 'package:brainframe/engram/crdt/crdt_session_io.dart';
+import 'package:brainframe/engram/crdt/crdt_session.dart';
 import 'package:brainframe/engram/crdt/drift_reconciler_io.dart';
 import 'package:brainframe/engram/crdt/identity_authorship_io.dart';
 import 'package:brainframe/engram/crdt/identity_map_io.dart';

@@ -5,6 +5,12 @@
 - **Date:** 2026-08-30
 - **Companion to:** `../design/note-identity-and-crdt.md` (the design and its
   nine decisions)
+- **Amended 2026-09-22:** web support is removed — see
+  [`../design/no-web.md`](../design/no-web.md). The `metadata_db_stub.dart` /
+  `app_data_resolver_stub.dart` / `crdt_session_stub.dart` files in the layouts
+  below no longer exist, and their seams are now plain imports. Nothing about
+  the op-log, catalog or identity design changes: SQLite was always the only
+  implementation, and now it is the only one named.
 
 ## Scope of this plan
 

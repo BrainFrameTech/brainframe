@@ -5,8 +5,8 @@ import 'package:args/args.dart';
 /// Startup options parsed from the process command line.
 ///
 /// Desktop only in practice — Flutter forwards `argv` to `main` on desktop,
-/// while mobile and web always start `main` with an empty list — but parsing is
-/// pure string work with no `dart:io`, so it is unit-testable and safe to run on
+/// while mobile always starts `main` with an empty list — but parsing is pure
+/// string work with no `dart:io`, so it is unit-testable and safe to run on
 /// every platform (an empty list yields the default behavior).
 ///
 /// These options exist for development and testing. See [engramPath],
@@ -130,7 +130,7 @@ Usage: brainframe [options]
 
 ${_parser.usage}
 
-These options apply to desktop builds; mobile and web ignore them. A host that
+These options apply to desktop builds; mobile ignores them. A host that
 passes no arguments to the app (flutter-pi) reads them from the BRAINFRAME_ARGS
 environment variable instead, whitespace-separated.''';
 }

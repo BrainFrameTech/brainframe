@@ -80,9 +80,18 @@ the oldest OS release you mean to run on.
 
 The AppImage above needs a desktop: its embedder is GTK, which needs X11 or
 Wayland underneath. A Pi with no desktop environment — Raspberry Pi OS Lite, a
-kiosk, the e-ink target — runs BrainFrame through [flutter-pi][flutter-pi]
-instead, an embedder that opens the display through DRM/KMS and reads input
-through libinput, with nothing X11, Wayland or GTK involved.
+kiosk, the low-resource rehearsal for the e-ink device — runs BrainFrame
+through [flutter-pi][flutter-pi] instead, an embedder that opens the display
+through DRM/KMS and reads input through libinput, with nothing X11, Wayland or
+GTK involved.
+
+That DRM/KMS requirement is also flutter-pi's ceiling: it needs a GPU-backed
+display to page-flip onto, so it drives a monitor (or an HDMI e-paper panel,
+which presents as one) but never a Waveshare SPI panel. The e-ink device gets
+its own embedder — see
+[docs/design/eink-embedder.md](design/eink-embedder.md). Everything below this
+line is still worth having, because all of it lives above the presentation
+layer and carries over unchanged.
 [`tool/appimage/build-flutterpi-appimage.sh`](../tool/appimage/build-flutterpi-appimage.sh)
 packages that.
 

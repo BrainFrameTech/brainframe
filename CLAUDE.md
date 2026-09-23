@@ -16,14 +16,18 @@ combining:
 | --- | --- |
 | Windows, Mac, Linux | Standard Flutter desktop targets |
 | Android, iOS | Standard Flutter mobile targets |
-| Raspberry Pi + e-ink | via flutter-pi embedder, Waveshare displays |
+| Raspberry Pi (no desktop) | via flutter-pi; the low-resource rehearsal for the e-ink device |
+| Raspberry Pi + e-ink | Waveshare SPI panel, via an embedder of our own — **not** flutter-pi |
 
 ## Tech Stack
 
 - **Language:** Dart
 - **Framework:** Flutter
-- **Pi embedder:** flutter-pi (runs on Pi 4/5, no X11 or desktop environment
-  needed)
+- **Pi embedder:** flutter-pi (runs on Pi 3/4/5 and Zero 2 W, no X11 or
+  desktop environment needed) — this is the no-desktop *rehearsal* target, not
+  the e-ink one
+- **E-ink embedder:** a purpose-built software-rendering embedder, still to be
+  written — see [docs/design/eink-embedder.md](docs/design/eink-embedder.md)
 - **Version control:** GitHub (github.com/pedersen/brainframe)
 
 ## E-Ink Architecture
@@ -38,6 +42,15 @@ reMarkable.
 
 UI interactions on e-ink must be designed around this — avoid animations,
 hover states, or anything assuming continuous rendering.
+
+**This is why flutter-pi is not the e-ink embedder.** Deciding *when* to push
+a frame, and with which waveform, happens in the embedder's present step.
+flutter-pi's present step is a page-flip on vblank onto a GPU-backed DRM/KMS
+output, which an SPI e-paper panel does not have and cannot be given usefully.
+The panel gets an embedder of our own, built on the Flutter Embedder API's
+software renderer; flutter-pi stays as the low-resource rehearsal. The
+reasoning, the rejected alternatives, and what transfers between the two are
+in [docs/design/eink-embedder.md](docs/design/eink-embedder.md).
 
 ## Project Context
 

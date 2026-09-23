@@ -26,9 +26,9 @@ abstract class NoteWriter {
 /// the CRDT existed.
 ///
 /// Still the correct writer in three cases, none of them a fallback in the
-/// apologetic sense: a read-only engram, an engram with no op-log at all (web
-/// has no SQLite), and Decision 4's bounded exception — a history-pending note,
-/// whose op-log has not arrived, so there is no document to project from.
+/// apologetic sense: a read-only engram, an engram with no op-log at all, and
+/// Decision 4's bounded exception — a history-pending note, whose op-log has
+/// not arrived, so there is no document to project from.
 class DirectNoteWriter implements NoteWriter {
   const DirectNoteWriter(this.store);
 

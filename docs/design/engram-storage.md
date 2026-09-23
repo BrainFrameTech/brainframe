@@ -254,7 +254,7 @@ sole-writer design later is not.
 | Pi (flutter-pi) | Yes | later — in-app browser (no native dialog) | No sandbox; free-folder rides with Pi-usability work. |
 | Android | Yes | v2 — SAF folder | App-specific storage by default. |
 | iOS | Yes | v2 — security-scoped bookmarks | v1 ships the Files-exposed container (Info.plist keys). |
-| Web | No | — | Deferred; future multi-user web is its own server backend (Decision 4). |
+| Web | No | — | **Removed 2026-09-22** — not a target at all; see [no-web.md](no-web.md). Decision 4 below is superseded. |
 
 New dependency: `path_provider`. Desktop/Pi free folder choice is a native
 directory picker plus a stored path — cheap, v1. The iOS work is two
@@ -276,8 +276,8 @@ out here only so it is not forgotten; full UI is out of scope for this doc.
    create/open/switch, iOS Files keys — **plus pick-any-folder on desktop**
    (native picker, plain path). v1 also ships the two built-in read-only
    engrams (tutorial, help) from an asset-bundle store and opens the tutorial
-   on first run. A real multi-engram markdown store on every platform except
-   web, with full free placement on desktop.
+   on first run. A real multi-engram markdown store on every platform, with
+   full free placement on desktop.
 2. **v2 — free folder choice on the sandboxed platforms.** iOS document-picker
    adoption + security-scoped bookmarks (Swift channel), plus optional
    iCloud-container storage; Android SAF folder picking. All Apple-side work
@@ -315,7 +315,11 @@ out here only so it is not forgotten; full UI is out of scope for this doc.
    Pi, and iCloud, when built, is just another `EngramLocation` (resolve a
    ubiquity-container directory), so deferring it changes no interface.
 4. **Web storage deferred; revisited post-Pi as its own backend**
-   (2026-06-30). No browser storage backend is built now. The eventual web
+   (2026-06-30). **Superseded 2026-09-22 — see [no-web.md](no-web.md): web is
+   removed rather than deferred, and the seam this decision asked for is gone.
+   The paragraph below stands as the record of why, and its reasoning is what
+   the removal rests on; only its conclusion changed.** No browser storage
+   backend is built now. The eventual web
    goal is a multi-user website with server-side storage and proper per-user
    security — a fundamentally different shape from the local-filesystem
    model, and explicitly late-stage (after the Pi build is usable). A

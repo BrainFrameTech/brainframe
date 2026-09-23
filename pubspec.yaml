@@ -75,8 +75,7 @@ dependencies:
   hlc_dart: ^1.1.0+2
   # sqlite3-backed persistence for crdt_lf `Change` / `Snapshot` objects — the
   # durable oplog behind engram sync. Synchronous FFI API (sqlite3 is not
-  # async), so it is desktop/mobile only; web has no dart:ffi and must never
-  # import it from shared code.
+  # async), so every BrainFrame target is a `dart:io` + `dart:ffi` platform.
   crdt_lf_sqlite: ^0.1.0+2
   # BrainFrame opens and owns the metadata.db connection itself, then injects
   # the CRDT schema into it (CRDTSqlite.fromDatabase), so lib/ speaks to
@@ -128,8 +127,6 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "brainframe.png"
   ios: true
   remove_alpha_ios: true
-  web:
-    generate: true
   windows:
     generate: true
     icon_size: 256

@@ -105,9 +105,11 @@ APP_ID="${APP_ID:-$(read_cmake APPLICATION_ID)}"
 VERSION="${VERSION:-$(sed -n 's/^version: *\([^ +]*\).*/\1/p' "$PROJECT_DIR/pubspec.yaml" | head -n1)}"
 APP_NAME="${APP_NAME:-BrainFrame}"
 # A 512x512 PNG: the master brainframe.png is 1024x1024, which exceeds the
-# largest hicolor size linuxdeploy accepts (512x512), so use the generated 512
-# variant. Override ICON with any square PNG whose size is a valid hicolor size.
-ICON="${ICON:-$PROJECT_DIR/web/icons/Icon-512.png}"
+# largest hicolor size linuxdeploy accepts (512x512), so packaging keeps its own
+# 512 variant beside the .desktop file. Regenerate it from the master with
+# tool/gen_packaging_icon.py. Override ICON with any square PNG whose size is a
+# valid hicolor size.
+ICON="${ICON:-$PROJECT_DIR/linux/packaging/brainframe-512.png}"
 DESKTOP_FILE="${DESKTOP_FILE:-$PROJECT_DIR/linux/packaging/${APP_ID}.desktop}"
 BUNDLE_DIR="${BUNDLE_DIR:-$PROJECT_DIR/build/linux/${FLUTTER_ARCH}/release/bundle}"
 

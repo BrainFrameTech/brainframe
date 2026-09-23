@@ -552,8 +552,9 @@ written into a folder that is one already.
 | --- | --- | --- | --- | --- | --- | --- |
 | ✓ | ✓ | ✓ | ✓ **N/A** for Open folder — hidden (no desktop dir dialog) | same as Android | same as Android | ✓ for switch/new; **N/A** for Open folder — flutter-pi has no native dialog (in-app browser is future) |
 
-- **New engram** is hidden only on **web** (not a target platform here), so it
-  is present on all seven columns.
+- **New engram** is present on all seven columns — there is no platform that
+  hides it (the web build that did is removed; see
+  [no-web.md](design/no-web.md)).
 - **State survival:** switching engrams must not leak the previous engram's
   collapse set or selection into the new one (each is keyed by engram id).
 - **Declarative-trap probe:** switch A→B→A quickly; confirm the tree and reader

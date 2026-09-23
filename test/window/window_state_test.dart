@@ -1,7 +1,7 @@
 import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/settings/device_settings.dart';
 import 'package:brainframe/settings/settings_store.dart';
-import 'package:brainframe/window/window_state_io.dart';
+import 'package:brainframe/window/window_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

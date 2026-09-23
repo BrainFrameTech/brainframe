@@ -16,8 +16,8 @@ import 'startup_options.dart';
 import 'window/window_state.dart';
 
 Future<void> main(List<String> args) async {
-  // Desktop forwards argv here; mobile and web start with an empty list —
-  // and so does flutter-pi, which passes nothing to the Dart entrypoint.
+  // Desktop forwards argv here; mobile starts with an empty list — and so
+  // does flutter-pi, which passes nothing to the Dart entrypoint.
   // BRAINFRAME_ARGS is the channel for that host; an explicit argument wins.
   final options = StartupOptions.parse([
     ...StartupOptions.splitEnvironmentArgs(environmentArgs()),
@@ -25,10 +25,9 @@ Future<void> main(List<String> args) async {
   ]);
 
   // --help: print usage to stdout and exit before any Flutter setup, so no
-  // window is created. A no-op on web (no stdout, no argv).
+  // window is created.
   if (options.showHelp) {
     printHelpAndExit(StartupOptions.usage);
-    return;
   }
 
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,7 +49,7 @@ Future<void> main(List<String> args) async {
   }
 
   // Restore the desktop window's size/position before the first frame.
-  // No-op on web and mobile. With --ignore-config nothing is saved to restore,
+  // No-op on mobile. With --ignore-config nothing is saved to restore,
   // so the window opens at its default geometry. An explicit --window-size
   // overrides both, and is neither restored from nor written back.
   await initWindowManager(
@@ -59,8 +58,8 @@ Future<void> main(List<String> args) async {
   );
 
   // The engram registry lives in shared preferences; user engrams sit in the
-  // app documents container by default. On web the container resolver throws,
-  // and discovery degrades to the built-in tutorial and help engrams.
+  // app documents container by default. If the container cannot be resolved
+  // or read, discovery degrades to the built-in tutorial and help engrams.
   //
   // --ignore-config swaps the container too, not just the preferences above.
   // Discovery scans the container directly, so leaving it pointed at the real

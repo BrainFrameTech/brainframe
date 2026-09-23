@@ -3,9 +3,9 @@
 ///
 /// `dart:io`-only by way of [NoteDocument], which needs the SQLite op-log.
 /// Named `_io` for that reason rather than the `materializer.dart` the plan's
-/// file layout sketched, matching `note_document_io.dart`: a live document
-/// cannot exist on web at all, so everything that touches one imports directly
-/// rather than through a seam.
+/// file layout sketched, matching `note_document_io.dart`: the suffix marks a
+/// file that reaches `dart:io` or `dart:ffi` directly, which the pure layer
+/// must not import.
 ///
 /// **The file is a projection.** The CRDT is the authority for a `fugueText`
 /// note and the `.md` file is what that value looks like on disk. Nothing else

@@ -7,7 +7,8 @@ handwriting markup).
 
 ## Platforms
 
-Built with Flutter for Windows, macOS, Linux, Android, iOS, and the web.
+Built with Flutter for Windows, macOS, Linux, Android, and iOS. There is no
+web target — see [docs/design/no-web.md](docs/design/no-web.md).
 Raspberry Pi is a planned target and reuses the Linux desktop build: a
 no-desktop Pi runs through [flutter-pi](docs/appimage.md), which is the
 low-resource rehearsal for the eventual e-ink device. The e-ink panel itself
@@ -24,7 +25,7 @@ which an SPI e-paper panel is not. See
   is never forced onto another.
 - **Desktop window state.** Desktop windows remember their size, position, and
   maximized state between launches (`lib/window/window_state.dart`). This is a
-  no-op on web and mobile.
+  no-op on mobile.
 - **Accessibility first.** Custom widgets carry `Semantics` coverage, and the
   app respects system text scaling, high-contrast, reduce-motion, and bold-text
   preferences. See `.claude/rules/accessibility.md`.
@@ -40,7 +41,7 @@ flutter run -d linux              # or: chrome, windows, macos, android, ios
 ## Command-line options (desktop)
 
 A few startup options are handy for development and testing on desktop targets
-(they are ignored on mobile and web, which don't receive command-line
+(they are ignored on mobile, which doesn't receive command-line
 arguments):
 
 | Option | Effect |

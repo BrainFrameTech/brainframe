@@ -15,8 +15,8 @@ const String _baseLocale = 'en';
 /// no directory, and are uneditable and always pristine by construction. It is
 /// the first non-filesystem backend, so it is the concrete proof that the rest
 /// of the app can reach content through [EngramStore] without assuming a
-/// `Directory`. Asset bundles exist on web too, so the built-ins render there
-/// even though the filesystem store does not.
+/// `Directory` — which is what lets the built-ins render before any engram
+/// container has been resolved.
 ///
 /// Content is **locale-partitioned** under [assetPrefix]: the pages live in
 /// per-locale subdirectories (`assets/engrams/tutorial/en/welcome.md`,

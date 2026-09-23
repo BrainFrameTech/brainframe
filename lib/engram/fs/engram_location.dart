@@ -7,7 +7,8 @@
 /// desktop. Later access kinds (iOS security-scoped bookmarks, iCloud ubiquity
 /// containers) slot in behind this same type without changing callers, so it is
 /// deliberately a plain value with no `dart:io` dependency — it can be
-/// constructed and compared on every platform, including web.
+/// constructed and compared by any code, including the pure layer and tests
+/// that never touch a filesystem.
 class EngramLocation {
   const EngramLocation(this.path);
 

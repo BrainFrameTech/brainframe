@@ -1090,11 +1090,14 @@ must be surfaced at adoption time, not discovered afterwards in a `git diff`.
   `package:sqlite3` v2, before the build-hook mechanism existed. The
   requirement was wrong by the time it was implemented, not merely outdated:
   the dependency tree already resolved v3.
-- **Web has no CRDT, and that is consistent.** `dart:ffi` does not exist on the
-  web, so `crdt_lf_sqlite` cannot load there. Web already has no filesystem
-  store and offers only the read-only built-in engrams, so it needs neither a
-  catalog nor an op-log. The seam must keep SQLite behind the existing
-  conditional-import boundary so a web build never reaches it.
+- **Web has no CRDT, and that is consistent.** *(Superseded 2026-09-22 — web
+  is removed; see [no-web.md](no-web.md). The conditional-import boundary this
+  bullet required no longer exists, and `metadata_db.dart` is now a plain
+  re-export. The observation that a browser could never host the op-log is
+  exactly why the target went.)* `dart:ffi` does not exist on the web, so
+  `crdt_lf_sqlite` cannot load there. Web already has no filesystem store and
+  offers only the read-only built-in engrams, so it needs neither a catalog nor
+  an op-log.
 - **Read-only engrams have neither catalog, op-log, nor identity map.** The
   asset-backed tutorial and help engrams cannot drift and cannot be edited.
   `Engram.readOnly` already gates this, and nothing may be written into an

@@ -164,7 +164,7 @@ class EngramSettingsBackend implements SettingsBackend {
 
 /// A tier that cannot persist: reads return null (so settings fall back to their
 /// defaults) and writes are silently dropped. Used for the per-engram tier of a
-/// read-only built-in engram, or on web where there is no filesystem engram.
+/// read-only built-in engram, which has no directory to hold a settings file.
 class NullSettingsBackend implements SettingsBackend {
   const NullSettingsBackend();
 
@@ -188,8 +188,7 @@ class SettingsStore {
   final SettingsBackend device;
 
   /// Resolves the per-engram backend for the active engram. Returns a
-  /// [NullSettingsBackend] when the active engram can't persist (read-only or
-  /// web).
+  /// [NullSettingsBackend] when the active engram can't persist (read-only).
   final SettingsBackend Function() engram;
 
   SettingsBackend _backend(SettingTier tier) =>

@@ -5,6 +5,11 @@
 - **Date:** 2026-06-30
 - **Companion to:** `../design/engram-storage.md` (the design and its six
   decisions)
+- **Amended 2026-09-22:** web support is removed — see
+  [`../design/no-web.md`](../design/no-web.md). **Step 10 (Web stub) is
+  retired**, and the `fs_store_stub.dart` / `engram_container_stub.dart` files
+  the steps below describe no longer exist. The remaining steps are unaffected;
+  the stub arms they mention simply have no counterpart now.
 
 ## Scope of this plan
 

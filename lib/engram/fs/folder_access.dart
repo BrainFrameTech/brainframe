@@ -64,7 +64,11 @@ class FolderAccessException implements Exception {
   /// found out by opening it, not by resolving it.
   final UnreachableReason reason;
 
-  /// The platform's own words, for the log; never shown to the user.
+  /// The platform's own words, kept for the log: [reason] folds several
+  /// native failures into one, and this is what tells them apart afterwards.
+  ///
+  /// It is untranslated and reaches [toString], so UI must not show this
+  /// exception's text — present [reason] as a localized sentence instead.
   final String? message;
 
   @override

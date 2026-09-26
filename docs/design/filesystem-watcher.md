@@ -1,7 +1,7 @@
 # The filesystem watcher
 
-- **Status:** proposed — under review; not to be marked accepted until every
-  decision below has consensus
+- **Status:** accepted (2026-09-26) — reviewed in **#204**; the choices left
+  open for review are recorded under *Settled in review*
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#70** (parallel track; must land before sync, **#67**)
@@ -124,7 +124,8 @@ filesystem and no timing.
 Events are **batched**: a batch closes after 250 ms without a new event, or 2 s
 after it opened, whichever comes first. An editor's save, a `git checkout`,
 and a sync client's download all arrive as bursts, and one scan per burst is
-the goal. Then, per batch:
+the goal. Both durations are named constants beside the batcher, not literals
+at their call sites, so tuning them is a one-line change. Then, per batch:
 
 1. Drop every hidden path (`isHiddenEngramPath`) — this includes all of
    `.brainframe/`, so the app's own settings, identity-map and temp writes
@@ -169,7 +170,7 @@ unchanged, and returns. The cost of a save is one extra stat.
 What does need fixing is the **temp file's name, which is visible today and
 becomes hidden.**
 
-| | Today | Proposed |
+| | Before this design | Under it |
 | --- | --- | --- |
 | Temp file for `notes/a.md` | `notes/a.md.tmp` | `notes/.a.md.bf-tmp` |
 | Seen by the scan and the watcher | yes | no — a leading dot is a hidden path |
@@ -376,9 +377,10 @@ In dependency order; each is a separately reviewable step.
    natively.
 7. **Lifetime and the failure notice** (Decisions 8, 9) — session ownership,
    the mobile pause/resume ordering, the Housekeeping line.
-8. **Docs** — the companion design's Decision 6 (the trigger list and step
-   1), the `NoteReconciler` and `EngramStore.release` comments, and the manual
-   test plan (below).
+8. **Docs** — the `NoteReconciler` and `EngramStore.release` comments, and
+   the manual test plan (below). The companion design's Decision 6 already
+   carries this design's amendment. Once the watcher ships, its trigger list
+   drops "once **#70** lands".
 
 Steps 1–4 are worth landing even if the watcher itself were never built: they
 close the save-overwrites-external-edit loss on today's triggers.
@@ -436,12 +438,18 @@ In the same change as the implementation (not this design):
   e-ink embedder decides when frames reach the panel, so nothing here changes,
   but the rate of external change is a thing that design should know about.
 
-## Open for review
+## Settled in review
 
-- The batch timings (250 ms quiet, 2 s cap) are starting values, to be
-  measured on the Pi Zero 2 W.
-- Decision 6's overlap order (`theirs` then `mine`) and its choice of
-  duplicated text over conflict markers.
-- Decision 3's rule that targeted reconciles are not recorded in Housekeeping,
-  which means F29 step 13's "Housekeeping counts it" holds only for a change
-  found by a full scan.
+Three choices were left open for review in **#204**, and were settled there:
+
+- **The batch timings** (250 ms quiet, 2 s cap, Decision 3) are the starting
+  values. They live as named constants so they can be tuned when a
+  measurement or a report calls for it — the Pi Zero 2 W being the likeliest
+  place for one to come from. Until then they stand.
+- **Decision 6's overlap order** — `theirs`, then `mine`, with duplicated
+  text preferred to conflict markers — is the rule. It is revisited only if
+  real use turns up a case that demands it.
+- **Decision 3's recording rule** stands as written: a targeted reconcile is
+  not recorded in Housekeeping, so F29 step 13's "Housekeeping counts it"
+  holds only for a change a full scan found. The test plan is to be written
+  to match.

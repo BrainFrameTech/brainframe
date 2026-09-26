@@ -43,6 +43,17 @@ void main() {
       expect(() => store.deleteDirectory('folder'), throwsUnsupportedError);
     });
 
+    test('sweepOrphanedTempFiles sweeps nothing by default', () async {
+      // A store with no atomic writes has no temp files to leave behind.
+      expect(
+        await store.sweepOrphanedTempFiles(
+          listed: const ['.a.md.bf-tmp'],
+          olderThan: Duration.zero,
+        ),
+        isEmpty,
+      );
+    });
+
     test('readSettings returns null by default', () async {
       expect(await store.readSettings(), isNull);
     });

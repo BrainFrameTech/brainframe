@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:brainframe/engram/crdt/catalog.dart';
+import 'package:brainframe/engram/engram_paths.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
@@ -330,6 +331,7 @@ void main() {
           .map((f) => f.path)
           .toList();
       expect(onDisk.any((p) => p.endsWith('.tmp')), isFalse);
+      expect(onDisk.any((p) => p.endsWith(atomicWriteTempSuffix)), isFalse);
       expect(await store.list(), ['a.md']);
     });
 
@@ -341,7 +343,7 @@ void main() {
 
       // Block the temp write by occupying its sibling path with a directory,
       // so writeAsBytes fails before the rename step can run.
-      Directory('${loc.path}/a.md.tmp').createSync();
+      Directory('${loc.path}/.a.md.bf-tmp').createSync();
 
       await expectLater(
         () => store.writeString('a.md', 'replacement'),
@@ -365,9 +367,169 @@ void main() {
       final leftovers = Directory(loc.path)
           .listSync(recursive: true)
           .whereType<File>()
-          .where((f) => f.path.endsWith('.tmp'));
+          .where((f) => f.path.endsWith(atomicWriteTempSuffix));
       expect(leftovers, isEmpty);
     });
+
+    test('the temp file is a hidden sibling of its target', () {
+      // Hidden, so a scan or a watcher that sees the folder mid-write never
+      // takes it for content (the filesystem watcher design, Decision 4).
+      expect(atomicWriteTempNameFor('a.md'), '.a.md.bf-tmp');
+      expect(
+        isHiddenEngramPath('notes/${atomicWriteTempNameFor('a.md')}'),
+        isTrue,
+      );
+    });
+
+    test('only our own suffix on a hidden name is a temp file', () {
+      expect(isAtomicWriteTempPath('.a.md.bf-tmp'), isTrue);
+      expect(isAtomicWriteTempPath('notes/.a.md.bf-tmp'), isTrue);
+      expect(
+        isAtomicWriteTempPath('.brainframe/.settings.json.bf-tmp'),
+        isTrue,
+      );
+      // A visible temp from an older build may by now be the user's note.
+      expect(isAtomicWriteTempPath('a.md.tmp'), isFalse);
+      expect(isAtomicWriteTempPath('a.md.bf-tmp'), isFalse);
+      // Another program's hidden temp is not ours to judge.
+      expect(isAtomicWriteTempPath('.a.md.swp'), isFalse);
+      // A hidden directory's contents are not temp files by that alone.
+      expect(isAtomicWriteTempPath('.x.bf-tmp/a.md'), isFalse);
+      // The suffix alone names nothing.
+      expect(isAtomicWriteTempPath('.bf-tmp'), isFalse);
+    });
+  });
+
+  group('sweepOrphanedTempFiles (the watcher design, Decision 4)', () {
+    const olderThan = Duration(minutes: 10);
+
+    /// Writes [path] under [loc] and backdates it by [age].
+    File plant(EngramLocation loc, String path, {required Duration age}) {
+      final file = File('${loc.path}/$path')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('partial');
+      file.setLastModifiedSync(DateTime.now().subtract(age));
+      return file;
+    }
+
+    test(
+      'deletes old orphans, content and marker alike, and keeps fresh ones',
+      () async {
+        final loc = locFor('e');
+        final store = FileSystemEngramStore(loc);
+        final old = plant(
+          loc,
+          'notes/.a.md.bf-tmp',
+          age: const Duration(hours: 1),
+        );
+        final oldMarker = plant(
+          loc,
+          '.brainframe/.settings.json.bf-tmp',
+          age: const Duration(hours: 1),
+        );
+        final fresh = plant(
+          loc,
+          '.b.md.bf-tmp',
+          age: const Duration(seconds: 5),
+        );
+
+        final swept = await store.sweepOrphanedTempFiles(
+          listed: await store.list(),
+          olderThan: olderThan,
+        );
+
+        expect(
+          swept,
+          unorderedEquals([
+            'notes/.a.md.bf-tmp',
+            '.brainframe/.settings.json.bf-tmp',
+          ]),
+        );
+        expect(old.existsSync(), isFalse);
+        expect(oldMarker.existsSync(), isFalse);
+        expect(fresh.existsSync(), isTrue, reason: 'a write may be in flight');
+      },
+    );
+
+    test(
+      "leaves other programs' files and older builds' visible temps alone",
+      () async {
+        final loc = locFor('e');
+        final store = FileSystemEngramStore(loc);
+        const age = Duration(hours: 1);
+        final swap = plant(loc, '.a.md.swp', age: age);
+        final legacy = plant(loc, 'a.md.tmp', age: age);
+        final visible = plant(loc, 'a.md.bf-tmp', age: age);
+
+        final swept = await store.sweepOrphanedTempFiles(
+          listed: await store.list(),
+          olderThan: olderThan,
+        );
+
+        expect(swept, isEmpty);
+        expect(swap.existsSync(), isTrue);
+        expect(legacy.existsSync(), isTrue);
+        expect(visible.existsSync(), isTrue);
+      },
+    );
+
+    test(
+      'a listed candidate that is gone, or not a file, is skipped',
+      () async {
+        final loc = locFor('e');
+        final store = FileSystemEngramStore(loc);
+        Directory('${loc.path}/.d.bf-tmp').createSync(recursive: true);
+
+        final swept = await store.sweepOrphanedTempFiles(
+          listed: const ['.gone.md.bf-tmp', '.d.bf-tmp'],
+          olderThan: Duration.zero,
+        );
+
+        expect(swept, isEmpty);
+        expect(Directory('${loc.path}/.d.bf-tmp').existsSync(), isTrue);
+      },
+    );
+
+    test('an engram with no marker sweeps only what was listed', () async {
+      final loc = locFor('e');
+      Directory(loc.path).createSync();
+      final store = FileSystemEngramStore(loc);
+
+      expect(
+        await store.sweepOrphanedTempFiles(
+          listed: const [],
+          olderThan: olderThan,
+        ),
+        isEmpty,
+      );
+    });
+
+    test(
+      'a file that cannot be deleted is left for the next sweep',
+      () async {
+        final loc = locFor('e');
+        final store = FileSystemEngramStore(loc);
+        final orphan = plant(
+          loc,
+          'locked/.a.md.bf-tmp',
+          age: const Duration(hours: 1),
+        );
+        // A directory without write permission refuses the unlink.
+        Process.runSync('chmod', ['555', '${loc.path}/locked']);
+        addTearDown(
+          () => Process.runSync('chmod', ['755', '${loc.path}/locked']),
+        );
+
+        final swept = await store.sweepOrphanedTempFiles(
+          listed: await store.list(),
+          olderThan: olderThan,
+        );
+
+        expect(swept, isEmpty);
+        expect(orphan.existsSync(), isTrue);
+      },
+      skip: Platform.isWindows ? 'POSIX permissions' : false,
+    );
   });
 
   group('openFileSystemEngram', () {

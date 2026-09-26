@@ -290,11 +290,11 @@ void main() {
     });
   });
 
-  group('replaceFromDisk', () {
-    test('adopts the text as clean and notifies even when already clean', () {
+  group('mergeFromDisk (the watcher design, Decision 7)', () {
+    test('a clean buffer adopts the file, and notifies', () {
       // The file under the open path was rewritten by reconciliation. The
       // status does not change — saved before, saved after — but the buffer
-      // did, and the pane rebuilds the source field from it on notification.
+      // did, and the pane puts it into the field on notification.
       fakeAsync((async) {
         final store = _RecordingStore();
         final c = _controller(store);
@@ -302,7 +302,7 @@ void main() {
         var notifications = 0;
         c.addListener(() => notifications++);
 
-        c.replaceFromDisk('A merged');
+        c.mergeFromDisk(() async => 'A merged');
         async.flushMicrotasks();
 
         expect(c.text, 'A merged');
@@ -314,45 +314,149 @@ void main() {
       });
     });
 
-    test('discards a dirty buffer and its pending write', () {
-      // The keystrokes between the pre-scan flush and the reload are the
-      // price of a whole-buffer save: keeping them would delete the merged
-      // edit on the next flush instead.
+    test('a dirty buffer is merged with it, and the merge saved', () {
+      // Before, the typing was dropped in favour of the file. Now neither is:
+      // the external edit and the keystrokes both survive, and the ordinary
+      // debounce saves the merge.
       fakeAsync((async) {
         final store = _RecordingStore();
         final c = _controller(store);
-        c.openFile('a.md', 'A');
-        c.edit('A typed');
+        c.openFile('a.md', 'one\ntwo\n');
+        c.edit('ONE\ntwo\n');
 
-        c.replaceFromDisk('A merged');
-        async.flushMicrotasks();
-        async.elapse(const Duration(seconds: 31));
+        c.mergeFromDisk(() async => 'one\ntwo\nthree\n');
         async.flushMicrotasks();
 
-        expect(c.text, 'A merged');
+        expect(c.text, 'ONE\ntwo\nthree\n');
+        expect(c.isDirty, isTrue);
+        expect(c.status, SaveStatus.dirty);
+
+        async.elapse(const Duration(seconds: 5));
+        async.flushMicrotasks();
+        expect(store.writes, ['a.md::ONE\ntwo\nthree\n']);
         expect(c.status, SaveStatus.saved);
-        expect(store.writes, isEmpty, reason: 'the pending write is gone');
         c.dispose();
       });
     });
 
-    test('waits for a write in flight before replacing', () {
-      // Otherwise the write's completion would settle its own text as the
-      // saved text, and the reloaded buffer would look dirty against it.
+    test('the file is read only once a write in flight has landed', () {
+      // Read before our own save lands, the file is older than the saved
+      // text, and merging it would undo that save.
       fakeAsync((async) {
         final store = _RecordingStore();
         final c = _controller(store);
         c.openFile('a.md', 'A');
         c.edit('A typed');
         c.flush(); // in flight: the store's write is a pending microtask
+        final writesSeenByRead = <int>[];
 
-        c.replaceFromDisk('A merged');
+        c.mergeFromDisk(() async {
+          writesSeenByRead.add(store.writes.length);
+          return 'A typed'; // what our own save left on disk
+        });
         async.flushMicrotasks();
 
-        expect(store.writes, ['a.md::A typed']);
-        expect(c.text, 'A merged');
-        expect(c.isDirty, isFalse);
+        expect(writesSeenByRead, [1]);
+        expect(c.text, 'A typed', reason: 'our own save changes nothing');
         expect(c.status, SaveStatus.saved);
+        c.dispose();
+      });
+    });
+
+    test('a write that starts while reading is awaited, and the file re-read',
+        () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'A');
+        var reads = 0;
+
+        c.mergeFromDisk(() async {
+          reads++;
+          if (reads == 1) {
+            c.edit('A typed');
+            c.flush();
+          }
+          return 'A typed';
+        });
+        async.flushMicrotasks();
+
+        expect(reads, 2);
+        expect(c.text, 'A typed');
+        expect(c.isDirty, isFalse);
+        c.dispose();
+      });
+    });
+
+    test('a file that says what was last saved changes nothing', () {
+      // A notification of our own save, or a line-ending rewrite of it.
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'one\n');
+        c.edit('one!\n');
+        var notifications = 0;
+        c.addListener(() => notifications++);
+
+        c.mergeFromDisk(() async => 'one\r\n');
+        async.flushMicrotasks();
+
+        expect(c.text, 'one!\n');
+        expect(notifications, 0);
+        c.dispose();
+      });
+    });
+
+    test('a merge over the size limit is withheld', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store)..sizeLimitBytes = 12;
+        c.openFile('a.md', 'one\n');
+        c.edit('one typed\n');
+
+        c.mergeFromDisk(() async => 'one\nplus more\n');
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 31));
+        async.flushMicrotasks();
+
+        expect(c.text, 'one typed\nplus more\n');
+        expect(c.status, SaveStatus.overLimit);
+        expect(store.writes, isEmpty, reason: 'nothing is saved past it');
+        c.dispose();
+      });
+    });
+
+    test('a merge that ends where the file is, is clean', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'one\n');
+        c.edit('one\ntwo\n');
+
+        // The same line was added outside: the merge applies it once.
+        c.mergeFromDisk(() async => 'one\ntwo\n');
+        async.flushMicrotasks();
+
+        expect(c.text, 'one\ntwo\n');
+        expect(c.status, SaveStatus.saved);
+        c.dispose();
+      });
+    });
+
+    test('a file switched away from while reading is left alone', () {
+      fakeAsync((async) {
+        final store = _RecordingStore();
+        final c = _controller(store);
+        c.openFile('a.md', 'A');
+
+        c.mergeFromDisk(() async {
+          await c.openFile('b.md', 'B');
+          return 'A merged';
+        });
+        async.flushMicrotasks();
+
+        expect(c.path, 'b.md');
+        expect(c.text, 'B');
         c.dispose();
       });
     });
@@ -363,11 +467,16 @@ void main() {
         final c = _controller(store);
         var notifications = 0;
         c.addListener(() => notifications++);
+        var reads = 0;
 
-        c.replaceFromDisk('nothing to replace');
+        c.mergeFromDisk(() async {
+          reads++;
+          return 'nothing to merge';
+        });
         async.flushMicrotasks();
 
         expect(c.text, '');
+        expect(reads, 0);
         expect(notifications, 0);
         c.dispose();
       });

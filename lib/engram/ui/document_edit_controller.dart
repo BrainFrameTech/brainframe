@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../commands/pending_saves.dart';
 import '../crdt/catalog.dart';
+import '../crdt/line_terminators.dart';
 import '../note_writer.dart';
 import '../text_merge.dart';
 
@@ -147,30 +148,63 @@ class DocumentEditController extends ChangeNotifier
     _setStatus(SaveStatus.saved);
   }
 
-  /// Adopts [text] as the open file's on-disk content, discarding the buffer.
+  /// Takes in the open file's content from disk, as [read] returns it, after
+  /// the file *under the open path* was rewritten — reconciliation took in an
+  /// edit made outside the app — so the buffer no longer knows what is on
+  /// disk (the filesystem watcher design, Decision 7).
   ///
-  /// For the one case [openFile] cannot cover: the file *under the open path*
-  /// was rewritten — reconciliation merged an edit made outside the app — so
-  /// the buffer no longer knows what is on disk, and the next save would diff
-  /// against a history that has moved on and delete the merged edit as though
-  /// the user had removed it. Reloading is what keeps a whole-buffer save
-  /// honest; a CRDT-aware editor (#85) is what eventually makes it unnecessary.
+  /// - **A clean buffer** adopts the file: it becomes the buffer and the saved
+  ///   text alike.
+  /// - **A dirty buffer** is merged with it, three ways, from the text the
+  ///   buffer grew from ([threeWayMerge]). Nothing typed is dropped, and
+  ///   nothing the file gained is either. The file becomes the saved text and
+  ///   the buffer stays dirty, so the ordinary debounce saves the merge —
+  ///   unless the merge is over the size limit, when it is withheld like any
+  ///   buffer that is.
   ///
-  /// A write already in flight is awaited first, so its completion cannot
-  /// settle stale state over the reload. Any keystrokes made between the
-  /// pre-scan flush and this call are dropped: that window is the length of
-  /// one note's reconciliation, and the alternative — saving them — would
-  /// discard the external edit instead. A no-op before a file is opened.
-  Future<void> replaceFromDisk(String text) async {
-    if (_path == null) return;
-    final inFlight = _writing;
-    if (inFlight != null) await inFlight;
-    _cancelTimers();
-    _buffer = text;
+  /// [read] is called here, not by the caller, and only once no write is in
+  /// flight: a file read before a save of ours lands is older than the saved
+  /// text, and merging it would undo that save. If a new write starts while
+  /// reading, it is awaited and the file read again. A file that says what the
+  /// saved text says — which is what a notification of our own save reads —
+  /// changes nothing, so a duplicate notification is harmless. A no-op before
+  /// a file is opened, and if the file is switched away from meanwhile.
+  Future<void> mergeFromDisk(Future<String> Function() read) async {
+    final path = _path;
+    if (path == null) return;
+    String text;
+    do {
+      final inFlight = _writing;
+      if (inFlight != null) await inFlight;
+      text = await read();
+      if (_path != path) return;
+    } while (_writing != null);
+
+    if (!isDirty) {
+      _cancelTimers();
+      _buffer = text;
+      _savedText = text;
+      _status = SaveStatus.saved;
+      // Always, not only on a status change: the buffer changed even when
+      // the status did not, and the pane puts it into the field.
+      notifyListeners();
+      return;
+    }
+    if (normalizeTerminators(text) == normalizeTerminators(_savedText)) return;
+    _buffer = threeWayMerge(base: _savedText, mine: _buffer, theirs: text);
     _savedText = text;
-    _status = SaveStatus.saved;
-    // Always, not only on a status change: the buffer changed even when the
-    // status did not, and the pane rebuilds the source field from the buffer.
+    if (_overLimit(_buffer)) {
+      _cancelTimers();
+      _status = SaveStatus.overLimit;
+    } else if (isDirty) {
+      _idleTimer?.cancel();
+      _idleTimer = Timer(idleDebounce, _flushFromTimer);
+      _maxWaitTimer ??= Timer(maxWait, _flushFromTimer);
+      _status = SaveStatus.dirty;
+    } else {
+      _cancelTimers();
+      _status = SaveStatus.saved;
+    }
     notifyListeners();
   }
 

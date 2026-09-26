@@ -775,7 +775,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       // file before it.
       final current = database.catalog.byUlid(row.ulid);
       if (current == null || !_hasFile(current.state)) return _Drift.none;
-      return (await _reconcileHeld(current)).drift;
+      return _reconcileHeld(current);
     });
   }
 
@@ -783,47 +783,41 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   /// [_reconcileHeld] for a note about to be saved, under the writer's lock,
   /// announcing nothing.
   @override
-  Future<String?> reconcileBeforeSave(CatalogRow row) async {
+  Future<void> reconcileBeforeSave(CatalogRow row) async {
     final current = database.catalog.byUlid(row.ulid);
-    if (current == null || !_hasFile(current.state)) return null;
-    final (:drift, :text) = await _reconcileHeld(current, announce: false);
+    if (current == null || !_hasFile(current.state)) return;
+    final drift = await _reconcileHeld(current, announce: false);
     if (drift == _Drift.awaitingDecision) {
       throw StateError(
         '${current.path} grew past the note size ceiling outside the app and '
         'awaits a decision',
       );
     }
-    return drift == _Drift.reconciled ? text : null;
   }
 
   /// Decision 6, steps 2–6, for [current], with the lock already held: what
   /// both the scan and a save run.
   ///
-  /// Returns what happened and, for a text note whose drift was reconciled,
-  /// the note's text afterwards — which a save merges its buffer with.
   /// [announce] is whether a change goes out on [reconciled]; a save turns it
   /// off, since the saving editor learns the result from the save itself.
-  Future<({_Drift drift, String? text})> _reconcileHeld(
+  Future<_Drift> _reconcileHeld(
     CatalogRow found, {
     bool announce = true,
   }) async {
-    const unchanged = (drift: _Drift.none, text: null);
+    const unchanged = _Drift.none;
     var current = found;
     final stat = await engram.statFile(current.path);
     if (stat == null) return unchanged; // gone: the scan's question
     if (current.mergePolicy != MergePolicy.fugueText) {
       return await _reconcileBlob(current, stat, announce: announce)
-          ? (drift: _Drift.reconciled, text: null)
+          ? _Drift.reconciled
           : unchanged;
     }
     // Nothing to diff into, so none of the below applies — not the ceiling
     // either, which guards a history from being opened whole, and this note
     // has none here. What the scan can still do is look.
     if (current.state == NoteState.historyPending) {
-      return (
-        drift: await _observe(current, stat, announce: announce),
-        text: null,
-      );
+      return _observe(current, stat, announce: announce);
     }
 
     // The ceiling, from the stat and before any read, and whether or not
@@ -836,7 +830,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     if (stat.size > noteSizeCeilingBytes) {
       if (current.state == NoteState.oversized) return unchanged;
       database.catalog.upsert(_withState(current, NoteState.oversized));
-      return (drift: _Drift.awaitingDecision, text: null);
+      return _Drift.awaitingDecision;
     }
     if (current.state == NoteState.oversized) {
       current = _withState(current, NoteState.live);
@@ -874,17 +868,13 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       // file stays as the user left it, which is what Decision 4's bounded
       // exception promises, and the eventual log reconciles it then. What
       // it holds is still noted, as for a history-pending row.
-      return (
-        drift: await _recordObserved(
-          current,
-          ContentDigest(hash: onDiskHash, size: bytes.length),
-          utf8.decode(bytes),
-          announce: announce,
-        ),
-        text: null,
+      return _recordObserved(
+        current,
+        ContentDigest(hash: onDiskHash, size: bytes.length),
+        utf8.decode(bytes),
+        announce: announce,
       );
     }
-    final String text;
     try {
       // Steps 3 and 4: a minimal script — never replace-all — applied in
       // one transaction. Terminators are normalized on the way in, so a
@@ -901,12 +891,11 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
         note: note,
         onDiskHash: onDiskHash,
       );
-      text = note.value;
     } finally {
       note.dispose();
     }
     if (announce) _reconciled.add(current.path);
-    return (drift: _Drift.reconciled, text: text);
+    return _Drift.reconciled;
   }
 
   /// Whether a row in [state] has a file the scan should look at. A

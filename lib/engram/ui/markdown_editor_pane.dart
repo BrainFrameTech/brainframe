@@ -271,11 +271,22 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   }
 
   void _onControllerChanged() {
+    // The buffer changed by something other than typing — an edit from disk
+    // merged in, a save that merged with one — goes into the field now, caret
+    // carried through, not on the next rebuild: a keystroke in between would
+    // report the field's old text back as the buffer and undo the merge.
+    // Typing itself never lands here with a difference, since the field is
+    // where it came from.
+    final shown = _editor.text;
+    if (shown != null && shown != _controller.text) {
+      _editor.syncText(_controller.text);
+    }
     if (mounted) setState(() {}); // refresh the save-status chip
   }
 
   /// A note was reconciled somewhere. If it is the one on screen, its file no
-  /// longer matches the buffer, and the buffer has to yield.
+  /// longer matches the buffer, and the buffer takes it in — merging with
+  /// anything typed, rather than yielding to it.
   void _onReconciled(String path) {
     // Only a note that has finished loading: one mid-open reads the
     // reconciled file anyway, and one that has moved on is not ours.
@@ -299,9 +310,9 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
 
   Future<void> _reload(String path) async {
     try {
-      final text = await widget.store.readString(path);
-      if (!mounted || widget.path != path) return;
-      await _controller.replaceFromDisk(text);
+      // The controller reads, once any save of its own has landed, so what
+      // it merges is never older than what it last saved.
+      await _controller.mergeFromDisk(() => widget.store.readString(path));
       if (!mounted || widget.path != path) return;
       // Matches were found in text that no longer exists.
       if (_findOpen) setState(() => _search(_findQuery.text));

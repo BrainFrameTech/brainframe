@@ -167,6 +167,48 @@ void main() {
     });
   });
 
+  group('offsetMapping (the caret, Decision 7)', () {
+    int map(String before, String after, int offset) =>
+        offsetMapping(before, after)(offset);
+
+    test('identical text maps every position to itself', () {
+      expect(map('abc', 'abc', 2), 2);
+    });
+
+    test('a position before a change stays', () {
+      expect(map('hello world', 'hello world!', 3), 3);
+    });
+
+    test('a position after a change shifts by what it added or removed', () {
+      expect(map('hello world', 'oh, hello world', 5), 9);
+      expect(map('oh, hello world', 'hello world', 9), 5);
+    });
+
+    test('a position exactly where text is inserted stays before it', () {
+      // The user keeps typing where they were when text lands at the caret.
+      expect(map('ab', 'aXb', 1), 1);
+    });
+
+    test('a position inside a replaced span moves to the end of it', () {
+      expect(map('one two three', 'one 45 three', 5), 6);
+    });
+
+    test('a position inside a removed span moves to where it was', () {
+      expect(map('keep drop keep', 'keep keep', 7), 5);
+    });
+
+    test('positions are mapped by one diff, however many', () {
+      final mapping = offsetMapping('a\nb\nc\n', 'A\na\nb\nc\nd\n');
+      // 0 is where "A\n" is inserted, so it stays; the rest shift past it.
+      expect([0, 1, 2, 6].map(mapping).toList(), [0, 3, 4, 8]);
+    });
+
+    test('line endings are exact, not normalized', () {
+      // A field holding CRLF maps into one holding LF position by position.
+      expect(map('a\r\nb\r\n', 'a\nb\n', 3), 2);
+    });
+  });
+
   group('line endings', () {
     test('a conversion to CRLF is not an edit', () {
       expect(merge('a\nb\n', 'a\nb!\n', 'a\r\nb\r\n'), 'a\nb!\n');

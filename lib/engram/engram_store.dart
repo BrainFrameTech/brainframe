@@ -117,6 +117,23 @@ abstract class EngramStore {
   Future<FileFingerprint?> statFile(String path) =>
       throw UnsupportedError('This store cannot stat "$path".');
 
+  /// Deletes the temp files this store's own atomic writes left behind — a
+  /// crash between writing one and renaming it over its target — once they
+  /// are more than [olderThan] old, and returns the engram-relative paths
+  /// deleted (the filesystem watcher design, Decision 4).
+  ///
+  /// [listed] is the caller's listing of the folder, from [list], so the sweep
+  /// adds no walk of its own. The age is what keeps a second instance's write
+  /// in flight safe: its temp file lives for milliseconds, and no lock of
+  /// this app's reaches the other instance.
+  ///
+  /// Never throws for one file's sake. Defaults to sweeping nothing: a store
+  /// with no atomic writes has no temp files to leave behind.
+  Future<List<String>> sweepOrphanedTempFiles({
+    required Iterable<String> listed,
+    required Duration olderThan,
+  }) async => const [];
+
   /// Deletes the file at engram-relative [path].
   ///
   /// Deleting a path that is not an existing file is an error, surfaced by the

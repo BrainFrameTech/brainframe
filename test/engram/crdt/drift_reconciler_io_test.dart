@@ -1616,6 +1616,76 @@ void main() {
     );
   });
 
+  group('orphaned temp files (the watcher design, Decision 4)', () {
+    /// A temp file a crash left behind at [path], [age] old.
+    File orphan(String path, {Duration age = const Duration(hours: 1)}) {
+      final file = File('$engramRoot/$path')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('half a save');
+      file.setLastModifiedSync(DateTime.now().subtract(age));
+      return file;
+    }
+
+    test('a complete scan sweeps old ones and never mints any', () async {
+      final lines = <String>[];
+      final d = await device(trace: lines.add);
+      await engram.writeString('a.md', 'a note\n');
+      final old = orphan('notes/.a.md.bf-tmp');
+      final marker = orphan('.brainframe/.settings.json.bf-tmp');
+      final fresh = orphan('.b.md.bf-tmp', age: const Duration(seconds: 5));
+
+      final report = await d.reconciler.scan();
+
+      expect(report.created, ['a.md']);
+      expect(old.existsSync(), isFalse);
+      expect(marker.existsSync(), isFalse);
+      expect(fresh.existsSync(), isTrue, reason: 'a write may be in flight');
+      expect(d.store.catalog.byPath('.b.md.bf-tmp'), isNull);
+      expect(
+        lines,
+        contains('scan: swept orphaned temp file notes/.a.md.bf-tmp'),
+      );
+    });
+
+    test('a sweep is not a finding', () async {
+      final d = await device();
+      orphan('.a.md.bf-tmp');
+
+      final report = await d.reconciler.scan();
+
+      expect(report.isClean, isTrue);
+      expect(await d.reconciler.recentScans(), isEmpty);
+    });
+
+    test('a scan that could not list the folder sweeps nothing', () async {
+      final store = MetadataDatabase.openInMemory();
+      addTearDown(store.close);
+      final reconciler = DriftReconciler(
+        database: store,
+        engram: engram,
+        lock: NoteDocumentLock(),
+        identity: null,
+      );
+      addTearDown(reconciler.close);
+      final old = orphan('.a.md.bf-tmp');
+
+      final report = await reconciler.scan();
+
+      expect(report.complete, isFalse);
+      expect(old.existsSync(), isTrue);
+    });
+
+    test('a sweep that throws does not fail the scan', () async {
+      final d = await device(over: _SweepFails(engram));
+      await engram.writeString('a.md', 'a note\n');
+
+      final report = await d.reconciler.scan();
+
+      expect(report.created, ['a.md']);
+      expect(report.failed, isEmpty);
+    });
+  });
+
   group('moves (Decision 7)', () {
     test('a gone path and a new one with the same content is a move', () async {
       // Exactly how git detects a rename: keep the id and the history.
@@ -2795,4 +2865,37 @@ class _NoWholeBlobStore extends EngramStore {
 
   @override
   Future<FileFingerprint?> statFile(String path) => inner.statFile(path);
+}
+
+/// A store over the real one whose orphan sweep throws: what proves a sweep
+/// that fails is logged rather than failing the scan it rode on.
+class _SweepFails extends EngramStore {
+  _SweepFails(this.inner);
+
+  final FileSystemEngramStore inner;
+
+  @override
+  Future<List<String>> list() => inner.list();
+
+  @override
+  Future<List<String>> listDirectories() => inner.listDirectories();
+
+  @override
+  Future<Uint8List> readBytes(String path) => inner.readBytes(path);
+
+  @override
+  Stream<List<int>> openRead(String path) => inner.openRead(path);
+
+  @override
+  Future<void> writeBytes(String path, Uint8List bytes) =>
+      inner.writeBytes(path, bytes);
+
+  @override
+  Future<FileFingerprint?> statFile(String path) => inner.statFile(path);
+
+  @override
+  Future<List<String>> sweepOrphanedTempFiles({
+    required Iterable<String> listed,
+    required Duration olderThan,
+  }) => throw const FileSystemException('marker unreadable');
 }

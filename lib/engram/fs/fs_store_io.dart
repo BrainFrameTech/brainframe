@@ -21,6 +21,27 @@ const String _metadataFileName = 'engram.json';
 /// store's per-engram tier; see [EngramStore.readSettings]).
 const String _settingsFileName = 'settings.json';
 
+/// The suffix that marks a file as this store's atomic-write temp file.
+///
+/// Our own, so the orphan sweep can tell its temp files from anyone else's:
+/// another program's hidden files are never deleted.
+const String atomicWriteTempSuffix = '.bf-tmp';
+
+/// The name of the temp file an atomic write of the file [name] goes through:
+/// `.<name>.bf-tmp`, in the same directory. The leading dot makes it a hidden
+/// path, which the scan and the watcher both ignore.
+String atomicWriteTempNameFor(String name) => '.$name$atomicWriteTempSuffix';
+
+/// Whether the engram-relative [path] names an atomic-write temp file —
+/// `.<name>.bf-tmp` — as opposed to any other hidden file, or a visible
+/// `*.tmp` left by an older build, which may by now be the user's.
+bool isAtomicWriteTempPath(String path) {
+  final name = path.substring(path.lastIndexOf('/') + 1);
+  return name.length > 1 + atomicWriteTempSuffix.length &&
+      name.startsWith('.') &&
+      name.endsWith(atomicWriteTempSuffix);
+}
+
 /// A read-write [EngramStore] over an on-disk directory.
 ///
 /// This is the only place in the app that touches a `dart:io` [Directory];
@@ -213,6 +234,62 @@ class FileSystemEngramStore extends EngramStore {
   @override
   String? get locationDescription => _rootPath;
 
+  /// Deletes this store's atomic-write temp files ([isAtomicWriteTempPath])
+  /// whose modification time is more than [olderThan] ago, and returns the
+  /// engram-relative paths it deleted.
+  ///
+  /// Content candidates come from [listed] — the caller's own listing of the
+  /// folder, so the sweep walks nothing twice — and the marker directory,
+  /// which [list] never includes, is listed here; it holds a handful of
+  /// files. A candidate that has vanished, is younger than the cutoff, or
+  /// cannot be deleted is left alone; the last is logged and retried on the
+  /// next sweep.
+  @override
+  Future<List<String>> sweepOrphanedTempFiles({
+    required Iterable<String> listed,
+    required Duration olderThan,
+  }) async {
+    final candidates = [
+      ...listed.where(isAtomicWriteTempPath),
+      ...await _markerTempFiles(),
+    ];
+    final cutoff = DateTime.now().subtract(olderThan);
+    final swept = <String>[];
+    for (final path in candidates) {
+      final file = File('$_rootPath/$path');
+      try {
+        final stat = await file.stat();
+        if (stat.type != FileSystemEntityType.file) continue;
+        if (!stat.modified.isBefore(cutoff)) continue;
+        await file.delete();
+        swept.add(path);
+      } on FileSystemException catch (error, stackTrace) {
+        developer.log(
+          'Could not sweep orphaned temp file $path at $_rootPath.',
+          name: 'brainframe.engram.fs',
+          level: 900,
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    return swept;
+  }
+
+  /// Every atomic-write temp file under the marker directory, engram-relative.
+  Future<List<String>> _markerTempFiles() async {
+    final marker = Directory('$_rootPath/$markerDirectoryName');
+    if (!await marker.exists()) return const [];
+    return [
+      await for (final entity in marker.list(
+        recursive: true,
+        followLinks: false,
+      ))
+        if (entity is File && isAtomicWriteTempPath(_relativeOf(entity.path)))
+          _relativeOf(entity.path),
+    ];
+  }
+
   /// Writes [bytes] to [file] atomically (Decision 5): write a sibling temp
   /// file with the data flushed to disk, then `rename` it over [file]. Rename
   /// is atomic within a filesystem, so an interrupted write (crash, power loss)
@@ -221,8 +298,16 @@ class FileSystemEngramStore extends EngramStore {
   /// on one filesystem; on failure before the rename it is cleaned up and
   /// [file] is left untouched. Writes to the same [file] must not run
   /// concurrently — the save pipeline serializes them per path.
+  ///
+  /// The temp file is **hidden** ([atomicWriteTempNameFor]), so a scan or a
+  /// watcher that sees the folder mid-write never takes it for content, and
+  /// one a crash leaves behind is never minted as a note. The scan sweeps
+  /// those orphans instead ([sweepOrphanedTempFiles]; the filesystem watcher
+  /// design, Decision 4).
   Future<void> _atomicWrite(File file, Uint8List bytes) async {
-    final temp = File('${file.path}.tmp');
+    final temp = File(
+      '${file.parent.path}/${atomicWriteTempNameFor(file.uri.pathSegments.last)}',
+    );
     try {
       await temp.writeAsBytes(bytes, flush: true);
       await temp.rename(file.path);

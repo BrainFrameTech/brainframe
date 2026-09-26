@@ -60,6 +60,14 @@ import 'sketch.dart';
 /// Logger name for scan diagnostics (see `dart:developer`).
 const String driftScanLogName = 'brainframe.engram.drift';
 
+/// How old an atomic-write temp file must be before a scan treats it as an
+/// orphan and deletes it (the filesystem watcher design, Decision 4).
+///
+/// A save holds its temp file for milliseconds. The margin is for a second
+/// BrainFrame instance over the same folder, whose write in flight no lock of
+/// ours can see; an orphan harms nothing while it waits.
+const Duration orphanedTempFileAge = Duration(minutes: 10);
+
 /// Reconciles the folder into the catalog, one note at a time.
 class DriftReconciler implements NoteReconciler {
   DriftReconciler({
@@ -407,6 +415,7 @@ class DriftReconciler implements NoteReconciler {
     // that does not exist lists as empty rather than failing, and "empty"
     // from an unmounted drive is not "every note was deleted".
     Object? listingFailure;
+    var listed = const <String>[];
     var onDisk = <String>{};
     final map = identity;
     if (map == null) {
@@ -418,8 +427,9 @@ class DriftReconciler implements NoteReconciler {
       );
     } else {
       try {
+        listed = await engram.list();
         onDisk = {
-          for (final path in await engram.list())
+          for (final path in listed)
             if (!isHiddenEngramPath(path)) path,
         };
       } on Object catch (error, stack) {
@@ -605,6 +615,8 @@ class DriftReconciler implements NoteReconciler {
       }
     }
 
+    if (complete && !_closed) await _sweepOrphanedTempFiles(listed);
+
     trace?.call(
       'scan: done — ${reconciled.length} reconciled, ${created.length} '
       'created, ${adopted.length} adopted, ${oversized.length} oversized, '
@@ -624,6 +636,33 @@ class DriftReconciler implements NoteReconciler {
       awaitingDecision: awaitingDecision,
       listingFailure: listingFailure,
     );
+  }
+
+  /// Deletes the atomic-write temp files a crash left behind, from the
+  /// listing this scan already made (the filesystem watcher design, Decision
+  /// 4). Only after a complete listing, which is the only time the folder has
+  /// been walked in full.
+  ///
+  /// Housekeeping never hears of it: a swept temp file is not a finding, and
+  /// one that cannot be deleted is retried by the next scan. The store logs
+  /// per-file failures itself; this catches only the marker listing failing.
+  Future<void> _sweepOrphanedTempFiles(List<String> listed) async {
+    try {
+      final swept = await engram.sweepOrphanedTempFiles(
+        listed: listed,
+        olderThan: orphanedTempFileAge,
+      );
+      for (final path in swept) {
+        trace?.call('scan: swept orphaned temp file $path');
+      }
+    } on Object catch (error, stack) {
+      developer.log(
+        'orphaned temp files could not be swept',
+        name: driftScanLogName,
+        error: error,
+        stackTrace: stack,
+      );
+    }
   }
 
   void _fail(

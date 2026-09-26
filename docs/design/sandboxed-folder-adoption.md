@@ -1,6 +1,6 @@
 # Adopting a folder on the sandboxed platforms
 
-- **Status:** draft — in review
+- **Status:** accepted (2026-09-26) — reviewed in **#207**
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#94**

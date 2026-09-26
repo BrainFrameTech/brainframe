@@ -1,8 +1,8 @@
 # The filesystem watcher
 
 - **Status:** accepted (2026-09-26) — reviewed in **#204**; the choices left
-  open for review are recorded under *Settled in review*; Decision 6 amended
-  2026-09-26, when the merge was built: line endings are normalized first
+  open for review are recorded under *Settled in review*; Decisions 5 and 6
+  amended 2026-09-26, when the save path and the merge were built
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#70** (parallel track; must land before sync, **#67**)
@@ -251,6 +251,26 @@ they have: the blob writer reconciles drift as a last-writer-wins claim first
 (the merge of a blob is "the later write wins", and the external one is
 recorded before ours replaces it); `DirectNoteWriter`, with no catalog, reads
 the file and merges if it differs from `base`.
+
+*Amended 2026-09-26, when the save path was built:*
+
+- **`base` is optional.** The editor always passes it. A caller with no base
+  — a test, a tool over a folder it owns — gets the drift reconciled into
+  history all the same, and its text then saved over it as the caller's
+  word. Requiring it would have changed ~150 call sites to no one's benefit.
+- **The check is the reconciler's.** The writers ask it through a small seam
+  (`PreSaveCheck.reconcileBeforeSave`) rather than repeating the scan's stat,
+  hash, ceiling and states, so there is one answer to "has this file
+  changed". The session wires it; a writer built without one writes without
+  looking, as every save did before.
+- **The save's reconciliation is not announced on `reconciled`** (step 3
+  above said it would be). The saving editor learns the result from the
+  save's return; an announcement would make the pane reload from disk,
+  racing the very save it is waiting on.
+- **A merge over the ceiling is refused whole** with a
+  `NoteMergeOverLimitException` carrying the merge and what the note now
+  holds. The external edit is already history; the editor holds the merge as
+  a withheld buffer, as though it had been typed.
 
 This retires Decision 6 step 1 of the companion design — "flush the editor
 first" — as a *correctness* requirement. A reconcile under an unsaved buffer

@@ -55,6 +55,7 @@ import 'materializer_io.dart';
 import 'metadata_db_io.dart';
 import 'note_document_io.dart';
 import 'note_document_lock.dart';
+import 'pre_save_check.dart';
 import 'sketch.dart';
 
 /// Logger name for scan diagnostics (see `dart:developer`).
@@ -69,7 +70,7 @@ const String driftScanLogName = 'brainframe.engram.drift';
 const Duration orphanedTempFileAge = Duration(minutes: 10);
 
 /// Reconciles the folder into the catalog, one note at a time.
-class DriftReconciler implements NoteReconciler {
+class DriftReconciler implements NoteReconciler, PreSaveCheck {
   DriftReconciler({
     required this.database,
     required this.engram,
@@ -114,6 +115,7 @@ class DriftReconciler implements NoteReconciler {
   /// ceiling design, Decision 7). A text file arriving larger than this is
   /// minted as a plain file (Decision 6); the decision is made from a
   /// `stat`, before any read, so the file is never loaded to find out.
+  @override
   int noteSizeCeilingBytes;
 
   final StreamController<String> _reconciled =
@@ -771,99 +773,140 @@ class DriftReconciler implements NoteReconciler {
       // Re-read under the lock: a save that was ahead of us in the queue has
       // just committed a new hash, and the row we were handed describes the
       // file before it.
-      var current = database.catalog.byUlid(row.ulid);
+      final current = database.catalog.byUlid(row.ulid);
       if (current == null || !_hasFile(current.state)) return _Drift.none;
+      return (await _reconcileHeld(current)).drift;
+    });
+  }
 
-      final stat = await engram.statFile(current.path);
-      if (stat == null) return _Drift.none; // gone: the scan's question
-      if (current.mergePolicy != MergePolicy.fugueText) {
-        return await _reconcileBlob(current, stat)
-            ? _Drift.reconciled
-            : _Drift.none;
-      }
-      // Nothing to diff into, so none of the below applies — not the
-      // ceiling either, which guards a history from being opened whole,
-      // and this note has none here. What the scan can still do is look.
-      if (current.state == NoteState.historyPending) {
-        return _observe(current, stat);
-      }
+  /// The save path's question (the filesystem watcher design, Decision 5):
+  /// [_reconcileHeld] for a note about to be saved, under the writer's lock,
+  /// announcing nothing.
+  @override
+  Future<String?> reconcileBeforeSave(CatalogRow row) async {
+    final current = database.catalog.byUlid(row.ulid);
+    if (current == null || !_hasFile(current.state)) return null;
+    final (:drift, :text) = await _reconcileHeld(current, announce: false);
+    if (drift == _Drift.awaitingDecision) {
+      throw StateError(
+        '${current.path} grew past the note size ceiling outside the app and '
+        'awaits a decision',
+      );
+    }
+    return drift == _Drift.reconciled ? text : null;
+  }
 
-      // The ceiling, from the stat and before any read, and whether or not
-      // the file looks changed — a lowered ceiling changes nothing on disk.
-      // A text note over it has a history and is too large to open as one:
-      // it waits for the user (the note size ceiling design, Decision 4).
-      // The file is left exactly as found; nothing below runs for it. A
-      // note that was waiting and is now back under the line has been
-      // trimmed outside the app, and comes back as ordinary drift.
-      if (stat.size > noteSizeCeilingBytes) {
-        if (current.state == NoteState.oversized) return _Drift.none;
-        database.catalog.upsert(_withState(current, NoteState.oversized));
-        return _Drift.awaitingDecision;
-      }
-      if (current.state == NoteState.oversized) {
-        current = _withState(current, NoteState.live);
-        database.catalog.upsert(current);
-      }
+  /// Decision 6, steps 2–6, for [current], with the lock already held: what
+  /// both the scan and a save run.
+  ///
+  /// Returns what happened and, for a text note whose drift was reconciled,
+  /// the note's text afterwards — which a save merges its buffer with.
+  /// [announce] is whether a change goes out on [reconciled]; a save turns it
+  /// off, since the saving editor learns the result from the save itself.
+  Future<({_Drift drift, String? text})> _reconcileHeld(
+    CatalogRow found, {
+    bool announce = true,
+  }) async {
+    const unchanged = (drift: _Drift.none, text: null);
+    var current = found;
+    final stat = await engram.statFile(current.path);
+    if (stat == null) return unchanged; // gone: the scan's question
+    if (current.mergePolicy != MergePolicy.fugueText) {
+      return await _reconcileBlob(current, stat, announce: announce)
+          ? (drift: _Drift.reconciled, text: null)
+          : unchanged;
+    }
+    // Nothing to diff into, so none of the below applies — not the ceiling
+    // either, which guards a history from being opened whole, and this note
+    // has none here. What the scan can still do is look.
+    if (current.state == NoteState.historyPending) {
+      return (
+        drift: await _observe(current, stat, announce: announce),
+        text: null,
+      );
+    }
 
-      // Decision 5's two-stage test, with the file's bytes kept: the hash the
-      // pre-filter could not rule out is the same one the materializer uses
-      // to decide whether the write-back is needed. A row with no sketch —
-      // one that predates the sketch — reads the file regardless, so the
-      // sketch can be built from it.
-      if (current.sketch != null && !mayHaveDrifted(current, stat)) {
-        return _Drift.none;
-      }
-      final bytes = await engram.readBytes(current.path);
-      final onDiskHash = contentHash(bytes);
-      if (!hasDrifted(current, onDiskHash)) {
-        if (current.sketch == null) {
-          await recordFileState(
-            store: database,
-            engram: engram,
-            row: current,
-            digest: ContentDigest(hash: onDiskHash, size: bytes.length),
-            text: utf8.decode(bytes),
-          );
-        }
-        return _Drift.none;
-      }
+    // The ceiling, from the stat and before any read, and whether or not
+    // the file looks changed — a lowered ceiling changes nothing on disk.
+    // A text note over it has a history and is too large to open as one:
+    // it waits for the user (the note size ceiling design, Decision 4).
+    // The file is left exactly as found; nothing below runs for it. A
+    // note that was waiting and is now back under the line has been
+    // trimmed outside the app, and comes back as ordinary drift.
+    if (stat.size > noteSizeCeilingBytes) {
+      if (current.state == NoteState.oversized) return unchanged;
+      database.catalog.upsert(_withState(current, NoteState.oversized));
+      return (drift: _Drift.awaitingDecision, text: null);
+    }
+    if (current.state == NoteState.oversized) {
+      current = _withState(current, NoteState.live);
+      database.catalog.upsert(current);
+    }
 
-      final NoteDocument note;
-      try {
-        note = NoteDocument.open(store: database, ulid: current.ulid);
-      } on NoteHistoryPendingException {
-        // A live row whose log has not arrived: nothing to diff into. The
-        // file stays as the user left it, which is what Decision 4's bounded
-        // exception promises, and the eventual log reconciles it then. What
-        // it holds is still noted, as for a history-pending row.
-        return _recordObserved(
+    // Decision 5's two-stage test, with the file's bytes kept: the hash the
+    // pre-filter could not rule out is the same one the materializer uses
+    // to decide whether the write-back is needed. A row with no sketch —
+    // one that predates the sketch — reads the file regardless, so the
+    // sketch can be built from it.
+    if (current.sketch != null && !mayHaveDrifted(current, stat)) {
+      return unchanged;
+    }
+    final bytes = await engram.readBytes(current.path);
+    final onDiskHash = contentHash(bytes);
+    if (!hasDrifted(current, onDiskHash)) {
+      if (current.sketch == null) {
+        await recordFileState(
+          store: database,
+          engram: engram,
+          row: current,
+          digest: ContentDigest(hash: onDiskHash, size: bytes.length),
+          text: utf8.decode(bytes),
+        );
+      }
+      return unchanged;
+    }
+
+    final NoteDocument note;
+    try {
+      note = NoteDocument.open(store: database, ulid: current.ulid);
+    } on NoteHistoryPendingException {
+      // A live row whose log has not arrived: nothing to diff into. The
+      // file stays as the user left it, which is what Decision 4's bounded
+      // exception promises, and the eventual log reconciles it then. What
+      // it holds is still noted, as for a history-pending row.
+      return (
+        drift: await _recordObserved(
           current,
           ContentDigest(hash: onDiskHash, size: bytes.length),
           utf8.decode(bytes),
-        );
-      }
-      try {
-        // Steps 3 and 4: a minimal script — never replace-all — applied in
-        // one transaction. Terminators are normalized on the way in, so a
-        // CRLF round-trip arrives here as zero operations and still reaches
-        // the materializer below, which is the whole reason step 5 is not
-        // gated on "did this produce anything?".
-        note.applyExternalText(utf8.decode(bytes));
-        // Steps 5 and 6, unconditional. The write is skipped only when the
-        // materialized bytes are exactly what is on disk; the hash is
-        // committed either way.
-        await materializeNote(
-          store: database,
-          engram: engram,
-          note: note,
-          onDiskHash: onDiskHash,
-        );
-      } finally {
-        note.dispose();
-      }
-      _reconciled.add(current.path);
-      return _Drift.reconciled;
-    });
+          announce: announce,
+        ),
+        text: null,
+      );
+    }
+    final String text;
+    try {
+      // Steps 3 and 4: a minimal script — never replace-all — applied in
+      // one transaction. Terminators are normalized on the way in, so a
+      // CRLF round-trip arrives here as zero operations and still reaches
+      // the materializer below, which is the whole reason step 5 is not
+      // gated on "did this produce anything?".
+      note.applyExternalText(utf8.decode(bytes));
+      // Steps 5 and 6, unconditional. The write is skipped only when the
+      // materialized bytes are exactly what is on disk; the hash is
+      // committed either way.
+      await materializeNote(
+        store: database,
+        engram: engram,
+        note: note,
+        onDiskHash: onDiskHash,
+      );
+      text = note.value;
+    } finally {
+      note.dispose();
+    }
+    if (announce) _reconciled.add(current.path);
+    return (drift: _Drift.reconciled, text: text);
   }
 
   /// Whether a row in [state] has a file the scan should look at. A
@@ -887,13 +930,18 @@ class DriftReconciler implements NoteReconciler {
   /// be found by hash if it moves; it gets no sketch. Nothing here marks it
   /// oversized — that state means "a history too large to open", and this
   /// note has none.
-  Future<_Drift> _observe(CatalogRow current, FileFingerprint stat) async {
+  Future<_Drift> _observe(
+    CatalogRow current,
+    FileFingerprint stat, {
+    required bool announce,
+  }) async {
     if (!mayHaveDrifted(current, stat)) return _Drift.none;
     if (stat.size > noteSizeCeilingBytes) {
       return _recordObserved(
         current,
         await digestFile(engram, current.path),
         null,
+        announce: announce,
       );
     }
     final bytes = await engram.readBytes(current.path);
@@ -901,6 +949,7 @@ class DriftReconciler implements NoteReconciler {
       current,
       ContentDigest.of(bytes),
       utf8.decode(bytes),
+      announce: announce,
     );
   }
 
@@ -919,8 +968,9 @@ class DriftReconciler implements NoteReconciler {
   Future<_Drift> _recordObserved(
     CatalogRow current,
     ContentDigest digest,
-    String? text,
-  ) async {
+    String? text, {
+    required bool announce,
+  }) async {
     if (!hasDrifted(current, digest.hash)) return _Drift.none;
     final first = current.materializedHash == null;
     await recordFileState(
@@ -931,7 +981,7 @@ class DriftReconciler implements NoteReconciler {
       text: text,
     );
     if (first) return _Drift.none;
-    _reconciled.add(current.path);
+    if (announce) _reconciled.add(current.path);
     return _Drift.observed;
   }
 
@@ -955,7 +1005,11 @@ class DriftReconciler implements NoteReconciler {
   /// The catalog is brought up to date either way, so a moved blob can be
   /// found by its hash; the claim is what makes the change *history*, so a
   /// second device that later receives it knows which bytes won.
-  Future<bool> _reconcileBlob(CatalogRow current, FileFingerprint stat) async {
+  Future<bool> _reconcileBlob(
+    CatalogRow current,
+    FileFingerprint stat, {
+    required bool announce,
+  }) async {
     if (!mayHaveDrifted(current, stat)) return false;
     // Streamed, never read whole: a blob may be larger than memory, and the
     // only thing anything below needs to know about it is its digest.
@@ -982,7 +1036,7 @@ class DriftReconciler implements NoteReconciler {
       row: current,
       digest: digest,
     );
-    if (claimed) _reconciled.add(current.path);
+    if (claimed && announce) _reconciled.add(current.path);
     return claimed;
   }
 

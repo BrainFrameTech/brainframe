@@ -1308,6 +1308,14 @@ folder.
     with a *different* image of the same name in the file manager. Switch
     back (the resume is what notices it — an image is not reconciled on
     open the way a note is); select the image; open Settings › Housekeeping.
+14. **A save merges with an edit nothing noticed (#70, step 3):** in a
+    terminal, run `sleep 10; echo 'appended outside' >> X.md` in the engram
+    folder. Switch straight back to BrainFrame and start adding words to the
+    *first* line of **X**, a few seconds apart, until at least 15 seconds
+    have passed — so the save comes *after* the append; one early keystroke
+    would save before it, and prove nothing. Keep BrainFrame focused
+    throughout, then stop and wait for the chip to settle at `saved`. Run
+    `cat X.md` in the terminal.
 
 **Expected:**
 
@@ -1363,10 +1371,17 @@ folder.
   note that changed. The file itself is byte-identical to what was copied in:
   BrainFrame never rewrites an image. A defect here looks like the card
   saying nothing (the replacement was not noticed) or the image reverting.
+- Step 14: `cat` shows **both** the word typed in BrainFrame and
+  `appended outside`, and so does BrainFrame's editor once the chip reads
+  `saved`. No scan ran — the window stayed focused — so it is the save
+  itself that found the change and merged with it. The caret may jump to the
+  end when the merge lands; that is accepted until the watcher's editor step.
+  A defect looks like `appended outside` missing from the file: the save
+  wrote over an edit it never saw, which is what it did before this step.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android | ✓ for steps 3–6 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder. Step 14 also needs that app to write while BrainFrame stays in the foreground — split screen — or it is **N/A** | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android; step 14 as Android | ✓ for steps 3–6 and 14 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
 
 - **The window of loss, on record:** a keystroke made between the resume and
   the reload of a note that *did* change externally is dropped in favour of
@@ -1375,8 +1390,8 @@ folder.
   if it exceeds that.
 - **Edits to a file while the app is focused and the note is open** are
   *not* picked up until the next trigger — there is no filesystem watcher yet
-  (**#70**). A save made in that state overwrites the external edit; that is
-  the known gap, not a regression.
+  (**#70**). A save made in that state no longer overwrites the external
+  edit: it merges with it (step 14).
 - **Inspection point:** a note that fails to reconcile (an unreadable file,
   invalid UTF-8) is skipped, logged under `brainframe.engram.drift`, and tried
   again on the next scan; the rest of the engram still reconciles. There is no

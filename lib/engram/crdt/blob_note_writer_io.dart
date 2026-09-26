@@ -28,6 +28,7 @@ import 'materializer_io.dart';
 import 'metadata_db_io.dart';
 import 'note_document_io.dart';
 import 'note_document_lock.dart';
+import 'pre_save_check.dart';
 
 /// Saves a plain-file note: the bytes to disk, then one claim to the op-log.
 ///
@@ -41,6 +42,7 @@ class BlobNoteWriter implements NoteWriter {
     required this.engram,
     required this.lock,
     this.identity,
+    this.check,
   });
 
   /// The engram's catalog and op-log.
@@ -57,8 +59,17 @@ class BlobNoteWriter implements NoteWriter {
   /// no shared map.
   final AuthoredIdentity? identity;
 
+  /// What a save asks before it writes (the filesystem watcher design,
+  /// Decision 5), or null where nothing else can change the file. See
+  /// [CrdtNoteWriter.check].
+  final PreSaveCheck? check;
+
+  /// Saves [text] whole. [base] is accepted for the seam and not used: a
+  /// plain file merges whole, last writer wins (Decision 3), so a file changed
+  /// underneath is recorded as its own claim first and then replaced — the
+  /// history says both writes happened, and which won.
   @override
-  Future<void> write(String path, String text) =>
+  Future<String> write(String path, String text, {String? base}) =>
       lock.run(() => writeHoldingLock(path, text));
 
   /// [write], for a caller that already holds [lock] — [CrdtNoteWriter],
@@ -68,7 +79,7 @@ class BlobNoteWriter implements NoteWriter {
   /// Throws [ArgumentError] if the catalog says the note is a text note:
   /// one shape per policy, and the wrong writer fails at once rather than
   /// writing a file the CRDT would then overwrite.
-  Future<void> writeHoldingLock(String path, String text) async {
+  Future<String> writeHoldingLock(String path, String text) async {
     final bytes = Uint8List.fromList(utf8.encode(text));
     final row = database.catalog.byPath(path);
     if (row != null && row.mergePolicy != MergePolicy.blobLww) {
@@ -78,6 +89,9 @@ class BlobNoteWriter implements NoteWriter {
         'a ${row.mergePolicy.name} note is saved through CrdtNoteWriter',
       );
     }
+    // A change underneath becomes its own claim before this one replaces it,
+    // so no write is left out of the history (the watcher design, Decision 5).
+    if (row != null) await check?.reconcileBeforeSave(row);
 
     // The file first, whole and atomic; everything after describes it.
     await engram.writeBytes(path, bytes);
@@ -106,7 +120,7 @@ class BlobNoteWriter implements NoteWriter {
       } finally {
         blob.dispose();
       }
-      return;
+      return text;
     }
 
     final BlobDocument blob;
@@ -125,7 +139,7 @@ class BlobNoteWriter implements NoteWriter {
         row: row,
         digest: digest,
       );
-      return;
+      return text;
     }
     try {
       blob.record(digest);
@@ -138,5 +152,6 @@ class BlobNoteWriter implements NoteWriter {
       row: row,
       digest: digest,
     );
+    return text;
   }
 }

@@ -1680,7 +1680,8 @@ class _FakeSession implements CrdtSession {
 
 class _InertWriter implements NoteWriter {
   @override
-  Future<void> write(String path, String text) async {}
+  Future<String> write(String path, String text, {String? base}) async =>
+      text;
 }
 
 class _RecordingReconciler implements NoteReconciler {

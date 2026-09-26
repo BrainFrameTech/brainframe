@@ -303,6 +303,23 @@ void main() {
     expect(await engram.store.readString('inbox/today.md'), '# Today\n');
   });
 
+  test('the session\'s saves look before they write', () async {
+    // The wiring, end to end: the writer the editor is handed asks the
+    // session's reconciler first, so an edit made outside since the last
+    // save is merged with rather than written over (the filesystem watcher
+    // design, Decision 5).
+    final engram = engramWith(readOnly: false);
+    final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);
+    addTearDown(() => session?.close());
+    await session!.writer.write('a.md', 'one\n');
+    await engram.store.writeString('a.md', 'one\nfrom outside\n');
+
+    final saved = await session.writer.write('a.md', 'one!\n', base: 'one\n');
+
+    expect(saved, 'one!\nfrom outside\n');
+    expect(await engram.store.readString('a.md'), 'one!\nfrom outside\n');
+  });
+
   test('close releases the database', () async {
     final session = await CrdtSession.openFor(
       engramWith(readOnly: false),

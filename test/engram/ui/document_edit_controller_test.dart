@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,15 +11,21 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records each write as `path::text`, and can be told to fail the next one.
+///
+/// Reads back what was written, and nothing else: a path it never wrote is
+/// absent, which is what the writer's look-before-writing needs to see for a
+/// file the test opened with text it never put on disk.
 class _RecordingStore extends EngramStore {
   final List<String> writes = [];
+  final Map<String, Uint8List> _files = {};
   bool failNext = false;
 
   @override
-  Future<List<String>> list() async => const [];
+  Future<List<String>> list() async => _files.keys.toList();
 
   @override
-  Future<Uint8List> readBytes(String path) async => Uint8List(0);
+  Future<Uint8List> readBytes(String path) async =>
+      _files[path] ?? (throw Exception('no file at $path'));
 
   @override
   Future<void> writeBytes(String path, Uint8List bytes) async {
@@ -26,6 +33,7 @@ class _RecordingStore extends EngramStore {
       failNext = false;
       throw Exception('write failed');
     }
+    _files[path] = bytes;
     writes.add('$path::${utf8.decode(bytes)}');
   }
 }
@@ -590,4 +598,123 @@ void main() {
       expect(saves.length, 0);
     });
   });
+
+  group('what the save found on disk (the watcher design, Decision 5)', () {
+    DocumentEditController scripted(_ScriptedWriter writer) =>
+        DocumentEditController(writer: writer, observeLifecycle: false);
+
+    test('the save passes the text the buffer grew from', () async {
+      final writer = _ScriptedWriter();
+      final c = scripted(writer);
+      addTearDown(c.dispose);
+      await c.openFile('a.md', 'one\n');
+
+      c.edit('one!\n');
+      await c.flush();
+      c.edit('one!!\n');
+      await c.flush();
+
+      expect(writer.bases, ['one\n', 'one!\n']);
+    });
+
+    test('a merge the writer made becomes the buffer, clean', () async {
+      final writer = _ScriptedWriter()
+        ..respond = (text) => '${text}from outside\n';
+      final c = scripted(writer);
+      addTearDown(c.dispose);
+      await c.openFile('a.md', 'one\n');
+      var notified = 0;
+      c.addListener(() => notified++);
+
+      c.edit('one!\n');
+      await c.flush();
+
+      expect(c.text, 'one!\nfrom outside\n');
+      expect(c.isDirty, isFalse);
+      expect(c.status, SaveStatus.saved);
+      expect(notified, greaterThan(0), reason: 'the field is rebuilt');
+    });
+
+    test('typing during the write is merged over what came back', () async {
+      final gate = Completer<void>();
+      final writer = _ScriptedWriter()
+        ..gate = gate.future
+        ..respond = (text) => '${text}from outside\n';
+      final c = scripted(writer);
+      addTearDown(c.dispose);
+      await c.openFile('a.md', 'one\n');
+
+      c.edit('one!\n');
+      final saving = c.flush();
+      c.edit('one!\ntyped meanwhile\n');
+      gate.complete();
+      await saving;
+
+      expect(c.text, 'one!\nfrom outside\ntyped meanwhile\n');
+      expect(c.isDirty, isTrue, reason: 'the late typing is not saved yet');
+      expect(c.status, SaveStatus.dirty);
+    });
+
+    test('a merge too large to save is held over the limit', () async {
+      final writer = _ScriptedWriter()
+        ..error = const NoteMergeOverLimitException(
+          path: 'a.md',
+          merged: 'one!\nfrom outside, and far too long\n',
+          onDisk: 'one\nfrom outside, and far too long\n',
+        );
+      final c = scripted(writer)..sizeLimitBytes = 30;
+      addTearDown(c.dispose);
+      await c.openFile('a.md', 'one\n');
+
+      c.edit('one!\n');
+      await c.flush();
+
+      expect(c.text, 'one!\nfrom outside, and far too long\n');
+      expect(c.status, SaveStatus.overLimit);
+      expect(c.isWithheld, isTrue);
+      // What the note holds is the external edit, so that is where a roll
+      // back returns to — not the text from before it.
+      c.rollBack();
+      expect(c.text, 'one\nfrom outside, and far too long\n');
+    });
+
+    test(
+      'with no limit to hold it under, a refused merge is an error',
+      () async {
+        final writer = _ScriptedWriter()
+          ..error = const NoteMergeOverLimitException(
+            path: 'a.md',
+            merged: 'merged\n',
+            onDisk: 'external\n',
+          );
+        final c = scripted(writer);
+        addTearDown(c.dispose);
+        await c.openFile('a.md', 'one\n');
+
+        c.edit('one!\n');
+        await c.flush();
+
+        expect(c.text, 'merged\n');
+        expect(c.status, SaveStatus.error);
+      },
+    );
+  });
+}
+
+/// A writer that records the base of each save, and answers with a scripted
+/// result or error — what the real writers return when the file had moved.
+class _ScriptedWriter implements NoteWriter {
+  final List<String?> bases = [];
+  String Function(String text)? respond;
+  Object? error;
+  Future<void>? gate;
+
+  @override
+  Future<String> write(String path, String text, {String? base}) async {
+    bases.add(base);
+    await gate;
+    final e = error;
+    if (e != null) throw e;
+    return respond?.call(text) ?? text;
+  }
 }

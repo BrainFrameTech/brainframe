@@ -1,7 +1,8 @@
 # The filesystem watcher
 
 - **Status:** accepted (2026-09-26) — reviewed in **#204**; the choices left
-  open for review are recorded under *Settled in review*
+  open for review are recorded under *Settled in review*; Decision 6 amended
+  2026-09-26, when the merge was built: line endings are normalized first
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#70** (parallel track; must land before sync, **#67**)
@@ -276,6 +277,13 @@ result is what two devices editing the same base would converge to:
   while they are typing. The cost of the rule is visible instead: two
   different rewrites of the same sentence both appear, which the user sees and
   can edit — exactly what sync will produce for the same concurrent edit.
+- **Line endings are not edits.** *(Amended 2026-09-26, when it was built.)*
+  All three texts are normalized to LF before they are diffed, and the
+  result is LF, which is how the note is written back anyway (the companion
+  design's Decision 10). Without this, a file converted to CRLF outside the
+  app is an edit to every line end, and it collides with any typing at the
+  end of a line, splitting the user's text off from its line with a stray
+  `\r`.
 
 Doing this as text, rather than by forking the CRDT at `base` and letting it
 merge, is deliberate. `crdt_lf` offers no fork, and emulating one with this

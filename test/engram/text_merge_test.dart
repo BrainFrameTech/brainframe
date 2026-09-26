@@ -92,6 +92,81 @@ void main() {
     });
   });
 
+  group('memory stays bounded', () {
+    // The merge diffs through lineChunkedDiff, whose Myers is capped at a
+    // 32 MB trace. An uncapped Myers is quadratic in memory on a *dispersed*
+    // edit — changes scattered through one long region, so trimming the
+    // common prefix and suffix buys nothing. Measured with crdt_lf's
+    // myersDiff on one line of scattered changes: ~40 MB at 2000 characters,
+    // ~500 MB at 8000. At the 64,000 below it would want tens of gigabytes,
+    // where the merge takes ~80 ms and no more memory than a small note.
+    //
+    // So these are the guard: if the merge ever reached an uncapped diff,
+    // they would exhaust memory or time out rather than pass — on any
+    // machine, not only the 448 MB board where it matters most. Both inputs
+    // are under the 128 KiB note ceiling, so a real note can take this shape.
+    const bounded = Timeout(Duration(seconds: 10));
+
+    /// One line of [length] characters, each `a` or `b` at random.
+    String scattered(int seed, int length) {
+      final random = Random(seed);
+      return String.fromCharCodes([
+        for (var i = 0; i < length; i++) 0x61 + random.nextInt(2),
+      ]);
+    }
+
+    test('one long line changed throughout, typed in the middle', () {
+      final base = scattered(1, 64000);
+      final theirs = scattered(2, 64000);
+      final mine = base.replaceRange(32000, 32000, 'X');
+      // Theirs is past the budget, so the line goes coarse — one removal and
+      // one insertion, keeping only what the two share at either end — and
+      // mine's typing inside it survives, after theirs' text. Where exactly
+      // depends on that shared end; what must hold is that the typing is the
+      // only thing added to theirs.
+      final merged = merge(base, mine, theirs);
+      expect(merged.length, theirs.length + 1);
+      expect(merged.replaceFirst('X', ''), theirs);
+    }, timeout: bounded);
+
+    test(
+      'every line of a large file replaced, with a line typed below',
+      () {
+        // The same hazard one level up: 3000 distinct lines against 3000
+        // others is past the budget at line level too, so the lines are paired
+        // off — against typing the rewrite does not touch.
+        final old = List.generate(3000, (i) => 'old line $i\n').join();
+        final replaced = List.generate(3000, (i) => 'new line $i\n').join();
+        expect(merge(old, '${old}typed\n', replaced), '${replaced}typed\n');
+      },
+      timeout: bounded,
+    );
+  });
+
+  group('the note the backslash bug inflated', () {
+    // 8190 bytes on one line, cut back to 58 outside the app — the note
+    // that took the Pi down. Its edit is one contiguous run, so prefix and
+    // suffix trimming make it cheap for any diff; it is here as the real
+    // note, for what the merge makes of it, not as a memory guard.
+    const short = '- https://sourcesofinsight.com/leadership-books/\\n\\nl-las';
+    final long =
+        '- https://sourcesofinsight.com/leadership-books/'
+        '${'\\' * 8100}n\\nl-las';
+
+    test('cut back outside, typed at the end in the app', () {
+      // The removal does not reach the end, so both land.
+      expect(merge(long, '${long}X', short), '${short}X');
+    });
+
+    test('cut back outside, typed inside what was cut', () {
+      // The typing survives, and the note comes back short, not long.
+      final at = long.length ~/ 2;
+      final merged = merge(long, long.replaceRange(at, at, 'X'), short);
+      expect(merged, contains('X'));
+      expect(merged.length, lessThan(short.length + 10));
+    });
+  });
+
   group('line endings', () {
     test('a conversion to CRLF is not an edit', () {
       expect(merge('a\nb\n', 'a\nb!\n', 'a\r\nb\r\n'), 'a\nb!\n');

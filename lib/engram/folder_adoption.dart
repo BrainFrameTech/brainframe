@@ -1,32 +1,22 @@
-/// The desktop "choose any folder" flow: open a native directory dialog, then
-/// adopt whatever the user picks as an engram (Step 6 of the storage plan).
+/// The "choose any folder" flow: ask the platform for a folder, then adopt
+/// whatever the user picks as an engram (Step 6 of the storage plan).
 ///
-/// This is deliberately desktop-only *in v1* — not because the other platforms
-/// can't choose a directory, but because of what their choosers hand back. The
-/// desktop dialog returns a plain `dart:io` path, exactly what
-/// [FileSystemEngramStore] and the registry's plain-path token consume. Android
-/// (Storage Access Framework) and iOS (`UIDocumentPickerViewController`) can
-/// pick a folder too, but yield a scoped `content://` URI or a security-scoped
-/// URL that must be re-resolved from a persisted bookmark each launch — a
-/// different [EngramLocation] access kind that the design defers to v2
-/// ("sandboxed-platform folder picking and iCloud"). The Raspberry Pi
-/// (flutter-pi) has no native dialog at all, so its pick-any-folder path is a
-/// small in-app directory browser deferred to the Pi-usability work. Guarding
-/// to desktop scopes this to the case v1's storage model actually supports; the
-/// injectable dialog keeps the only untestable line (the real plugin call) to a
-/// hair.
+/// Which platforms can, and how the picked folder is reached again, is the
+/// [FolderAccess] handed in — by default the repository's own. On the desktop
+/// targets that is a dialog returning a plain path ([PathFolderAccess]).
+/// Android, iOS and macOS are to come through a platform channel that hands
+/// back a path too, plus a bookmark on the Apple platforms (the sandboxed
+/// folder adoption design). The Raspberry Pi (flutter-pi) has no native
+/// dialog, so its pick-any-folder path is a small in-app directory browser
+/// deferred to the Pi-usability work.
 library;
 
-import 'package:file_selector/file_selector.dart' as file_selector;
 import 'package:flutter/foundation.dart';
 
 import 'engram.dart';
 import 'engram_repository.dart';
+import 'fs/folder_access.dart';
 import 'fs/fs_store.dart';
-
-/// Chooses a directory and returns its absolute path, or null if the user
-/// cancels. Injected so tests can drive adoption without a native dialog.
-typedef DirectoryPicker = Future<String?> Function();
 
 /// Runs the preview of a picked folder — [previewFolderAdoption] over its
 /// location — told each file as it is looked at and asked between files
@@ -94,40 +84,32 @@ class FolderPreviewing {
 /// question.
 typedef AdoptionConfirmer = Future<bool> Function(FolderPreviewing previewing);
 
-/// Whether the pick-any-folder flow is available on this platform in v1.
-///
-/// True only on the desktop targets, whose native dialog returns a plain
-/// filesystem path. Mobile's scoped-URI pickers and the Pi's in-app browser are
-/// later work (see the library doc), so they report false here.
-bool get isDesktopFolderAdoptionSupported =>
-    defaultTargetPlatform == TargetPlatform.windows ||
-    defaultTargetPlatform == TargetPlatform.linux ||
-    defaultTargetPlatform == TargetPlatform.macOS;
-
 /// Prompts for a folder and adopts it into [repository] as a registry root.
 ///
 /// Returns the adopted [Engram], or null if the user cancels the dialog. A
 /// picked folder that is already an engram is opened and keeps its identity; a
 /// plain folder is turned into one in place (see [EngramRepository.adoptFolder]).
 ///
-/// Throws [UnsupportedError] off the desktop targets — callers should only wire
-/// this in where [isDesktopFolderAdoptionSupported] is true. Pass [picker] to
-/// supply a directory chooser (tests do); it defaults to the native dialog.
+/// The folder is chosen and reached through [access], which defaults to the
+/// repository's own [EngramRepository.folderAccess]; its bookmark, if the
+/// platform gives one, is stored with the row. Throws [UnsupportedError] where
+/// [FolderAccess.canPick] is false — callers should only wire this in where it
+/// is true.
 /// [confirm] is shown the folder as it is looked at and asked before it is
 /// adopted; with none, adoption proceeds unasked, which is right for a caller
 /// that has already asked in its own way and wrong for a UI.
 Future<Engram?> pickAndAdoptFolder(
   EngramRepository repository, {
-  DirectoryPicker? picker,
+  FolderAccess? access,
   AdoptionConfirmer? confirm,
 }) async {
-  if (!isDesktopFolderAdoptionSupported) {
-    throw UnsupportedError(
-      'Choosing a folder is only available on desktop platforms.',
-    );
+  final folders = access ?? repository.folderAccess;
+  if (!folders.canPick) {
+    throw UnsupportedError('Choosing a folder is not available here.');
   }
-  final path = await (picker ?? _pickDirectoryPath)();
-  if (path == null) return null; // the user dismissed the dialog
+  final picked = await folders.pick();
+  if (picked == null) return null; // the user dismissed the chooser
+  final path = picked.path;
   final location = EngramLocation(path);
   if (confirm != null) {
     final previewing = FolderPreviewing(
@@ -153,15 +135,5 @@ Future<Engram?> pickAndAdoptFolder(
       return null;
     }
   }
-  return repository.adoptFolder(location);
+  return repository.adoptFolder(location, bookmark: picked.bookmark);
 }
-
-/// The real native directory dialog. Isolated so it is the sole line the unit
-/// tests cannot exercise (it needs a platform channel).
-///
-/// Uses `file_selector` (the maintained, built-in-Kotlin plugin) rather than
-/// `file_picker`, whose legacy Kotlin-Gradle-Plugin apply broke the Android
-/// build even though the picker itself is desktop-only.
-Future<String?> _pickDirectoryPath() => file_selector.getDirectoryPath(
-      confirmButtonText: 'Choose folder',
-    );

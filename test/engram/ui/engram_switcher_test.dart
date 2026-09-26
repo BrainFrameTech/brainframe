@@ -6,6 +6,7 @@ import 'package:brainframe/engram/engram_repository.dart';
 import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/fs/fs_store.dart';
+import 'package:brainframe/engram/path_folder_access.dart';
 import 'package:brainframe/engram/ui/engram_switcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -50,13 +51,14 @@ class _FakeRepo extends EngramRepository {
   Future<Engram> create(String displayName) async =>
       _engram('created-$displayName', displayName);
 
-  /// Folders adopted through the desktop flow, by path.
+  /// Folders adopted through the "Open folder…" flow, by path.
   final List<String> adopted = [];
 
   @override
   Future<Engram> adoptFolder(
     EngramLocation location, {
     String? displayName,
+    String? bookmark,
   }) async {
     adopted.add(location.path);
     return _engram('adopted-${location.path}', displayName ?? 'Adopted');
@@ -95,7 +97,9 @@ void main() {
                   EngramSwitcher(
                     repository: repository,
                     current: active,
-                    folderPicker: folderPicker,
+                    folderAccess: folderPicker == null
+                        ? null
+                        : PathFolderAccess(picker: folderPicker),
                   ),
                 ],
               );

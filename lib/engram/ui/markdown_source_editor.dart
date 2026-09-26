@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
+import '../text_merge.dart';
 
 /// Cross-platform monospace fallbacks, tried in order. No monospace font is
 /// bundled, so this leans on whatever each platform ships; the last entry is
@@ -102,6 +103,21 @@ class SourceEditorController {
   /// editor is attached.
   void replaceText(String text) => _state?._replaceText(text);
 
+  /// The text in the field now, or null when no editor is attached.
+  String? get text => _state?._controller.text;
+
+  /// Puts [text] in the field **now**, with the caret and selection carried
+  /// through the change rather than reset — and, like [replaceText], without
+  /// reporting it as a change.
+  ///
+  /// For text that changed under the user rather than by them: an edit made
+  /// outside the app merged into the buffer, or a save that merged with one
+  /// (the filesystem watcher design, Decision 7). "Now" matters: left to the
+  /// next rebuild, a keystroke in between would report the field's old text
+  /// back as the buffer and silently undo the merge. A no-op when no editor
+  /// is attached.
+  void syncText(String text) => _state?._syncText(text);
+
   void _attach(_MarkdownSourceEditorState state) => _state = state;
 
   void _detach(_MarkdownSourceEditorState state) {
@@ -133,15 +149,12 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
       oldWidget.controller?._detach(this);
       widget.controller?._attach(this);
     }
-    // A different file (or an external reset) arrived without the widget being
-    // recreated. Adopt it, but don't clobber a matching in-progress buffer, and
-    // place the caret at the end of the freshly loaded text.
+    // New text arrived without the widget being recreated — a host that did
+    // not sync it first. Adopt it, but don't clobber a matching in-progress
+    // buffer, and carry the caret through the change.
     if (widget.initialText != oldWidget.initialText &&
         widget.initialText != _controller.text) {
-      _controller.value = TextEditingValue(
-        text: widget.initialText,
-        selection: TextSelection.collapsed(offset: widget.initialText.length),
-      );
+      _syncText(widget.initialText);
     }
     // Stepping to another match has to bring it on screen: the field scrolls
     // itself for typing and taps, but never for ranges handed to it.
@@ -173,6 +186,22 @@ class _MarkdownSourceEditorState extends State<MarkdownSourceEditor> {
     _controller.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  void _syncText(String text) {
+    final before = _controller.value;
+    if (before.text == text) return;
+    final map = offsetMapping(before.text, text);
+    final selection = before.selection;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: selection.isValid
+          ? selection.copyWith(
+              baseOffset: map(selection.baseOffset),
+              extentOffset: map(selection.extentOffset),
+            )
+          : TextSelection.collapsed(offset: text.length),
     );
   }
 

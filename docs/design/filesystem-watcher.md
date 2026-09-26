@@ -1,8 +1,8 @@
 # The filesystem watcher
 
 - **Status:** accepted (2026-09-26) — reviewed in **#204**; the choices left
-  open for review are recorded under *Settled in review*; Decisions 5 and 6
-  amended 2026-09-26, when the save path and the merge were built
+  open for review are recorded under *Settled in review*; Decisions 5, 6 and
+  7 amended 2026-09-26, as the save path, the merge and the editor were built
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#70** (parallel track; must land before sync, **#67**)
@@ -271,6 +271,14 @@ the file and merges if it differs from `base`.
   `NoteMergeOverLimitException` carrying the merge and what the note now
   holds. The external edit is already history; the editor holds the merge as
   a withheld buffer, as though it had been typed.
+- **The base is compared with the note's history, not only the file**
+  *(amended again 2026-09-26, when the editor step was built)*. A scan that
+  reconciles the file under an open, dirty buffer leaves the file matching
+  the history, so a check of the file alone sees nothing when that buffer
+  saves — and the save would write the buffer, which never had the change,
+  over it. Merging whenever the history differs from `base` catches that,
+  a change this save's own check took in, and operations arriving from sync,
+  all by one test.
 
 This retires Decision 6 step 1 of the companion design — "flush the editor
 first" — as a *correctness* requirement. A reconcile under an unsaved buffer
@@ -338,6 +346,19 @@ acceptable at all, so it is fixed here rather than deferred.
 The pane's special cases stay: a withheld (over-limit) buffer still defers its
 reload until after the rollback; a note awaiting a size decision still
 reopens.
+
+*Amended 2026-09-26, when it was built:*
+
+- **`mergeFromDisk` does the read itself**, given a reader, and only once no
+  save of the controller's is in flight — re-reading if one started meanwhile.
+  A file read before our own save lands is older than the saved text, and
+  merging it would undo that save.
+- **Text changed under the user reaches the field at once**, not on the next
+  rebuild: the pane pushes it into the field the moment the controller
+  changes. A keystroke in between would otherwise report the field's old text
+  back as the buffer and silently undo the merge.
+- **The caret rule for an insertion exactly at the caret:** the caret stays
+  before it, so the user keeps typing where they were.
 
 ### Decision 8 — lifetime: owned by the session, not by focus
 

@@ -17,9 +17,9 @@ abstract interface class PreSaveCheck {
   int get noteSizeCeilingBytes;
 
   /// Reconciles the file behind [row] into the note, **holding the note lock
-  /// already** — the writer's — and returns the note's text afterwards if the
-  /// file had changed, or null if it had not (or is gone, or keeps no text
-  /// history to diff into).
+  /// already** — the writer's. What the note holds afterwards is the writer's
+  /// to read: it merges with the note's history, which a scan may have
+  /// changed as well, not only with what this check took in.
   ///
   /// A text note's change becomes operations, as the scan would make them; a
   /// plain file's becomes one last-writer-wins claim, recorded before the
@@ -30,5 +30,5 @@ abstract interface class PreSaveCheck {
   /// Throws [StateError] when the file has grown past the ceiling: the note
   /// now awaits the user's decision (the note size ceiling design, Decision
   /// 4), and nothing may be saved over the oversized version.
-  Future<String?> reconcileBeforeSave(CatalogRow row);
+  Future<void> reconcileBeforeSave(CatalogRow row);
 }

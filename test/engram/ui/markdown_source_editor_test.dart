@@ -388,6 +388,90 @@ void main() {
       expect(editable.controller.text, 'after');
     });
 
+    testWidgets('syncText carries the caret through the change, unreported', (
+      tester,
+    ) async {
+      // The watcher design, Decision 7: text arriving from disk mid-typing
+      // must not throw the caret to the end.
+      final controller = SourceEditorController();
+      final changes = <String>[];
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'hello world',
+            controller: controller,
+            onChanged: changes.add,
+          ),
+        ),
+      );
+      controller.selectRange(const TextRange.collapsed(5));
+      await tester.pumpAndSettle();
+      expect(controller.text, 'hello world');
+
+      // Text lands before the caret: the caret moves with its word.
+      controller.syncText('oh, hello world');
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.controller.text, 'oh, hello world', reason: 'at once');
+      expect(editable.controller.selection.baseOffset, 9);
+
+      // Text lands exactly at the caret: the caret stays where it was typing.
+      controller.syncText('oh, hello!!! world');
+      expect(editable.controller.selection.baseOffset, 9);
+
+      // A selection is carried at both ends.
+      controller.selectRange(const TextRange(start: 4, end: 9));
+      await tester.pumpAndSettle();
+      controller.syncText('well, oh, hello!!! world');
+      expect(editable.controller.selection.start, 10);
+      expect(editable.controller.selection.end, 15);
+
+      controller.syncText('well, oh, hello!!! world'); // the same: no-op
+      expect(changes, isEmpty, reason: 'never reported as typing');
+    });
+
+    testWidgets('syncText with no editor attached does nothing', (
+      tester,
+    ) async {
+      final controller = SourceEditorController();
+
+      controller.syncText('anything');
+
+      expect(controller.text, isNull);
+    });
+
+    testWidgets('new text from a rebuild carries the caret too', (
+      tester,
+    ) async {
+      // A host that did not sync first: the rebuild adopts the text, and the
+      // caret goes with it rather than to the end.
+      final controller = SourceEditorController();
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'hello world',
+            controller: controller,
+            key: const ValueKey('slot'),
+          ),
+        ),
+      );
+      controller.selectRange(const TextRange.collapsed(5));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(
+        _host(
+          MarkdownSourceEditor(
+            initialText: 'hello world\nadded below\n',
+            controller: controller,
+            key: const ValueKey('slot'),
+          ),
+        ),
+      );
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.controller.text, 'hello world\nadded below\n');
+      expect(editable.controller.selection.baseOffset, 5);
+    });
+
     testWidgets('a range past the end of the text is clamped, not thrown', (
       tester,
     ) async {

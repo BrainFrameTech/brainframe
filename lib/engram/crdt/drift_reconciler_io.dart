@@ -132,10 +132,19 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   /// happens, and the next open of that engram resumes where this left off.
   bool _closed = false;
 
-  /// The scan in progress, so a second trigger joins it instead of starting a
-  /// concurrent one. A resume that lands while the start-up scan is still
-  /// running is the ordinary way this happens.
+  /// The scan in progress, so a second trigger never starts a concurrent one.
   Future<DriftScanReport>? _running;
+
+  /// The one scan queued behind [_running], which every request made while it
+  /// runs shares (the filesystem watcher design, Decision 3).
+  ///
+  /// A request during a scan cannot simply join it: the scan may already have
+  /// listed the folder, or passed the very note the request is about — a
+  /// file created, or saved in another editor, a moment ago. So it runs
+  /// again afterwards, once, however many requests arrived: a burst of
+  /// watcher events, or a resume landing during the start-up scan, is one
+  /// follow-up, not one each.
+  Future<DriftScanReport>? _queued;
 
   /// The one `bf_meta` key overwritten with the finish time of the latest
   /// scan, clean or not. A clean scan writes nothing else: it changed
@@ -161,10 +170,32 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     if (!_adoption.isClosed) _adoption.add(progress);
   }
 
+  /// Scans now, or — while a scan is running — once it has finished, sharing
+  /// that follow-up with every other request made meanwhile ([_queued]). The
+  /// follow-up is recorded with the trigger of the request that queued it.
+  ///
+  /// A follow-up waits for the running scan however it ends, failure
+  /// included: a scan that threw has found nothing the follow-up could rely
+  /// on. It does not start once the reconciler is closed; its callers get the
+  /// running scan's report, or a clean one if that scan failed.
   @override
   Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) {
+    final running = _running;
+    if (running == null) return _queued ?? _start(trigger);
+    return _queued ??= running
+        .then<DriftScanReport?>((report) => report)
+        .catchError((Object _) => null)
+        .then((previous) {
+          _queued = null;
+          if (_closed) return previous ?? DriftScanReport.clean;
+          return _start(trigger);
+        });
+  }
+
+  /// Starts a scan, as [_running], and records it under [trigger].
+  Future<DriftScanReport> _start(ScanTrigger trigger) {
     final started = DateTime.now();
-    return _running ??= _scan()
+    return _running = _scan()
         .then((report) {
           _recordScan(report, trigger: trigger, startedAt: started);
           return report;

@@ -12,7 +12,8 @@ import 'adopt_folder_dialog.dart';
 /// The sidebar-footer engram switcher (Decision 8's "travel there" entry point).
 ///
 /// Shows the current engram and, on tap, a sheet listing the available engrams
-/// (built-ins and user engrams), the reconnectable ones as disabled rows, and
+/// (built-ins and user engrams), the unreachable ones saying why — tappable to
+/// grant access where that is what they lack, disabled otherwise — and
 /// the app-level actions `New engram` and — where a folder can be chosen —
 /// `Open folder…`. It captures the [EngramScope] before opening the sheet,
 /// because the sheet is pushed above the app content and no longer has the
@@ -99,17 +100,79 @@ class EngramSwitcher extends StatelessWidget {
         onOpenFolder: folders.canPick
             ? () async {
                 Navigator.of(sheetContext).pop();
-                final engram = await pickAndAdoptFolder(
-                  repository,
-                  access: folders,
-                  // Up at once, while the folder is looked at; the
-                  // confirmation, with its counts, when that is done.
-                  confirm: (previewing) =>
-                      AdoptFolderDialog.show(context, previewing),
-                );
+                final Engram? engram;
+                try {
+                  engram = await pickAndAdoptFolder(
+                    repository,
+                    access: folders,
+                    // Up at once, while the folder is looked at; the
+                    // confirmation, with its counts, when that is done.
+                    confirm: (previewing) =>
+                        AdoptFolderDialog.show(context, previewing),
+                    explainAccess: () => _explainAccess(context),
+                  );
+                } on FolderNotLocalException {
+                  if (context.mounted) await _showNotLocal(context);
+                  return;
+                }
                 if (engram != null) await scope.switchTo(engram);
               }
             : null,
+        onGrantAccess: (unavailable) async {
+          Navigator.of(sheetContext).pop();
+          if (!await _explainAccess(context)) return;
+          if (!await folders.requestBroadAccess()) return;
+          // Granted: the row the user tapped is the engram they meant to
+          // open, so open it if it now resolves. A folder that is also gone
+          // stays listed, now as missing, for the next time the sheet opens.
+          final after = await repository.discover();
+          final engram = after.available
+              .where((e) => e.id == unavailable.id)
+              .firstOrNull;
+          if (engram != null) await scope.switchTo(engram);
+        },
+      ),
+    );
+  }
+
+  /// Says why access to the device's files is needed, before the platform
+  /// asks; true to go on and ask.
+  Future<bool> _explainAccess(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final go = await showAdaptiveDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.folderAccessTitle),
+        content: Text(l10n.folderAccessBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.folderAccessContinue),
+          ),
+        ],
+      ),
+    );
+    return go ?? false;
+  }
+
+  /// Says that the folder chosen is not on the device, and what to pick.
+  Future<void> _showNotLocal(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return showAdaptiveDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.folderNotLocalTitle),
+        content: Text(l10n.folderNotLocalBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.ok),
+          ),
+        ],
       ),
     );
   }
@@ -132,6 +195,7 @@ class _SwitcherSheet extends StatelessWidget {
     required this.onSelect,
     required this.onNewEngram,
     required this.onOpenFolder,
+    required this.onGrantAccess,
   });
 
   final EngramDiscovery discovery;
@@ -139,6 +203,9 @@ class _SwitcherSheet extends StatelessWidget {
   final void Function(Engram engram) onSelect;
   final VoidCallback? onNewEngram;
   final VoidCallback? onOpenFolder;
+
+  /// Asks again for the access an [UnreachableReason.accessNeeded] row lost.
+  final void Function(UnavailableEngram unavailable) onGrantAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -162,12 +229,29 @@ class _SwitcherSheet extends StatelessWidget {
               onTap: () => onSelect(engram),
             ),
           for (final unavailable in discovery.unavailable)
-            ListTile(
-              enabled: false,
-              leading: const Icon(Icons.cloud_off_outlined),
-              title: Text(unavailable.displayName),
-              subtitle: Text(l10n.switcherUnavailable),
-            ),
+            // Each reason says what reconnects it. Lost permission is the one
+            // the app can fix from here, so only that row is live: tapping it
+            // asks again. The rest stay disabled.
+            switch (unavailable.reason) {
+              UnreachableReason.accessNeeded => ListTile(
+                leading: const Icon(Icons.lock_outline),
+                title: Text(unavailable.displayName),
+                subtitle: Text(l10n.switcherNeedsAccess),
+                onTap: () => onGrantAccess(unavailable),
+              ),
+              UnreachableReason.bookmarkInvalid => ListTile(
+                enabled: false,
+                leading: const Icon(Icons.link_off),
+                title: Text(unavailable.displayName),
+                subtitle: Text(l10n.switcherBookmarkInvalid),
+              ),
+              UnreachableReason.missing => ListTile(
+                enabled: false,
+                leading: const Icon(Icons.cloud_off_outlined),
+                title: Text(unavailable.displayName),
+                subtitle: Text(l10n.switcherUnavailable),
+              ),
+            },
           if (onNewEngram != null || onOpenFolder != null) const Divider(),
           if (onNewEngram != null)
             ListTile(

@@ -74,9 +74,12 @@ read-only and show no edit affordances — use them only where a case says
 > folders you added, and the per-engram `.brainframe/settings.json` the app
 > writes on the first settings change (e.g. a per-engram theme override, F19).
 > `checkout` alone leaves those behind, so the next run starts from a poisoned
-> state. (No `-x`, so nothing gitignored is touched.) On mobile / Pi, where
-> **Open folder…** isn't offered, create a scratch engram with **New engram**
-> instead.
+> state. (No `-x`, so nothing gitignored is touched.) On Android, copy the
+> fixture to the device's shared storage
+> (`adb push test/fixtures/engram /sdcard/Documents/FieldNotebook`) and open it
+> with **Open folder…** once file access is granted (F39); reset it by pushing
+> it again after deleting the copy. On iOS / Pi, where **Open folder…** isn't
+> offered, create a scratch engram with **New engram** instead.
 
 ---
 
@@ -539,8 +542,9 @@ file if it lived inside.
    rows with an "unavailable" subtitle.
 3. Tap another engram → it becomes active and the browser rebuilds.
 4. Tap **New engram**; name it; confirm it is created and switched to.
-5. Tap **Open folder…** (desktop) and pick a folder that is **already** an
-   engram (has a `.brainframe/`). For a plain folder, see F30.
+5. Tap **Open folder…** (desktop, Android) and pick a folder that is
+   **already** an engram (has a `.brainframe/`). For a plain folder, see F30;
+   for Android's file-access prompt the first time, F39.
 
 **Expected:** switching swaps the whole browser to the new engram (tree, reader,
 title) while the app root does **not** rebuild; the switch persists across
@@ -550,7 +554,7 @@ written into a folder that is one already.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ **N/A** for Open folder — hidden (no desktop dir dialog) | same as Android | same as Android | ✓ for switch/new; **N/A** for Open folder — flutter-pi has no native dialog (in-app browser is future) |
+| ✓ | ✓ | ✓ | ✓ + Open folder asks for file access first (F39), then shows the system folder picker; pick the fixture pushed to `Documents/FieldNotebook` (Safety) | same as Android | ✓ for switch/new; **N/A** for Open folder — hidden until the iOS bookmark channel is built (#94, step 4 of the sandboxed folder adoption design) | ✓ for switch/new; **N/A** for Open folder — flutter-pi has no native dialog (in-app browser is future) |
 
 - **New engram** is present on all seven columns — there is no platform that
   hides it (the web build that did is removed; see
@@ -819,7 +823,7 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ pane renders, but with no folder-adoption on mobile (F15) there may be **no forgettable engrams** — verify the empty state | same as Android | same as Android | same as Android (no native adoption yet) |
+| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path | same as Android | ✓ pane renders, but with no folder adoption on iOS yet (F15) there may be **no forgettable engrams** — verify the empty state | same as iOS (no native adoption yet) |
 
 - **A11y:** the Forget and Clean up buttons are each labeled with the engram
   name; the disabled Clean up reports as disabled; the confirm and failure
@@ -1502,7 +1506,7 @@ few hundred MB.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | steps 1–2 and 9–11 **N/A** — no folder dialog (F15); steps 3–8 and 12 apply to the first launch of an existing engram | as Android | as Android | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 and 12 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder, and minutes for the one file of step 12, which is where a bar that only ticks per file reads as hung |
+| ✓ | ✓ | ✓ | ✓ once file access is granted (F39); push the test folders to the device's shared storage first (`adb push`), and check step 7's file with `adb shell cat -v` | as Android | steps 1–2 and 9–11 **N/A** — no folder picker until the iOS bookmark channel is built (F15); steps 3–8 and 12 apply to the first launch of an existing engram | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 and 12 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder, and minutes for the one file of step 12, which is where a bar that only ticks per file reads as hung |
 
 - **Progress on e-ink:** the bar advances in discrete steps — at most a few a
   second, whether between notes or within a large file — and stops moving
@@ -2172,6 +2176,96 @@ the caret); the quotes becoming tabs.
   [bounded_myers_diff.dart](../lib/engram/crdt/bounded_myers_diff.dart)
   bounded it (F29 covers the scan itself).
 
+### F39 — Android: open a folder outside the app's storage (file access)
+
+Android-only: opening a folder on the device's shared storage asks for broad
+file access first — **All files access** from Android 11 (API 30), the storage
+permission below it — then uses the system folder picker, and reaches the
+folder by its ordinary path ([design](design/sandboxed-folder-adoption.md),
+Decisions 4 and 6). Run it on a fresh install, or with the access turned off
+(step 7's settings screen). Test on one device or emulator of each kind:
+API 30 or later, and one below it.
+
+**Setup:** push the fixture and a plain folder to the device:
+
+```bash
+adb push test/fixtures/engram /sdcard/Documents/FieldNotebook
+adb shell mkdir -p /sdcard/Documents/Plain
+adb shell 'echo hello > /sdcard/Documents/Plain/a.md'
+```
+
+**Steps:**
+
+1. Engram switcher → **Open folder…**. Read the dialog; **Cancel**.
+2. **Open folder…** → **Continue**. On the system screen, go **back**
+   without turning anything on (below API 30, **Deny** the prompt).
+3. **Open folder…** → **Continue** → turn access **on** (below API 30,
+   **Allow**) → back to the app. In the picker that opens, go to
+   `Documents/FieldNotebook` and choose **Use this folder** (and **Allow** if
+   asked).
+4. **Open folder…** again. Pick `Documents/Plain`.
+5. **Open folder…** again. In the picker's side menu, choose a root that is
+   not the device's own storage — a cloud provider's folder (Google Drive, if
+   installed and signed in) or, where the picker lets you select it,
+   **Downloads** — and select it.
+6. **An SD card:** on a device or emulator with one, push a folder to it and
+   open it the same way.
+7. **Revoke:** switch to the Tutorial. In system Settings → Apps →
+   BrainFrame → **All files access** (below API 30: **Permissions** →
+   **Storage**), turn it **off**. Return to the app (relaunch it if Android
+   closed it); open the switcher.
+8. Settings → **Housekeeping** → **Clean up** the Field Notebook row;
+   confirm. Read the dialog; **OK**.
+9. Engram switcher → tap the **Field Notebook** row → **Continue** → turn
+   access back on → back.
+
+**Expected:**
+
+- Step 1: a dialog **Allow access to your files?** says why access is needed
+  and what Android shows next. Cancel closes it; no system screen, no
+  picker, nothing adopted.
+- Step 2: Android's own screen (API 30+: this app's **All files access**
+  toggle; below: a storage permission prompt). Back in the app nothing else
+  happens — no picker, nothing adopted.
+- Step 3: the picker opens on its own once access is on. The fixture opens
+  **directly** as an engram (it already is one, so there is no **Adopt this
+  folder?**) and the browser shows its notes.
+- Step 4: no explanation this time — the picker opens at once — and the F30
+  confirmation follows, naming `Plain`. **Adopt** it and it opens.
+- Step 5: a dialog **This folder can’t be opened** says only a folder on the
+  device's own storage can be opened, naming a cloud drive and the Downloads
+  list as examples of what cannot. OK changes nothing; no `content://` or
+  other internal text anywhere.
+- Step 6: the SD-card folder opens like any other; its path in Housekeeping
+  starts with `/storage/` and the card's ID, not `/sdcard`. On a system that
+  does not expose the card under `/storage/` at all — the stock API 27
+  emulator image mounts its virtual card only at `/mnt/media_rw/` — step 5's
+  dialog is the right answer instead: no app can reach that card by path.
+- Step 7: the Field Notebook and Plain rows show a **lock** icon and
+  **Needs access to your files — tap to grant**, and are **not** greyed out.
+  They are not shown as *Unavailable*, and nothing on disk has changed.
+- Step 8: before Clean up, both rows carry a **NO ACCESS** badge — never
+  **MISSING**. **Could not clean up “Field Notebook”** says, in words, that
+  BrainFrame no longer has permission to reach the folder and how to grant
+  it, and that the entry stays listed. No `FolderAccessException` or other
+  internal text. On disk (`adb shell ls -a /sdcard/Documents/FieldNotebook`)
+  the `.brainframe/` is **still there**.
+- Step 9: after the explanation and the system screen, the **Field Notebook
+  opens** by itself; the switcher lists it (and Plain) normally again.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| **N/A** — no permission to ask for; the folder dialog returns a usable path at once (F15) | **N/A** — as Win until its bookmark channel is built | **N/A** — as Win | ✓ — on API 30+ and once below it; Android may **close the app** when access is revoked in step 7, which is expected | same as Android | **N/A** — Open folder is hidden until the iOS bookmark channel is built (F15) | **N/A** — no native folder dialog |
+
+- **A11y (TalkBack):** both dialogs read title then body, and each button by
+  its label. The needs-access row reads as a **button** with the engram's
+  name and the "tap to grant" line; the *Unavailable* rows still read as
+  disabled.
+- **Reasons are load-bearing:** a row that shows *Unavailable* in step 7,
+  rather than *Needs access*, or **MISSING** in step 8, rather than **NO
+  ACCESS**, is the bug this case exists for — a revoked permission must never
+  look like a deleted folder.
+
 ---
 
 ## Bug-class deep-dives
@@ -2302,7 +2396,7 @@ cases for these until the code exists.
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
 | **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), two instances over one folder can be driven as two devices on Linux (F36), and the monitor's `deliver` can carry one device's operations into the other's store by hand (F36 step 10, [docs/bfmon.md](bfmon.md)). What stays untestable is the transport itself: operations arriving while the app runs, and what it does at that moment. |
 | **Filesystem watcher (#70)** | External edits and new files are picked up at start, resume, and before open (F29), not live — the tree and the open note both follow the scan (F29 steps 8–11, F36 step 5), so what the watcher would add is only the *trigger*. An edit or a new file that lands while the window is focused waits for the next one. |
-| **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
+| **"Open folder" on iOS and the Pi** | Desktop and Android adopt folders today (F15, F39). iOS needs its security-scoped bookmark channel, which is step 4 of the [sandboxed folder adoption design](design/sandboxed-folder-adoption.md) and not yet built. The Pi has no native dialog; the reusable folder picker (F14) is earmarked as its in-app directory browser. |
 
 When any of these lands, move its row up into the matrix with concrete steps and
 per-platform verdicts, and delete it from this table.

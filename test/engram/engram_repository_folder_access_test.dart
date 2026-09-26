@@ -214,6 +214,25 @@ void main() {
       expect(unavailable.reason, UnreachableReason.bookmarkInvalid);
     });
 
+    test('Housekeeping\'s list carries the reason too', () async {
+      final path = await folder('Listed');
+      final engram = await repoWith(FakeFolderAccess()).adoptFolder(
+        EngramLocation(path),
+      );
+
+      final registered = await repoWith(
+        FakeFolderAccess(
+          onResolve: (_, _) => throw const FolderAccessException(
+            UnreachableReason.accessNeeded,
+          ),
+        ),
+      ).registeredEngrams();
+
+      final row = registered.singleWhere((e) => e.id == engram.id);
+      expect(row.available, isFalse);
+      expect(row.reason, UnreachableReason.accessNeeded);
+    });
+
     test('the exception names its reason and message', () {
       expect(
         const FolderAccessException(UnreachableReason.accessNeeded).toString(),

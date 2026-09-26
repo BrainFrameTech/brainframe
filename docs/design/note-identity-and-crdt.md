@@ -477,6 +477,14 @@ This is the heart of "locally arriving CRDTs work." A scan runs on app start,
 on app resume, on filesystem-watcher events once **#70** lands, and immediately
 before a file is opened for editing.
 
+**Amended by the [filesystem watcher](filesystem-watcher.md)** (its Decision 5,
+2026-09-26). Every write of a note's file now checks the file under the note
+lock and reconciles any drift first, including the editor's save, which merges
+its buffer three ways with an external edit it finds. So step 1 below is no
+longer a correctness requirement. The resume scan keeps its flush as a
+courtesy, and the watcher does not flush, which is what lets it run while the
+user types.
+
 For each note whose file has drifted:
 
 1. Flush the editor first if this note is open (`DocumentEditController.flush`

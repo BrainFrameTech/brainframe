@@ -166,15 +166,56 @@ and commits the size, mtime and hash under the note lock, so the targeted
 `reconcile(path)` a self-write provokes waits on that lock, finds the pre-filter
 unchanged, and returns. The cost of a save is one extra stat.
 
-What does need fixing is the **temp file's name**. `FileSystemEngramStore`
-writes `<path>.tmp` as a visible sibling — `notes/a.md.tmp` — which a scan
-listing the folder mid-save could mint as a new blob, and which a crash leaves
-behind as a file the next scan *will* mint. The watcher makes the first far
-more likely. The temp file becomes hidden — `.<name>.bf-tmp` in the same
-directory, so the rename stays atomic on one filesystem — and is then dropped
-by step 1 of Decision 3 and by the scan alike. The same change applies to
-`settings.json` and `engram.json`, for uniformity; they are already hidden by
-their directory.
+What does need fixing is the **temp file's name, which is visible today and
+becomes hidden.**
+
+| | Today | Proposed |
+| --- | --- | --- |
+| Temp file for `notes/a.md` | `notes/a.md.tmp` | `notes/.a.md.bf-tmp` |
+| Seen by the scan and the watcher | yes | no — a leading dot is a hidden path |
+
+The visible name was never a choice. It predates the drift scan and its
+hidden-path rule, and nothing documents a reason for it. It is now a defect on
+two counts:
+
+- **A scan mid-save can adopt it.** A scan that lists the folder between the
+  temp file's write and its rename sees `a.md.tmp` as a new file and mints it
+  as a blob. The watcher makes this far more likely, since every save now
+  provokes the events that start a scan.
+- **A crash leaves it behind as content.** A temp file orphaned by a crash or
+  power loss is a visible file that the next scan *will* mint.
+
+The temp file stays **in the same directory** as its target, because `rename`
+is only atomic within one filesystem, and a note folder on another mount than
+the engram root is rare but possible. Hidden, it is dropped by step 1 of
+Decision 3 and by the scan's listing alike. The same naming applies to
+`settings.json` and `engram.json` inside `.brainframe/` for uniformity, though
+their directory already hides them.
+
+**Orphans are swept by the scan.** A hidden orphan can no longer be minted, but
+nor can it be seen in a file manager, so without a sweep they would accumulate
+silently. Every **complete** full scan — one whose listing did not fail —
+deletes each `.*.bf-tmp` file it finds anywhere in the engram, `.brainframe/`
+included, whose modification time is **more than ten minutes old**.
+
+- **Why the age, and not the note lock.** The lock serializes this app's own
+  saves, but a second BrainFrame instance over the same folder (F36) has a
+  lock of its own, and its in-flight temp file must not be deleted from under
+  it. A save holds its temp file for milliseconds; ten minutes is a margin no
+  real write approaches, and costs nothing, since an orphan harms nothing
+  while it waits.
+- **Why only a complete scan.** It is the only point at which the folder has
+  been walked in full, so the sweep adds no walk of its own. The one
+  exception is `.brainframe/`, which the listing skips. It is swept with a
+  listing of its own, which is cheap because the directory holds a handful
+  of files.
+- **Only our own suffix.** The sweep deletes `.bf-tmp` files and nothing else.
+  Another program's hidden temp files are not ours to judge. Nor are leftover
+  *visible* `*.tmp` files from before this change: by now the scan may have
+  minted them as notes, and a visible file may be the user's.
+- **Failures are logged, not reported.** A temp file that cannot be deleted is
+  retried on the next scan. It is not a finding, so it never reaches
+  Housekeeping.
 
 ### Decision 5 — nothing writes over an unreconciled change
 
@@ -310,9 +351,12 @@ case; it is the only user-visible surface this design adds.
 
 In dependency order; each is a separately reviewable step.
 
-1. **Hidden temp files** (Decision 4) — `FileSystemEngramStore._atomicWrite`,
-   with the fixture test that no visible `.tmp` ever appears and one that a
-   left-over hidden temp is ignored by the scan.
+1. **Hidden temp files and the sweep** (Decision 4) —
+   `FileSystemEngramStore._atomicWrite` and the scan. Tests: no visible `.tmp`
+   ever appears; a hidden temp is never minted; a complete scan deletes a
+   `.bf-tmp` older than ten minutes and keeps a fresh one; a scan whose
+   listing failed deletes nothing; another program's hidden file is left
+   alone.
 2. **`merge(base, mine, theirs)`** (Decision 6) — pure, in `lib/engram/`,
    with a table-driven test of the overlap rules and a property test: for
    random edits of a base, the result contains every inserted run of both.

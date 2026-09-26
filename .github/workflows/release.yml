@@ -16,7 +16,7 @@ permissions:
   contents: write # create the Release and upload assets
 
 env:
-  FLUTTER_VERSION: 3.44.4 # keep in sync with the local toolchain / coverage.yml
+  FLUTTER_VERSION: 3.44.4 # keep in sync with the local toolchain / coverage.yml, l10n.yml
 
 jobs:
   linux-appimage:

@@ -6,6 +6,8 @@ on: pull_request
 permissions:
   contents: read
   pull-requests: write # required to post the coverage comment
+env:
+  FLUTTER_VERSION: 3.44.4 # keep in sync with the local toolchain / l10n.yml, release.yml
 jobs:
   coverage:
     runs-on: ubuntu-latest
@@ -14,8 +16,22 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.44.4 # pin to match the local toolchain
+          flutter-version: ${{ env.FLUTTER_VERSION }}
       - run: flutter pub get
+      # The lockfile must be exactly what the pinned Flutter resolves. The SDK
+      # pins some packages (meta, test_api, clock, …) to exact versions, so a
+      # lockfile produced by any other Flutter drags them, and whatever depends
+      # on them, to other versions. `pub get` above quietly rewrites the file
+      # rather than failing, so without this the mismatch reaches main unseen
+      # and every contributor on the pinned SDK gets a dirty tree.
+      - name: Check pubspec.lock matches the pinned Flutter
+        run: |
+          if ! git diff --exit-code pubspec.lock; then
+            echo "::error file=pubspec.lock::pubspec.lock was not produced by" \
+              "Flutter $FLUTTER_VERSION. Run 'flutter pub get' on that version and" \
+              "commit the result."
+            exit 1
+          fi
       - run: dart pub global activate coverde
       - run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
       # Regenerate the import-all helper, measure, and filter the documented

@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:brainframe/engram/desktop_folder_adoption.dart';
+import 'package:brainframe/engram/folder_adoption.dart';
 import 'package:brainframe/engram/engram_repository.dart';
+import 'package:brainframe/engram/fs/folder_access.dart';
 import 'package:brainframe/engram/fs/fs_store.dart';
+import 'package:brainframe/engram/path_folder_access.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+
+import '../support/fake_folder_access.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,23 +40,40 @@ void main() {
     if (tempRoot.existsSync()) tempRoot.deleteSync(recursive: true);
   });
 
-  group('isDesktopFolderAdoptionSupported', () {
-    test('is true on desktop targets', () {
+  group('PathFolderAccess', () {
+    test('can pick on desktop targets', () {
       for (final platform in [
         TargetPlatform.windows,
         TargetPlatform.linux,
         TargetPlatform.macOS,
       ]) {
         debugDefaultTargetPlatformOverride = platform;
-        expect(isDesktopFolderAdoptionSupported, isTrue, reason: '$platform');
+        expect(const PathFolderAccess().canPick, isTrue, reason: '$platform');
       }
     });
 
-    test('is false on mobile targets', () {
+    test('cannot pick on mobile targets', () {
       for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
         debugDefaultTargetPlatformOverride = platform;
-        expect(isDesktopFolderAdoptionSupported, isFalse, reason: '$platform');
+        expect(const PathFolderAccess().canPick, isFalse, reason: '$platform');
       }
+    });
+
+    test('a picked path carries no bookmark; a cancel is null', () async {
+      final picked =
+          await PathFolderAccess(picker: () async => '/some/where').pick();
+      expect(picked!.path, '/some/where');
+      expect(picked.bookmark, isNull);
+      expect(await PathFolderAccess(picker: () async => null).pick(), isNull);
+    });
+
+    test('resolves a row to its own path, and needs no permission', () async {
+      const access = PathFolderAccess();
+      final resolved = await access.resolve(path: '/a/b', bookmark: 'ignored');
+      expect(resolved.path, '/a/b');
+      expect(resolved.refreshedBookmark, isNull);
+      expect(await access.hasBroadAccess, isTrue);
+      expect(await access.requestBroadAccess(), isTrue);
     });
   });
 
@@ -64,7 +85,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => picked,
+        access: PathFolderAccess(picker: () async => picked),
       );
 
       expect(engram, isNotNull);
@@ -83,7 +104,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => null,
+        access: PathFolderAccess(picker: () async => null),
       );
 
       expect(engram, isNull);
@@ -106,7 +127,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => picked,
+        access: PathFolderAccess(picker: () async => picked),
         confirm: (previewing) async {
           // Handed the folder the moment it is picked — its name known,
           // the pass under way — and asked once the preview is in.
@@ -149,7 +170,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => picked,
+        access: PathFolderAccess(picker: () async => picked),
         confirm: (previewing) async {
           // Cancel between the first and second file, as the dialog's
           // Cancel does, then answer as if the user had gone on.
@@ -178,7 +199,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => picked,
+        access: PathFolderAccess(picker: () async => picked),
         confirm: (_) async => false,
       );
 
@@ -205,7 +226,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => picked,
+        access: PathFolderAccess(picker: () async => picked),
         confirm: (previewing) async {
           seen = previewing;
           return false; // without cancelling, and without waiting
@@ -238,7 +259,7 @@ void main() {
 
       final engram = await pickAndAdoptFolder(
         repository,
-        picker: () async => picked,
+        access: PathFolderAccess(picker: () async => picked),
         confirm: (previewing) async {
           isEngram = (await previewing.preview).isEngram;
           return isEngram!;
@@ -249,21 +270,48 @@ void main() {
       expect(engram!.id, created.id);
     });
 
-    test('throws off the desktop targets before invoking the picker', () async {
+    test('throws where no folder can be picked, before invoking the picker',
+        () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       var pickerCalled = false;
 
       await expectLater(
         pickAndAdoptFolder(
           repository,
-          picker: () async {
-            pickerCalled = true;
-            return null;
-          },
+          access: PathFolderAccess(
+            picker: () async {
+              pickerCalled = true;
+              return null;
+            },
+          ),
         ),
         throwsUnsupportedError,
       );
       expect(pickerCalled, isFalse);
+    });
+
+    test('picks through the repository\'s own access by default, and stores '
+        'the bookmark it gives', () async {
+      final picked = '${tempRoot.path}/Bookmarked';
+      await Directory(picked).create(recursive: true);
+      final access = FakeFolderAccess(
+        picked: PickedFolder(picked, bookmark: 'opaque-token'),
+      );
+      final repo = EngramRepository(
+        preferences: SharedPreferencesAsync(),
+        containerPathResolver: () async => containerPath,
+        folderAccess: access,
+      );
+
+      final engram = await pickAndAdoptFolder(repo);
+
+      expect(engram, isNotNull);
+      await repo.discover();
+      expect(
+        access.resolved,
+        [(path: picked, bookmark: 'opaque-token')],
+        reason: 'discovery resolves the row with the bookmark it was given',
+      );
     });
   });
 }

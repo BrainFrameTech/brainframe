@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:brainframe/engram/desktop_folder_adoption.dart';
+import 'package:brainframe/engram/folder_adoption.dart';
 import 'package:brainframe/engram/fs/fs_store.dart';
 import 'package:brainframe/engram/ui/adopt_folder_dialog.dart';
 import 'package:flutter/material.dart';

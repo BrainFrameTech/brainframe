@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
-import '../desktop_folder_adoption.dart';
+import '../folder_adoption.dart';
 import '../fs/fs_store.dart';
 import 'note_status_bar.dart' show formatDecimal;
 

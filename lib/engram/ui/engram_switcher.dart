@@ -2,33 +2,35 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
 import '../built_in_engrams.dart';
-import '../desktop_folder_adoption.dart';
+import '../folder_adoption.dart';
 import '../engram.dart';
 import '../engram_repository.dart';
 import '../engram_scope.dart';
+import '../fs/folder_access.dart';
 import 'adopt_folder_dialog.dart';
 
 /// The sidebar-footer engram switcher (Decision 8's "travel there" entry point).
 ///
 /// Shows the current engram and, on tap, a sheet listing the available engrams
 /// (built-ins and user engrams), the reconnectable ones as disabled rows, and
-/// the app-level actions `New engram` and — on desktop — `Open folder…`. It
-/// captures the [EngramScope] before opening the sheet, because the sheet is
-/// pushed above the app content and no longer has the scope as an ancestor.
+/// the app-level actions `New engram` and — where a folder can be chosen —
+/// `Open folder…`. It captures the [EngramScope] before opening the sheet,
+/// because the sheet is pushed above the app content and no longer has the
+/// scope as an ancestor.
 class EngramSwitcher extends StatelessWidget {
   const EngramSwitcher({
     super.key,
     required this.repository,
     required this.current,
-    this.folderPicker,
+    this.folderAccess,
   });
 
   final EngramRepository repository;
   final Engram current;
 
-  /// The directory chooser behind **Open folder…**, or the native dialog when
+  /// The folder chooser behind **Open folder…**, or the repository's own when
   /// null. Injected so the adoption confirmation can be driven in a test.
-  final DirectoryPicker? folderPicker;
+  final FolderAccess? folderAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +78,7 @@ class EngramSwitcher extends StatelessWidget {
     // Capture the scope before the async gap — the sheet's context won't have
     // it as an ancestor.
     final scope = EngramScope.of(context);
+    final folders = folderAccess ?? repository.folderAccess;
     final discovery = await repository.discover();
     if (!context.mounted) return;
 
@@ -93,12 +96,12 @@ class EngramSwitcher extends StatelessWidget {
           Navigator.of(sheetContext).pop();
           await _createEngram(context, scope);
         },
-        onOpenFolder: isDesktopFolderAdoptionSupported
+        onOpenFolder: folders.canPick
             ? () async {
                 Navigator.of(sheetContext).pop();
                 final engram = await pickAndAdoptFolder(
                   repository,
-                  picker: folderPicker,
+                  access: folders,
                   // Up at once, while the folder is looked at; the
                   // confirmation, with its counts, when that is done.
                   confirm: (previewing) =>

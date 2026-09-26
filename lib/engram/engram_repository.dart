@@ -9,7 +9,9 @@ import '../settings/settings_store.dart';
 import 'built_in_engrams.dart';
 import 'crdt/app_data_resolver.dart';
 import 'engram.dart';
+import 'fs/folder_access.dart';
 import 'fs/fs_store.dart';
+import 'path_folder_access.dart';
 
 /// Logger name for discovery/registry diagnostics (see `dart:developer`).
 const String _logName = 'brainframe.engram.repository';
@@ -36,10 +38,17 @@ class EngramRepository {
     required Future<String> Function() containerPathResolver,
     AssetBundle? bundle,
     AppDataRootResolver? dataRootResolver,
+    this.folderAccess = const PathFolderAccess(),
   }) : _prefs = preferences,
        _resolveContainerPath = containerPathResolver,
        _assetBundle = bundle,
        _resolveDataRoot = dataRootResolver;
+
+  /// How folders outside the container are chosen and reached again: every
+  /// registry row is resolved through it before it is opened, and "Open
+  /// folder…" picks through it. Defaults to plain paths, which is what the
+  /// desktop targets have.
+  final FolderAccess folderAccess;
 
   final SharedPreferencesAsync _prefs;
   final Future<String> Function() _resolveContainerPath;
@@ -86,17 +95,44 @@ class EngramRepository {
       );
     }
 
-    // Location B — registry roots outside the container.
-    for (final entry in await _readRegistry()) {
+    // Location B — registry roots outside the container, each resolved to a
+    // path first: a bookmark turned back into one, or a permission checked.
+    final entries = await _readRegistry();
+    var refreshed = false;
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      var reason = UnreachableReason.missing;
       try {
-        final engram = await openFileSystemEngram(EngramLocation(entry.path));
+        final ResolvedFolder resolved;
+        try {
+          resolved = await folderAccess.resolve(
+            path: entry.path,
+            bookmark: entry.bookmark,
+          );
+        } on FolderAccessException catch (error) {
+          reason = error.reason;
+          rethrow;
+        }
+        final engram = await openFileSystemEngram(
+          EngramLocation(resolved.path),
+        );
         if (seenIds.add(engram.id)) available.add(engram);
+        // A folder that moved, or a bookmark the platform replaced: the row
+        // follows, so the next launch starts from what is true now.
+        if (resolved.path != entry.path || resolved.refreshedBookmark != null) {
+          entries[i] = entry.copyWith(
+            path: resolved.path,
+            bookmark: resolved.refreshedBookmark,
+          );
+          refreshed = true;
+        }
       } catch (error, stackTrace) {
-        // Deleted folder, stale token, not-yet-synced file: keep it registered
-        // and surface it as reconnectable rather than silently dropping it.
+        // Deleted folder, lost permission, stale bookmark, not-yet-synced
+        // file: keep it registered and surface it as reconnectable rather
+        // than silently dropping it.
         developer.log(
           'Registry root "${entry.path}" (${entry.displayName}) is '
-          'unavailable; surfacing as reconnectable.',
+          'unavailable (${reason.name}); surfacing as reconnectable.',
           name: _logName,
           level: _warning,
           error: error,
@@ -107,10 +143,12 @@ class EngramRepository {
             id: entry.id,
             displayName: entry.displayName,
             location: EngramLocation(entry.path),
+            reason: reason,
           ),
         );
       }
     }
+    if (refreshed) await _writeRegistry(entries);
 
     return EngramDiscovery(available: available, unavailable: unavailable);
   }
@@ -142,21 +180,28 @@ class EngramRepository {
   /// A folder that already carries a marker is opened and keeps its identity; a
   /// plain folder gets a fresh marker whose display name comes from
   /// [displayName], defaulting to the folder's own name. Either way the result
-  /// is persisted as a plain-path registry root.
+  /// is persisted as a registry root: its path, and the [bookmark] the
+  /// platform gave for reaching it again, if any ([FolderAccess.pick]).
   Future<Engram> adoptFolder(
     EngramLocation location, {
     String? displayName,
+    String? bookmark,
   }) async {
     final engram = await openOrCreateFileSystemEngram(
       location,
       displayName: displayName ?? _folderDisplayName(location.path),
     );
-    return _register(engram, location);
+    return _register(engram, location, bookmark: bookmark);
   }
 
   /// Persists [engram] at [location] as a registry root, replacing any prior
-  /// entry with the same id or path so re-adopting never duplicates a row.
-  Future<Engram> _register(Engram engram, EngramLocation location) async {
+  /// entry with the same id or path so re-adopting never duplicates a row —
+  /// and so re-adopting is how a row with a dead bookmark gets a new one.
+  Future<Engram> _register(
+    Engram engram,
+    EngramLocation location, {
+    String? bookmark,
+  }) async {
     final entries = (await _readRegistry())
       ..removeWhere((e) => e.id == engram.id || e.path == location.path);
     entries.add(
@@ -164,6 +209,7 @@ class EngramRepository {
         id: engram.id,
         displayName: engram.displayName,
         path: location.path,
+        bookmark: bookmark,
       ),
     );
     await _writeRegistry(entries);
@@ -200,10 +246,8 @@ class EngramRepository {
     final entries = await _readRegistry();
     final index = entries.indexWhere((e) => e.id == engram.id);
     if (index >= 0) {
-      entries[index] = _RegistryEntry(
-        id: entries[index].id,
+      entries[index] = entries[index].copyWith(
         displayName: metadata.displayName,
-        path: entries[index].path,
       );
       await _writeRegistry(entries);
     }
@@ -281,7 +325,24 @@ class EngramRepository {
         'only engrams added from a folder can be cleaned up',
       );
     }
-    await removeFileSystemEngramMarker(EngramLocation(entry.path));
+    // The folder is reached the way discovery reaches it. A bookmark that no
+    // longer resolves leaves no folder to reach — usually because it is gone
+    // — so the marker step is skipped and the store, which is the point of
+    // cleaning up a dangling entry, still goes. Lost permission is different:
+    // the folder is likely there with its marker, so that is thrown, and the
+    // row stays for a retry once access is granted.
+    String? folderPath;
+    try {
+      folderPath = (await folderAccess.resolve(
+        path: entry.path,
+        bookmark: entry.bookmark,
+      )).path;
+    } on FolderAccessException catch (error) {
+      if (error.reason != UnreachableReason.bookmarkInvalid) rethrow;
+    }
+    if (folderPath != null) {
+      await removeFileSystemEngramMarker(EngramLocation(folderPath));
+    }
     await deleteEngramStore(id, resolveRoot: _resolveDataRoot);
     await _writeRegistry(entries..remove(entry));
   }
@@ -292,8 +353,9 @@ class EngramRepository {
   /// container engrams are not registry-backed, so they never appear here,
   /// matching exactly what [forget] can act on. Backs the Housekeeping pane.
   Future<List<RegisteredEngram>> registeredEngrams() async {
-    final entries = await _readRegistry();
+    // Discovery first: it may refresh a row's path, and this shows the new one.
     final discovery = await discover();
+    final entries = await _readRegistry();
     final availableIds = {for (final engram in discovery.available) engram.id};
     return [
       for (final entry in entries)
@@ -403,11 +465,15 @@ class UnavailableEngram {
     required this.id,
     required this.displayName,
     required this.location,
+    this.reason = UnreachableReason.missing,
   });
 
   final String id;
   final String displayName;
   final EngramLocation location;
+
+  /// Why it could not be reached — which decides what reconnects it.
+  final UnreachableReason reason;
 }
 
 /// A registry-backed engram as shown in Housekeeping: its stored identity, where
@@ -433,26 +499,49 @@ class RegisteredEngram {
 
 /// A persisted registry row: an engram's last-known identity plus where it
 /// lives, so a missing engram can still be shown and later reconnected.
+///
+/// [bookmark] is the platform's opaque token for reaching the folder again,
+/// present only where one is needed (the sandboxed folder adoption design,
+/// Decision 3). Rows written before it existed have none and are read as the
+/// plain paths they are; with a bookmark, [path] is the last one it resolved
+/// to.
 class _RegistryEntry {
   const _RegistryEntry({
     required this.id,
     required this.displayName,
     required this.path,
+    this.bookmark,
   });
 
   final String id;
   final String displayName;
   final String path;
+  final String? bookmark;
+
+  /// This row with the given fields replaced. A null argument keeps the
+  /// current value, so a row's bookmark is never dropped by accident.
+  _RegistryEntry copyWith({
+    String? displayName,
+    String? path,
+    String? bookmark,
+  }) => _RegistryEntry(
+    id: id,
+    displayName: displayName ?? this.displayName,
+    path: path ?? this.path,
+    bookmark: bookmark ?? this.bookmark,
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'displayName': displayName,
     'path': path,
+    'bookmark': ?bookmark,
   };
 
   factory _RegistryEntry.fromJson(Map<String, dynamic> json) => _RegistryEntry(
     id: json['id'] as String,
     displayName: json['displayName'] as String,
     path: json['path'] as String,
+    bookmark: json['bookmark'] as String?,
   );
 }

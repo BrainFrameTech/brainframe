@@ -371,14 +371,14 @@ class ScanNotice {
 /// into their notes' history, and files that appeared, moved, or vanished into
 /// the notes' identities.
 ///
-/// **Callers flush the editor first.** Decision 6's first step — "flush the
-/// editor if this note is open" — belongs to whoever holds the editor, which
-/// nothing at this level does. The session host flushes every registered
-/// controller before a scan; the editor pane reconciles a note before it reads
-/// it, at which point that note is not the open one. A future caller that
-/// reaches this from somewhere else (the filesystem watcher, **#70**) owes the
-/// same courtesy, and the design says why: reconciling underneath an unsaved
-/// buffer races the save.
+/// **Flushing the editor first is a courtesy, not a requirement.** Decision
+/// 6's first step — "flush the editor if this note is open" — was once what
+/// kept a reconciliation from racing an unsaved buffer. Since the filesystem
+/// watcher design's Decision 5, a save looks at the file under the note lock
+/// before it writes, and merges with a change it finds, so a reconciliation
+/// underneath an unsaved buffer loses nothing. The session host still flushes
+/// before a resume scan; the watcher (**#70**) does not, which is what lets it
+/// run while the user types.
 ///
 /// **The app's own file management reports through the `note…` methods**
 /// rather than leaving the next scan to infer it. The scan could: an in-app

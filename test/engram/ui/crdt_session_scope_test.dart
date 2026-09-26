@@ -546,5 +546,6 @@ class _RecordingReconciler implements NoteReconciler {
 
 class _NoopWriter implements NoteWriter {
   @override
-  Future<void> write(String path, String text) async {}
+  Future<String> write(String path, String text, {String? base}) async =>
+      text;
 }

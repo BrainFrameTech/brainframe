@@ -117,6 +117,14 @@ class CrdtSession {
     // One lock between the two: a save and a reconciliation of the same note
     // must never overlap, and nothing above the session sequences them.
     final lock = NoteDocumentLock();
+    final reconciler = DriftReconciler(
+      database: database,
+      engram: store,
+      lock: lock,
+      identity: identity,
+      noteSizeCeilingBytes: engram.noteSizeCeilingBytes,
+      trace: trace,
+    );
     return CrdtSession._(
       database,
       CrdtNoteWriter(
@@ -124,15 +132,12 @@ class CrdtSession {
         engram: store,
         lock: lock,
         identity: identity,
+        // A save looks before it writes, and asks the reconciler, so a file
+        // changed underneath is taken in exactly as the scan would take it
+        // (the filesystem watcher design, Decision 5).
+        check: reconciler,
       ),
-      DriftReconciler(
-        database: database,
-        engram: store,
-        lock: lock,
-        identity: identity,
-        noteSizeCeilingBytes: engram.noteSizeCeilingBytes,
-        trace: trace,
-      ),
+      reconciler,
       identity,
     );
   }

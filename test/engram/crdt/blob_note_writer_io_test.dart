@@ -5,6 +5,7 @@ import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
 import 'package:brainframe/engram/crdt/blob_document_io.dart';
 import 'package:brainframe/engram/crdt/blob_note_writer_io.dart';
 import 'package:brainframe/engram/crdt/catalog.dart';
+import 'package:brainframe/engram/crdt/drift_reconciler_io.dart';
 import 'package:brainframe/engram/crdt/crdt_note_writer_io.dart';
 import 'package:brainframe/engram/crdt/drift.dart';
 import 'package:brainframe/engram/crdt/identity_authorship_io.dart';
@@ -224,6 +225,46 @@ void main() {
       await expectLater(() => writer.write('a.md', 'y'), throwsArgumentError);
       expect(await engram.statFile('a.md'), isNull, reason: 'nothing written');
     });
+  });
+
+  group('BlobNoteWriter looks before it writes (watcher Decision 5)', () {
+    test(
+      'a change underneath is its own claim before the save replaces it',
+      () async {
+        // A plain file merges whole, last writer wins — but both writes
+        // happened, and the history must say so rather than lose the first.
+        final store = await openStore();
+        addTearDown(store.close);
+        final before = Uint8List.fromList('old\n'.codeUnits);
+        await engram.writeBytes('big.md', before);
+        final ulid = plainFileNote(store, 'big.md', before);
+        final lock = NoteDocumentLock();
+        final reconciler = DriftReconciler(
+          database: store,
+          engram: engram,
+          lock: lock,
+          identity: null,
+        );
+        addTearDown(reconciler.close);
+        final writer = BlobNoteWriter(
+          database: store,
+          engram: engram,
+          lock: lock,
+          check: reconciler,
+        );
+        await engram.writeString('big.md', 'changed outside\n');
+
+        final saved = await writer.write('big.md', 'mine\n', base: 'old\n');
+
+        expect(saved, 'mine\n', reason: 'whole, not merged');
+        expect(await engram.readString('big.md'), 'mine\n');
+        expect(
+          changesOf(store, ulid),
+          3,
+          reason: 'the seed, the change underneath, and the save',
+        );
+      },
+    );
   });
 
   group('CrdtNoteWriter hands a blob to the blob writer', () {

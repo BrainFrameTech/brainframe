@@ -21,6 +21,7 @@ import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
 import 'package:brainframe/engram/metadata.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
+import 'package:brainframe/engram/note_writer.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hlc_dart/hlc_dart.dart';
@@ -73,23 +74,26 @@ void main() {
       ),
     );
     final lock = NoteDocumentLock();
+    final reconciler = DriftReconciler(
+      database: store,
+      engram: files,
+      lock: lock,
+      identity: identity,
+      noteSizeCeilingBytes: ceiling,
+      trace: trace,
+    );
     final d = _Device(
       store,
       identity,
+      // Wired as the session wires it: a save asks the reconciler first.
       CrdtNoteWriter(
         database: store,
         engram: files,
         lock: lock,
         identity: identity,
+        check: reconciler,
       ),
-      DriftReconciler(
-        database: store,
-        engram: files,
-        lock: lock,
-        identity: identity,
-        noteSizeCeilingBytes: ceiling,
-        trace: trace,
-      ),
+      reconciler,
     );
     addTearDown(d.close);
     return d;
@@ -2753,6 +2757,157 @@ void main() {
 
       expect(report.isClean, isTrue, reason: 'not drift, just bookkeeping');
       expect(d.store.catalog.byPath('a.md')!.sketch, isNotNull);
+    });
+  });
+
+  group('a save looks before it writes (the watcher design, Decision 5)', () {
+    // Before this, a save diffed its buffer against the note's history and
+    // wrote the result over the file without looking at it: an edit made
+    // outside the app since the last scan was overwritten, and — never having
+    // become operations — was in no history either. Gone.
+
+    test('an external edit and unsaved typing both survive', () async {
+      final d = await device();
+      await d.writer.write('a.md', 'one\ntwo\n');
+      // Another editor appends while BrainFrame's buffer is being typed in.
+      await engram.writeString('a.md', 'one\ntwo\nthree\n');
+
+      final saved = await d.writer.write(
+        'a.md',
+        'ONE\ntwo\n',
+        base: 'one\ntwo\n',
+      );
+
+      expect(saved, 'ONE\ntwo\nthree\n');
+      expect(await engram.readString('a.md'), 'ONE\ntwo\nthree\n');
+      expect(d.valueOf('a.md'), 'ONE\ntwo\nthree\n');
+    });
+
+    test('without a base, the external edit is still history first', () async {
+      final d = await device();
+      await d.writer.write('a.md', 'one\n');
+      final before = changesOf(d, 'a.md');
+      await engram.writeString('a.md', 'one\nexternal\n');
+
+      // The caller's text is the note's word, so the file ends as given — but
+      // the edit it replaced was taken in first, not silently lost: the save
+      // of an unchanged buffer still made history.
+      final saved = await d.writer.write('a.md', 'one\n');
+
+      expect(saved, 'one\n');
+      expect(await engram.readString('a.md'), 'one\n');
+      expect(changesOf(d, 'a.md'), greaterThan(before));
+    });
+
+    test('a file as this device left it is saved exactly as given', () async {
+      final d = await device();
+      await d.writer.write('a.md', 'one\n');
+
+      final saved = await d.writer.write('a.md', 'two\r\n', base: 'one\n');
+
+      expect(saved, 'two\r\n', reason: 'the buffer comes back untouched');
+    });
+
+    test('a save announces nothing on the reconciled stream', () async {
+      // The saving editor learns the merge from the save; an announcement
+      // would reload it from disk, racing the save it is waiting on.
+      final d = await device();
+      final seen = <String>[];
+      final subscription = d.reconciler.reconciled.listen(seen.add);
+      addTearDown(subscription.cancel);
+      await d.writer.write('a.md', 'one\n');
+      await engram.writeString('a.md', 'one\ntwo\n');
+
+      await d.writer.write('a.md', 'one!\n', base: 'one\n');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+    });
+
+    test('a merge past the ceiling is refused whole', () async {
+      final d = await device(ceiling: 40);
+      await d.writer.write('a.md', 'short\n');
+      const external = 'short\nadded outside, 24 b\n';
+      await engram.writeString('a.md', external);
+      const typed = 'short\ntyped in the app, 20\n';
+
+      await expectLater(
+        d.writer.write('a.md', typed, base: 'short\n'),
+        throwsA(
+          isA<NoteMergeOverLimitException>()
+              .having((e) => e.onDisk, 'onDisk', external)
+              .having((e) => e.merged, 'merged', contains('added outside'))
+              .having((e) => e.merged, 'merged', contains('typed in the app')),
+        ),
+      );
+      // Nothing of the merge reached the note; the external edit did.
+      expect(await engram.readString('a.md'), external);
+      expect(d.valueOf('a.md'), external);
+    });
+
+    test('a file grown past the ceiling outside is not saved over', () async {
+      final d = await device(ceiling: 40);
+      await d.writer.write('a.md', 'short\n');
+      final grown = 'x' * 100;
+      await engram.writeString('a.md', grown);
+
+      await expectLater(
+        d.writer.write('a.md', 'short!\n', base: 'short\n'),
+        throwsStateError,
+      );
+      expect(await engram.readString('a.md'), grown);
+      expect(d.store.catalog.byPath('a.md')!.state, NoteState.oversized);
+    });
+
+    test(
+      'a file the catalog has not met is merged with, given a base',
+      () async {
+        // Written in the moment between the editor creating the path and its
+        // first save — no scan has brought it in.
+        final d = await device();
+        await engram.writeString('new.md', 'from outside\n');
+
+        final saved = await d.writer.write('new.md', 'typed\n', base: '');
+
+        expect(saved, 'from outside\ntyped\n');
+        expect(await engram.readString('new.md'), 'from outside\ntyped\n');
+        expect(d.valueOf('new.md'), 'from outside\ntyped\n');
+      },
+    );
+
+    test('an untracked file past the ceiling is refused, not read', () async {
+      final d = await device(ceiling: 40);
+      final large = 'x' * 100;
+      await engram.writeString('new.md', large);
+
+      await expectLater(
+        d.writer.write('new.md', 'typed\n', base: ''),
+        throwsStateError,
+      );
+      expect(await engram.readString('new.md'), large);
+    });
+
+    test('a history-pending note is merged with its file', () async {
+      final a = await device();
+      await engram.writeString('shared.md', 'from A\n');
+      await a.reconciler.scan();
+      await a.publish();
+      final b = await device();
+      expect((await b.reconciler.scan()).adopted, ['shared.md']);
+      await engram.writeString('shared.md', 'from A\nfrom outside\n');
+
+      final saved = await b.writer.write(
+        'shared.md',
+        'from A, edited in B\n',
+        base: 'from A\n',
+      );
+
+      expect(saved, 'from A, edited in B\nfrom outside\n');
+      expect(
+        await engram.readString('shared.md'),
+        'from A, edited in B\nfrom outside\n',
+      );
+      expect(changesOf(b, 'shared.md'), 0, reason: 'still no history here');
     });
   });
 }

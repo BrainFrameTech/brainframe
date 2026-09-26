@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../commands/pending_saves.dart';
 import '../crdt/catalog.dart';
 import '../note_writer.dart';
+import '../text_merge.dart';
 
 /// The save state surfaced to the header status indicator.
 enum SaveStatus {
@@ -234,20 +235,35 @@ class DocumentEditController extends ChangeNotifier
 
     final targetPath = _path!;
     final pending = _buffer;
+    // What the buffer grew from: the writer merges with a file that has moved
+    // on since, rather than writing over it (the filesystem watcher design,
+    // Decision 5).
+    final base = _savedText;
     _setStatus(SaveStatus.saving);
-    final op = _write(targetPath, pending);
+    final op = _write(targetPath, pending, base);
     _writing = op;
     await op;
   }
 
-  Future<void> _write(String targetPath, String pending) async {
+  Future<void> _write(String targetPath, String pending, String base) async {
     try {
-      await writer.write(targetPath, pending);
+      final saved = await writer.write(targetPath, pending, base: base);
       // Only settle state if we are still on the file we wrote — a switch
       // during the write leaves the new file's state alone.
       if (_path == targetPath) {
-        _savedText = pending;
+        _adoptSaved(pending, saved);
         _setStatus(isDirty ? SaveStatus.dirty : SaveStatus.saved);
+      }
+    } on NoteMergeOverLimitException catch (e) {
+      // The file had changed underneath and the merge came out too large to
+      // save. The external edit is safe — it is what the note holds — and the
+      // merge becomes the buffer, withheld as though it had been typed.
+      if (_path == targetPath) {
+        _adoptSaved(pending, e.merged, onDisk: e.onDisk);
+        _cancelTimers();
+        _setStatus(
+          _overLimit(_buffer) ? SaveStatus.overLimit : SaveStatus.error,
+        );
       }
     } catch (_) {
       if (_path == targetPath) {
@@ -256,6 +272,22 @@ class DocumentEditController extends ChangeNotifier
     } finally {
       _writing = null;
     }
+  }
+
+  /// Settles the buffer after a write of [pending] came back as [result] — the
+  /// note's text, [onDisk] unless given separately.
+  ///
+  /// [result] is [pending] unless the writer merged with a change it found on
+  /// disk. The buffer then takes the merge, keeping anything typed while the
+  /// write was in flight by merging that too; the field is rebuilt from it on
+  /// the notification that follows.
+  void _adoptSaved(String pending, String result, {String? onDisk}) {
+    _savedText = onDisk ?? result;
+    if (result == pending) return;
+    _buffer = _buffer == pending
+        ? result
+        : threeWayMerge(base: pending, mine: _buffer, theirs: result);
+    notifyListeners();
   }
 
   void _flushFromTimer() {

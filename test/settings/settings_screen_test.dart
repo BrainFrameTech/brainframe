@@ -13,6 +13,7 @@ import 'package:brainframe/settings/settings_store.dart';
 import 'package:brainframe/settings/settings_screen.dart';
 import 'package:brainframe/theme/app_settings.dart';
 import 'package:brainframe/theme/design_language.dart';
+import 'package:brainframe/engram/watch/engram_watcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -254,6 +255,14 @@ void main() {
             child: CrdtSessionScope.republish(
               writer: null,
               reconciler: _CountingReconciler(),
+              // And the watch's status, the same way (the filesystem watcher
+              // design, Decision 9).
+              watchStatus: ValueNotifier(
+                const EngramWatchUnavailable(
+                  'limit',
+                  kind: WatchUnavailableKind.watchLimit,
+                ),
+              ),
               child: Builder(
                 builder: (context) => Scaffold(
                   body: TextButton(
@@ -274,6 +283,7 @@ void main() {
       expect(find.text('Notes in “zettel”'), findsOneWidget);
       expect(find.textContaining('7 notes were minted'), findsOneWidget);
       expect(find.textContaining('has no note catalog'), findsNothing);
+      expect(find.textContaining('Live updates are off'), findsOneWidget);
     });
 
     testWidgets('Open on a Housekeeping notice leaves Settings with the path',

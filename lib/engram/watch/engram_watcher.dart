@@ -68,10 +68,38 @@ class EngramWatchEvent {
   String toString() => 'EngramWatchEvent.${kind.name}(${path ?? ''})';
 }
 
+/// The kinds of reason an engram cannot be watched, which is what the user
+/// is told — the detail is the log's.
+enum WatchUnavailableKind {
+  /// This platform has no way to watch a folder.
+  unsupported,
+
+  /// The system's limit on watched folders is reached — Linux's
+  /// `fs.inotify.max_user_watches`, lowest on the smallest boards.
+  watchLimit,
+
+  /// Anything else: the folder unreadable, the watch lost and not regained.
+  failed,
+}
+
 /// Why an engram cannot be watched, or can no longer be (Decision 9): the
 /// session carries on with the triggers it had before, and says so once.
 class EngramWatchUnavailable implements Exception {
-  const EngramWatchUnavailable(this.reason, {this.cause});
+  const EngramWatchUnavailable(
+    this.reason, {
+    this.cause,
+    this.kind = WatchUnavailableKind.failed,
+  });
+
+  /// This platform cannot watch folders at all.
+  const EngramWatchUnavailable.unsupported()
+    : reason = 'this platform cannot watch folders',
+      cause = null,
+      kind = WatchUnavailableKind.unsupported;
+
+  /// Which kind of reason this is — decided by whoever saw the error, since
+  /// only the platform layer can read a system error code.
+  final WatchUnavailableKind kind;
 
   /// A short, untranslated diagnostic — what the log says. What the user is
   /// told is the Housekeeping panel's to word.
@@ -130,6 +158,7 @@ class WatchDispatcher {
     required this.watcher,
     required this.reconciler,
     required this.isTracked,
+    this.onFailure,
     this.quietPeriod = watchQuietPeriod,
     this.batchCap = watchBatchCap,
   });
@@ -140,6 +169,10 @@ class WatchDispatcher {
   /// Whether the catalog has a note at an engram-relative path — the test
   /// that decides whether a modification can be reconciled alone.
   final bool Function(String path) isTracked;
+
+  /// Told once, when the watch dies for good after starting — what [start]
+  /// throws for a watcher that never started.
+  final void Function(EngramWatchUnavailable failure)? onFailure;
 
   final Duration quietPeriod;
   final Duration batchCap;
@@ -214,6 +247,7 @@ class WatchDispatcher {
         ? error
         : EngramWatchUnavailable('the watch failed', cause: error);
     developer.log('watching stopped', name: watchLogName, error: _failure);
+    onFailure?.call(_failure!);
   }
 
   void _dispatch() {

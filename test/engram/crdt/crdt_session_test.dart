@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:brainframe/engram/crdt/app_data_resolver_io.dart';
@@ -14,6 +15,7 @@ import 'package:brainframe/engram/fs/fs_store_io.dart';
 import 'package:brainframe/engram/id.dart';
 import 'package:brainframe/engram/metadata.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
+import 'package:brainframe/engram/watch/engram_watcher.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -335,4 +337,148 @@ void main() {
       throwsA(anything),
     );
   });
+  group('watching (the filesystem watcher design, Decisions 8 and 9)', () {
+    test('an edit made outside, while watched, is taken in live', () async {
+      // The whole point, end to end, over this platform's real watcher: no
+      // scan, no resume, no open — the edit arrives by itself.
+      final engram = engramWith(readOnly: false);
+      final session = await CrdtSession.openFor(
+        engram,
+        resolveRoot: resolveRoot,
+      );
+      addTearDown(() => session?.close());
+      await session!.writer.write('a.md', 'one\n');
+      final reconciled = session.reconciler.reconciled.first;
+      await session.startWatching();
+      expect(session.watchStatus.value, isNull);
+
+      // Written in place, as many editors save: a modification of a note
+      // the catalog knows, reconciled alone.
+      File(
+        '${root.path}/engram/a.md',
+      ).writeAsStringSync('one\nfrom outside\n');
+
+      expect(
+        await reconciled.timeout(const Duration(seconds: 5)),
+        'a.md',
+      );
+    }, skip: FileSystemEntity.isWatchSupported ? false : 'no watching here');
+
+    test('a note created outside, while watched, is scanned in', () async {
+      // A listing change — the kind only a scan can make sense of.
+      Directory('${root.path}/engram').createSync();
+      final engram = engramWith(readOnly: false);
+      final session = await CrdtSession.openFor(
+        engram,
+        resolveRoot: resolveRoot,
+      );
+      addTearDown(() => session?.close());
+      final report = session!.reconciler.scanReports.first;
+      await session.startWatching();
+
+      File('${root.path}/engram/new.md').writeAsStringSync('arrived\n');
+
+      expect(
+        (await report.timeout(const Duration(seconds: 5))).created,
+        ['new.md'],
+      );
+    }, skip: FileSystemEntity.isWatchSupported ? false : 'no watching here');
+
+    Future<CrdtSession> withWatcher(EngramWatcher? watcher) async {
+      final session = await CrdtSession.openFor(
+        engramWith(readOnly: false),
+        resolveRoot: resolveRoot,
+        watcherFor: (_) => watcher,
+      );
+      addTearDown(() => session?.close());
+      return session!;
+    }
+
+    test('a platform with no watching says so, once', () async {
+      final session = await withWatcher(null);
+
+      await session.startWatching();
+      await session.startWatching();
+
+      expect(
+        session.watchStatus.value?.kind,
+        WatchUnavailableKind.unsupported,
+      );
+    });
+
+    test('a watcher that cannot start says why', () async {
+      final watcher = _FakeWatcher(
+        startError: const EngramWatchUnavailable(
+          'limit',
+          kind: WatchUnavailableKind.watchLimit,
+        ),
+      );
+      final session = await withWatcher(watcher);
+
+      await session.startWatching();
+
+      expect(session.watchStatus.value?.kind, WatchUnavailableKind.watchLimit);
+    });
+
+    test('a watch that dies later is said too', () async {
+      final watcher = _FakeWatcher();
+      final session = await withWatcher(watcher);
+      await session.startWatching();
+      expect(session.watchStatus.value, isNull);
+
+      watcher.fail(const EngramWatchUnavailable('lost for good'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.watchStatus.value?.reason, 'lost for good');
+    });
+
+    test('stopping is not a failure, and watching can start again', () async {
+      // The phone going to the background, and coming back.
+      final watcher = _FakeWatcher();
+      final session = await withWatcher(watcher);
+
+      await session.startWatching();
+      await session.startWatching(); // already watching: nothing more
+      await session.stopWatching();
+      await session.startWatching();
+
+      expect(watcher.log, ['start', 'stop', 'start']);
+      expect(session.watchStatus.value, isNull);
+    });
+
+    test('closing stops the watch first', () async {
+      final watcher = _FakeWatcher();
+      final session = await withWatcher(watcher);
+      await session.startWatching();
+
+      await session.close();
+
+      expect(watcher.log, ['start', 'stop']);
+    });
+  });
 }
+
+class _FakeWatcher implements EngramWatcher {
+  _FakeWatcher({this.startError});
+
+  final EngramWatchUnavailable? startError;
+  final List<String> log = [];
+  final StreamController<EngramWatchEvent> _events =
+      StreamController<EngramWatchEvent>.broadcast();
+
+  void fail(Object error) => _events.addError(error);
+
+  @override
+  Stream<EngramWatchEvent> get events => _events.stream;
+
+  @override
+  Future<void> start() async {
+    log.add('start');
+    final error = startError;
+    if (error != null) throw error;
+  }
+
+  @override
+  Future<void> stop() async => log.add('stop');
+}
+

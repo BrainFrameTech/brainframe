@@ -83,7 +83,11 @@ class DirectoryTreeWatcher implements EngramWatcher {
       await _watchTree('');
     } on FileSystemException catch (error) {
       await _release();
-      throw EngramWatchUnavailable('could not watch $root', cause: error);
+      throw EngramWatchUnavailable(
+        'could not watch $root',
+        cause: error,
+        kind: watchUnavailableKindOf(error),
+      );
     }
   }
 
@@ -195,7 +199,11 @@ class DirectoryTreeWatcher implements EngramWatcher {
     _events.addError(
       error is EngramWatchUnavailable
           ? error
-          : EngramWatchUnavailable('watching $root failed', cause: error),
+          : EngramWatchUnavailable(
+              'watching $root failed',
+              cause: error,
+              kind: watchUnavailableKindOf(error),
+            ),
     );
   }
 
@@ -307,6 +315,14 @@ class RecursiveWatcher implements EngramWatcher {
 
   String _relative(String absolute) => relativeToRoot(root, absolute);
 }
+
+/// The kind of [error] a watch failed with: the system's watch limit when it
+/// said "no space left on device" — errno 28, which is how inotify reports
+/// `fs.inotify.max_user_watches` reached — and a plain failure otherwise.
+WatchUnavailableKind watchUnavailableKindOf(Object? error) =>
+    error is FileSystemException && error.osError?.errorCode == 28
+    ? WatchUnavailableKind.watchLimit
+    : WatchUnavailableKind.failed;
 
 /// [absolute], a path under [root] as a watch reports it, made
 /// engram-relative with forward slashes — `''` for the root itself.

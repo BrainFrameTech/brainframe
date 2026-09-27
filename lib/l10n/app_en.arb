@@ -875,6 +875,17 @@
     "description": "Shown in place of the ledger for a built-in (read-only) engram, or on a platform with no local database."
   },
 
+  "housekeepingLiveUpdatesOff": "Live updates are off for this engram: {reason, select, unsupported{this device cannot watch folders} watchLimit{the system's limit on watched folders is reached} other{watching the folder failed}}. Changes made outside BrainFrame are still picked up when it opens, when it comes back to the front, and when you open a note.",
+  "@housekeepingLiveUpdatesOff": {
+    "description": "One line in Housekeeping, shown only when BrainFrame cannot watch the engram's folder for changes made by other apps. {reason} says why; the rest says what still works.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "watchLimit"
+      }
+    }
+  },
+
   "housekeepingPeers": "{count, plural, =1{One device has written to this engram — this one.} other{{count} devices have written to this engram, including this one.}}",
   "@housekeepingPeers": {
     "description": "Ledger line: how many devices have a file in the engram's shared map.",

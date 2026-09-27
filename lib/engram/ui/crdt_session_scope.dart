@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../../commands/pending_saves.dart';
@@ -10,6 +12,7 @@ import '../engram.dart';
 import '../engram_scope.dart';
 import '../note_reconciler.dart';
 import '../note_writer.dart';
+import '../watch/engram_watcher.dart';
 
 /// Owns the active engram's op-log session and publishes how to save into it.
 ///
@@ -117,14 +120,24 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
         // The scan on start, behind the UI. Nothing is registered to flush
         // yet — the child is only now mounting — so Decision 6's first step
         // is vacuously done. The report has no surface until step 13; what
-        // it says is logged by the scan.
-        if (next != null) _scanInBackground(next, ScanTrigger.open);
+        // it says is logged by the scan. The watch starts first (the
+        // filesystem watcher design, Decision 8), so a change made during a
+        // long first scan is an event, and the scan runs again after it.
+        if (next != null) unawaited(_watchThenScan(next));
       } else {
         // Switched away mid-open: the session we just opened belongs to an
         // engram nobody is looking at, so close it rather than leaking it.
         unawaited(next?.close());
       }
     }
+  }
+
+  /// Starts watching [session]'s folder, then scans it on open — unless the
+  /// session was switched away from while the watch was being placed.
+  Future<void> _watchThenScan(CrdtSession session) async {
+    await session.startWatching();
+    if (!mounted || !identical(_session, session)) return;
+    _scanInBackground(session, ScanTrigger.open);
   }
 
   /// Runs a scan without waiting for it. The scan collects per-note failures
@@ -168,8 +181,22 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_scanOnResume());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_scanOnResume());
+    } else if (state == AppLifecycleState.paused && _pausesWatching) {
+      unawaited(_session?.stopWatching());
+    }
   }
+
+  /// Whether watching stops while the app is in the background (Decision
+  /// 8): on a phone or tablet nothing useful can be done with an event there,
+  /// and the resume scan is exactly the catch-up. On desktop and the Pi the
+  /// watch runs whether the window has focus or not — the editor beside
+  /// BrainFrame is the case it exists for, and flutter-pi has no focus to
+  /// lose at all.
+  static bool get _pausesWatching =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
   /// The scan on resume: the app was in the background, and anything could
   /// have happened to the folder in the meantime.
@@ -182,6 +209,11 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
   Future<void> _scanOnResume() async {
     final session = _session;
     if (session == null) return;
+    // Watching again before the scan, so nothing lands unseen between the
+    // scan passing a note and the watch being back. A no-op where the watch
+    // never stopped.
+    await session.startWatching();
+    if (!mounted || !identical(_session, session)) return;
     await _pendingSaves.flushAll();
     if (!mounted || !identical(_session, session)) return;
     _scanInBackground(session, ScanTrigger.resume);
@@ -210,6 +242,7 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
     return CrdtSessionScope._(
       writer: _session?.writer,
       reconciler: _session?.reconciler,
+      watchStatus: _session?.watchStatus,
       child: widget.child,
     );
   }
@@ -221,6 +254,7 @@ class CrdtSessionScope extends InheritedWidget {
   const CrdtSessionScope._({
     required this.writer,
     required this.reconciler,
+    required this.watchStatus,
     required super.child,
   });
 
@@ -237,6 +271,7 @@ class CrdtSessionScope extends InheritedWidget {
     super.key,
     required this.writer,
     required this.reconciler,
+    this.watchStatus,
     required super.child,
   });
 
@@ -246,6 +281,11 @@ class CrdtSessionScope extends InheritedWidget {
   /// How to reconcile a file that changed outside the app, or null when the
   /// engram has no op-log — in which case nothing can drift from anything.
   final NoteReconciler? reconciler;
+
+  /// Why live updates are off for the active engram — null while they are on
+  /// — or null itself when there is no session to watch for (the filesystem
+  /// watcher design, Decision 9). What Housekeeping says.
+  final ValueListenable<EngramWatchUnavailable?>? watchStatus;
 
   /// The writer published by the enclosing [CrdtSessionHost] widget — the
   /// closest one up the widget tree from [context] — or null if this widget
@@ -264,7 +304,17 @@ class CrdtSessionScope extends InheritedWidget {
       .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
       ?.reconciler;
 
+  /// The watch status published by the enclosing [CrdtSessionHost], or null
+  /// if there is no session — the cases of [maybeOf].
+  static ValueListenable<EngramWatchUnavailable?>? maybeWatchStatusOf(
+    BuildContext context,
+  ) => context
+      .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
+      ?.watchStatus;
+
   @override
   bool updateShouldNotify(CrdtSessionScope oldWidget) =>
-      oldWidget.writer != writer || oldWidget.reconciler != reconciler;
+      oldWidget.writer != writer ||
+      oldWidget.reconciler != reconciler ||
+      oldWidget.watchStatus != watchStatus;
 }

@@ -1269,11 +1269,12 @@ observe each other's.
 
 As of CRDT step 10, a note's file that changes *outside* the app — another
 editor, a sync client, a script — is folded back into the note's history
-rather than overwritten by the next save. The scan runs at three moments: app
-start (and engram switch), app resume (the window regaining focus), and
-immediately before a note is opened in the editor. This case drives all three.
-Use a **filesystem** engram and any second editor that can write to its
-folder.
+rather than overwritten by the next save. The scan runs at four moments: app
+start (and engram switch), app resume (the window regaining focus),
+immediately before a note is opened in the editor, and — since #70 — whenever
+the filesystem watcher sees the folder change, focused or not. Steps 1–13
+drive the first three; steps 15–18 drive the watcher. Use a **filesystem**
+engram and any second editor that can write to its folder.
 
 **Steps:**
 
@@ -1317,6 +1318,21 @@ folder.
     would save before it, and prove nothing. Keep BrainFrame focused
     throughout, then stop and wait for the chip to settle at `saved`. Run
     `cat X.md` in the terminal.
+15. **Live, beside BrainFrame (#70):** put BrainFrame and the other editor
+    side by side, with **X** open in both and the caret in the middle of
+    **X**'s last line in BrainFrame. Without clicking into BrainFrame, add a
+    line to the **top** of **X** in the other editor and save it. Watch
+    BrainFrame.
+16. **Live, under typing:** in a terminal, run
+    `sleep 5; echo 'appended live' >> X.md` in the engram folder, then
+    click into BrainFrame and keep typing on **X**'s first line — a word
+    every second or so — for about ten seconds. Stop, and let it save.
+17. **Live, in the tree:** with BrainFrame focused and nothing clicked, run
+    `echo hi > Live.md` in the terminal; a few seconds later,
+    `rm Live.md`; then `mkdir -p Deep/Er && echo hi > Deep/Er/Down.md`.
+18. **A burst is one scan:** run
+    `for i in $(seq 1 50); do echo "n $i" > "Burst$i.md"; done` in the
+    engram folder, wait a few seconds, and open Settings › Housekeeping.
 
 **Expected:**
 
@@ -1377,25 +1393,42 @@ folder.
   saying nothing (the replacement was not noticed) or the image reverting.
 - Step 14: `cat` shows **both** the word typed in BrainFrame and
   `appended outside`, and so does BrainFrame's editor once the chip reads
-  `saved`. No scan ran — the window stayed focused — so it is the save
-  itself that found the change and merged with it. The caret stays on the
-  first line, where you were typing. A defect looks like `appended outside`
-  missing from the file: the save wrote over an edit it never saw, which is
-  what it did before step 3.
+  `saved`. With the watcher, `appended outside` usually shows up in the
+  editor within a second of the append, before the save — step 16 is that
+  case. Either way the caret stays on the first line, where you were typing.
+  A defect looks like `appended outside` missing from the file: the save
+  wrote over an edit it never saw, which is what it did before #70 step 3.
+- Step 15: within about a second, and **without BrainFrame being clicked**,
+  the new line appears at the top of **X** in BrainFrame. The caret stays
+  in the middle of the last line — on the same word, not one line too high
+  — and the chip stays at `saved`: a reload is not an edit. Whether
+  Housekeeping gains a card depends on how the other editor saves: one that
+  writes the file in place is reconciled alone and leaves none; one that
+  writes a copy and renames it over — many do — changes the listing, so it
+  is a scan, and leaves one card "from the watcher". Both are right.
+- Step 16: `appended live` appears at the end of **X** while you are still
+  typing, **without the caret moving** and without any typed word going
+  missing. After the save, the file on disk has both the words and
+  `appended live`. This is the merge on reload the resume could never show:
+  a defect is a word that vanishes, or the caret thrown to the end.
+- Step 17: `Live.md` appears in the tree within a couple of seconds, goes
+  again after the `rm`, and `Deep/Er/Down.md` appears inside its new
+  folders — no click, no switch away and back.
+- Step 18: all fifty notes appear in the tree, and Housekeeping's newest
+  scan card is **one** card "from the watcher" counting them — not fifty.
+  A burst of events is one batch, and one scan.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder. Step 14 also needs that app to write while BrainFrame stays in the foreground — split screen — or it is **N/A** | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android; step 14 as Android | ✓ for steps 3–6 and 14 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder. Steps 14–18 also need that app to write while BrainFrame stays in the foreground — split screen — or they are **N/A** | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android. Steps 15–18 **N/A** — iOS has no folder watching, and Housekeeping says so (F39); edits made in Files are picked up on the way back | ✓ for steps 3–6 and 14–18 with the files edited over SSH — the watcher is the only live trigger here; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
 
-- **No window of loss:** a keystroke made between the resume and the reload
-  of a note that *did* change externally is merged with the external edit,
-  not dropped (#70, step 4). The window is milliseconds and cannot be hit by
-  hand; the merge on reload becomes testable once the watcher can reload a
-  note while it is being typed in.
-- **Edits to a file while the app is focused and the note is open** are
-  *not* picked up until the next trigger — there is no filesystem watcher yet
-  (**#70**). A save made in that state no longer overwrites the external
-  edit: it merges with it (step 14).
+- **No window of loss:** a keystroke made between a reload's trigger and the
+  reload itself is merged with the external edit, not dropped (#70, step 4)
+  — step 16 is that case, stretched to seconds.
+- **Where the watcher is off** — iOS, or a folder it cannot watch (F39) —
+  edits made while the app is focused wait for the next trigger, exactly as
+  before #70, and a save made meanwhile still merges rather than overwrites
+  (step 14).
 - **Inspection point:** a note that fails to reconcile (an unreadable file,
   invalid UTF-8) is skipped, logged under `brainframe.engram.drift`, and tried
   again on the next scan; the rest of the engram still reconciles. There is no
@@ -2176,6 +2209,52 @@ the caret); the quotes becoming tabs.
   [bounded_myers_diff.dart](../lib/engram/crdt/bounded_myers_diff.dart)
   bounded it (F29 covers the scan itself).
 
+### F39 — Housekeeping says when live updates are off
+
+Where BrainFrame cannot watch an engram's folder (issue #70's filesystem
+watcher), it carries on with the scans it always had — on open, on resume, and
+before a note opens — and says so **once**, as a line in Settings ›
+Housekeeping, never as a dialog or a notice on every open. Use a
+**throwaway** engram — a copy of the testing fixture — since step 2 deletes
+its folder.
+
+**Steps:**
+
+1. Open the engram. Open Settings › Housekeeping.
+2. **A watch that fails:** close Settings. In a terminal, delete the engram's
+   folder entirely (`rm -r` it). Reopen Settings › Housekeeping.
+3. **The system's watch limit (Linux and the Pi only, optional):** on a
+   machine where nothing else matters — the Pi, or a VM — note the current
+   limit (`cat /proc/sys/fs/inotify/max_user_watches`), lower it below what
+   the engram needs with `sudo sysctl fs.inotify.max_user_watches=20`, then
+   open an engram with more than twenty folders and open Settings ›
+   Housekeeping. Restore the old value afterwards.
+4. **A platform with no watching (iOS):** open any engram, then Settings ›
+   Housekeeping.
+
+**Expected:**
+
+- Step 1: no line about live updates at all — they are on, and saying so
+  would be noise.
+- Step 2: one line under the ledger's introduction: "Live updates are off
+  for this engram: watching the folder failed. Changes made outside
+  BrainFrame are still picked up when it opens, when it comes back to the
+  front, and when you open a note." Nothing else interrupted you when the
+  folder went: no dialog, no snackbar.
+- Step 3: the same line, but "the system's limit on watched folders is
+  reached". Editing still works, and an edit made over SSH still arrives on
+  the next open or relaunch. A defect is a watcher that quietly watches only
+  some of the folders — an edit in one folder showing up live and one in
+  another never arriving.
+- Step 4: the same line, "this device cannot watch folders". Edits made in
+  the Files app arrive when BrainFrame comes back to the front.
+- Throughout: the line is plain text, read in full by a screen reader, with
+  no icon that would need a label of its own.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| ✓ steps 1–2; step 3 **N/A** — no inotify; step 4 **N/A** — Windows watches | ✓ steps 1–2; step 3 **N/A** — no inotify; step 4 **N/A** — macOS watches | ✓ steps 1–3; step 4 **N/A** — Linux watches | ✓ step 1; step 3 over `adb shell` on a rooted device; step 2 **N/A** — nothing outside the app can delete its private folder while it runs; step 4 **N/A** — Android watches | as Android | ✓ steps 1 and 4; steps 2–3 **N/A** — no terminal to delete the folder or change a kernel limit | ✓ steps 1–3 over SSH; step 4 **N/A** — the Pi watches; the line is on the Pi's own screen, since the e-ink panel has no screen reader |
+
 ---
 
 ## Bug-class deep-dives
@@ -2305,7 +2384,6 @@ cases for these until the code exists.
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
 | **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), two instances over one folder can be driven as two devices on Linux (F36), and the monitor's `deliver` can carry one device's operations into the other's store by hand (F36 step 10, [docs/bfmon.md](bfmon.md)). What stays untestable is the transport itself: operations arriving while the app runs, and what it does at that moment. |
-| **Filesystem watcher (#70)** | External edits and new files are picked up at start, resume, and before open (F29), not live — the tree and the open note both follow the scan (F29 steps 8–11, F36 step 5), so what the watcher would add is only the *trigger*. An edit or a new file that lands while the window is focused waits for the next one. |
 | **In-app "Open folder" on Pi/mobile** | The reusable folder picker (F14) is earmarked as the future in-app directory browser for flutter-pi; native-dialog adoption is desktop-only today. |
 
 When any of these lands, move its row up into the matrix with concrete steps and

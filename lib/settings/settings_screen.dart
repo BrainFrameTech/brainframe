@@ -28,6 +28,7 @@ Future<String?> openSettingsScreen(
   final engramScope = EngramScope.maybeOf(context);
   final writer = CrdtSessionScope.maybeOf(context);
   final reconciler = CrdtSessionScope.maybeReconcilerOf(context);
+  final watchStatus = CrdtSessionScope.maybeWatchStatusOf(context);
   return Navigator.of(context).push<String?>(
     MaterialPageRoute<String?>(
       builder: (_) {
@@ -36,6 +37,7 @@ Future<String?> openSettingsScreen(
           screen = CrdtSessionScope.republish(
             writer: writer,
             reconciler: reconciler,
+            watchStatus: watchStatus,
             child: screen,
           );
         }

@@ -11,6 +11,7 @@ import 'package:brainframe/engram/path_folder_access.dart';
 import 'package:brainframe/engram/ui/engram_switcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -414,6 +415,29 @@ void main() {
       expect(repo.adopted, isEmpty);
     });
 
+    for (final (label, error) in [
+      ('an error the flow has no case for',
+          PlatformException(code: 'noPicker', message: 'native words')),
+      ('no platform side at all', MissingPluginException('native words')),
+    ]) {
+      testWidgets('a picker that fails — $label — says so, in words',
+          (tester) async {
+        final access = FakeFolderAccess()..pickError = error;
+        final repo = _FakeRepo(discovery: discovery());
+        await tester.pumpWidget(harness(repo, tutorial, folderAccess: access));
+
+        await tapOpenFolder(tester);
+
+        expect(find.text('Couldn’t choose a folder'), findsOneWidget);
+        expect(find.textContaining('native words'), findsNothing,
+            reason: 'the platform text is for the log');
+        await tester.tap(find.widgetWithText(TextButton, 'OK'));
+        await tester.pumpAndSettle();
+        expect(repo.adopted, isEmpty);
+        expect(find.text('active:$builtinTutorialId'), findsOneWidget);
+      });
+    }
+
     group('an engram that lost access', () {
       const far = UnavailableEngram(
         id: 'far',
@@ -523,6 +547,29 @@ void main() {
         expect(access.requests, 1);
         expect(find.text('active:$builtinTutorialId'), findsOneWidget);
       });
+
+      for (final error in [
+        PlatformException(code: 'busy', message: 'native words'),
+        MissingPluginException('native words'),
+      ]) {
+        testWidgets(
+            'a request for access that fails says so '
+            '(${error.runtimeType})', (tester) async {
+          final access = FakeFolderAccess(broadAccess: false)
+            ..requestError = error;
+          final repo = _FakeRepo(discovery: discovery(unavailable: [far]));
+          await tester.pumpWidget(
+              harness(repo, tutorial, folderAccess: access));
+
+          await tapFar(tester);
+          await tester.tap(find.widgetWithText(TextButton, 'Continue'));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Couldn’t choose a folder'), findsOneWidget);
+          expect(find.textContaining('native words'), findsNothing);
+          expect(find.text('active:$builtinTutorialId'), findsOneWidget);
+        });
+      }
     });
   });
 }

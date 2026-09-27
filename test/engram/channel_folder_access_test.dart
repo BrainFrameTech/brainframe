@@ -143,17 +143,22 @@ void main() {
   group('platformFolderAccess', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    test('is the channel on Android', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      expect(platformFolderAccess(), isA<ChannelFolderAccess>());
+    test('is the channel on the sandboxed platforms', () {
+      for (final platform in [
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        debugDefaultTargetPlatformOverride = platform;
+        expect(platformFolderAccess(), isA<ChannelFolderAccess>(),
+            reason: '$platform');
+      }
     });
 
-    test('is plain paths everywhere else, for now', () {
+    test('is plain paths on Linux and Windows', () {
       for (final platform in [
         TargetPlatform.linux,
         TargetPlatform.windows,
-        TargetPlatform.macOS,
-        TargetPlatform.iOS,
       ]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(platformFolderAccess(), isA<PathFolderAccess>(),

@@ -5,13 +5,11 @@ import 'fs/folder_access.dart';
 import 'path_folder_access.dart';
 
 /// The [FolderAccess] this platform uses (the sandboxed folder adoption
-/// design, Decision 2): the app's own channel on Android, plain paths
-/// everywhere else.
-///
-/// iOS reports false from [FolderAccess.canPick] here until its channel is
-/// built, which keeps "Open folder…" hidden there, as before. macOS stays on
-/// plain paths until then too, and moves to the channel along with iOS.
-FolderAccess platformFolderAccess() =>
-    defaultTargetPlatform == TargetPlatform.android
-    ? const ChannelFolderAccess()
-    : const PathFolderAccess();
+/// design, Decision 2): the app's own channel on the sandboxed platforms —
+/// Android, iOS, macOS — and plain paths on Linux and Windows.
+FolderAccess platformFolderAccess() => switch (defaultTargetPlatform) {
+  TargetPlatform.android ||
+  TargetPlatform.iOS ||
+  TargetPlatform.macOS => const ChannelFolderAccess(),
+  _ => const PathFolderAccess(),
+};

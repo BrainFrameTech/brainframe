@@ -5,9 +5,11 @@
 /// This side only maps: method calls out, results and error codes back into
 /// the seam's types. What each platform does to answer lives beside it —
 /// `FolderAccessChannel.kt` on Android (the All files access permission, the
-/// system folder picker, the tree-URI-to-path mapping of Decision 4). The Apple
-/// platforms answer on the same channel, with a bookmark, once they are built
-/// (Decision 5).
+/// system folder picker, the tree-URI-to-path mapping of Decision 4); a
+/// `FolderAccessChannel` class in `ios/Runner/AppDelegate.swift` and
+/// `macos/Runner/MainFlutterWindow.swift` on the Apple platforms (the document
+/// picker or open panel, and the security-scoped bookmark of Decision 5). The
+/// Apple halves are written but not yet run on hardware.
 ///
 /// ## The channel's contract
 ///

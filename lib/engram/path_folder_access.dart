@@ -1,11 +1,11 @@
 /// [FolderAccess] where a picked path stays good on its own: Linux and
-/// Windows, and — until its bookmark channel lands — macOS (the sandboxed
-/// folder adoption design, Decision 2).
+/// Windows (the sandboxed folder adoption design, Decision 2).
 ///
 /// The desktop dialog returns a plain `dart:io` path, and nothing more is
 /// needed to reach it in a later launch, so there is no bookmark, no
-/// permission, and resolving a row is the identity. Android and iOS report
-/// [canPick] false here; their chooser is a platform channel of its own.
+/// permission, and resolving a row is the identity. The sandboxed platforms —
+/// Android, iOS, and macOS, whose build is sandboxed too — report [canPick]
+/// false here; their chooser is the app's own channel.
 library;
 
 import 'package:file_selector/file_selector.dart' as file_selector;
@@ -23,12 +23,12 @@ class PathFolderAccess extends FolderAccess {
 
   final DirectoryPicker? _picker;
 
-  /// True on the desktop targets, whose native dialog returns a plain path.
+  /// True on Linux and Windows, whose native dialog returns a plain path that
+  /// stays reachable.
   @override
   bool get canPick =>
       defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux ||
-      defaultTargetPlatform == TargetPlatform.macOS;
+      defaultTargetPlatform == TargetPlatform.linux;
 
   @override
   Future<PickedFolder?> pick() async {

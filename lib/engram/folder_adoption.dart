@@ -2,14 +2,14 @@
 /// whatever the user picks as an engram (Step 6 of the storage plan).
 ///
 /// Which platforms can, and how the picked folder is reached again, is the
-/// [FolderAccess] handed in — by default the repository's own. On the desktop
-/// targets that is a dialog returning a plain path ([PathFolderAccess]).
-/// Android comes through the app's own platform channel
-/// ([ChannelFolderAccess]), which hands back a path too, once All files access
-/// is granted; iOS and macOS are to join it, adding a bookmark (the sandboxed
-/// folder adoption design). The Raspberry Pi (flutter-pi) has no native
-/// dialog, so its pick-any-folder path is a small in-app directory browser
-/// deferred to the Pi-usability work.
+/// [FolderAccess] handed in — by default the repository's own. On Linux and
+/// Windows that is a dialog returning a plain path ([PathFolderAccess]).
+/// Android, iOS and macOS come through the app's own platform channel
+/// ([ChannelFolderAccess]), which hands back a path too — once All files
+/// access is granted on Android, and with a bookmark to reach it again on the
+/// Apple platforms (the sandboxed folder adoption design). The Raspberry Pi
+/// (flutter-pi) has no native dialog, so its pick-any-folder path is a small
+/// in-app directory browser deferred to the Pi-usability work.
 library;
 
 import 'package:flutter/foundation.dart';

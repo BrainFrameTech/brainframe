@@ -1,6 +1,8 @@
 # Adopting a folder on the sandboxed platforms
 
-- **Status:** accepted (2026-09-26) — reviewed in **#207**
+- **Status:** accepted (2026-09-26) — reviewed in **#207**; implemented
+  (2026-09-26) in **#209** (the seam), **#214** (Android) and **#216** (iOS
+  and macOS, unverified on hardware), with step 5's docs following them
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#94**

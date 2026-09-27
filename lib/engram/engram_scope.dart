@@ -100,8 +100,9 @@ class _EngramScopeState extends State<EngramScope> {
     if (!mounted) return;
     final previous = _engram;
     // Swap first so the new (already-resolved) engram renders immediately, then
-    // free the outgoing store. For v1's stateless stores release is a no-op;
-    // this is where a Location-B security-scoped handle is freed in v2.
+    // free the outgoing store. Release is a no-op for every store today:
+    // security-scoped access is held for the session, not per engram (see
+    // EngramStore.release).
     setState(() => _engram = next);
     await previous.store.release();
     await widget.onSwitched?.call(next);

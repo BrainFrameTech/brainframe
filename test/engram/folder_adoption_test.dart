@@ -41,19 +41,19 @@ void main() {
   });
 
   group('PathFolderAccess', () {
-    test('can pick on desktop targets', () {
-      for (final platform in [
-        TargetPlatform.windows,
-        TargetPlatform.linux,
-        TargetPlatform.macOS,
-      ]) {
+    test('can pick on Linux and Windows', () {
+      for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(const PathFolderAccess().canPick, isTrue, reason: '$platform');
       }
     });
 
-    test('cannot pick on mobile targets', () {
-      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    test('cannot pick on the sandboxed targets, macOS included', () {
+      for (final platform in [
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(const PathFolderAccess().canPick, isFalse, reason: '$platform');
       }
@@ -100,7 +100,7 @@ void main() {
 
     test('returns null and registers nothing when the picker is cancelled',
         () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
       final engram = await pickAndAdoptFolder(
         repository,

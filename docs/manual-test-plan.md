@@ -78,8 +78,11 @@ read-only and show no edit affordances — use them only where a case says
 > fixture to the device's shared storage
 > (`adb push test/fixtures/engram /sdcard/Documents/FieldNotebook`) and open it
 > with **Open folder…** once file access is granted (F39); reset it by pushing
-> it again after deleting the copy. On iOS / Pi, where **Open folder…** isn't
-> offered, create a scratch engram with **New engram** instead.
+> it again after deleting the copy. On iOS, copy the fixture into the Files
+> app (**On My iPhone**, or iCloud Drive — AirDrop or a share from a Mac will
+> do) and open it with **Open folder…** (F40); reset it by copying it again.
+> On the Pi, where **Open folder…** isn't offered, create a scratch engram
+> with **New engram** instead.
 
 ---
 
@@ -554,7 +557,7 @@ written into a folder that is one already.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ + Open folder asks for file access first (F39), then shows the system folder picker; pick the fixture pushed to `Documents/FieldNotebook` (Safety) | same as Android | ✓ for switch/new; **N/A** for Open folder — hidden until the iOS bookmark channel is built (#94, step 4 of the sandboxed folder adoption design) | ✓ for switch/new; **N/A** for Open folder — flutter-pi has no native dialog (in-app browser is future) |
+| ✓ | ✓ + Open folder is the sandbox's open panel, as a sheet; the adopted folder must still open after a relaunch (F40) | ✓ | ✓ + Open folder asks for file access first (F39), then shows the system folder picker; pick the fixture pushed to `Documents/FieldNotebook` (Safety) | same as Android | ✓ + Open folder shows the Files document picker; pick the fixture copied into Files (Safety, F40) | ✓ for switch/new; **N/A** for Open folder — flutter-pi has no native dialog (in-app browser is future) |
 
 - **New engram** is present on all seven columns — there is no platform that
   hides it (the web build that did is removed; see
@@ -823,7 +826,7 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path | same as Android | ✓ pane renders, but with no folder adoption on iOS yet (F15) there may be **no forgettable engrams** — verify the empty state | same as iOS (no native adoption yet) |
+| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path | same as Android | ✓ adopting the fixture through Open folder… (F40); steps 13–14 check the folder in the Files app; step 15 **N/A** — no way to make the store refuse a delete; the automated tests cover the failure path | ✓ pane renders, but with no folder adoption on the Pi (F15) there may be **no forgettable engrams** — verify the empty state |
 
 - **A11y:** the Forget and Clean up buttons are each labeled with the engram
   name; the disabled Clean up reports as disabled; the confirm and failure
@@ -1510,7 +1513,7 @@ few hundred MB.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ once file access is granted (F39); push the test folders to the device's shared storage first (`adb push`), and check step 7's file with `adb shell cat -v` | as Android | steps 1–2 and 9–11 **N/A** — no folder picker until the iOS bookmark channel is built (F15); steps 3–8 and 12 apply to the first launch of an existing engram | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 and 12 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder, and minutes for the one file of step 12, which is where a bar that only ticks per file reads as hung |
+| ✓ | ✓ | ✓ | ✓ once file access is granted (F39); push the test folders to the device's shared storage first (`adb push`), and check step 7's file with `adb shell cat -v` | as Android | ✓ through the Files document picker (F40); put the test folders in Files first, and check step 7's file from a Mac or with a text-viewer app | steps 1–2 and 9–11 **N/A** — no native dialog; steps 3–8 and 12 apply to the first launch of an existing engram, and this is the platform where the bar matters: minutes for a large folder, and minutes for the one file of step 12, which is where a bar that only ticks per file reads as hung |
 
 - **Progress on e-ink:** the bar advances in discrete steps — at most a few a
   second, whether between notes or within a large file — and stops moving
@@ -2259,7 +2262,7 @@ adb shell 'echo hello > /sdcard/Documents/Plain/a.md'
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| **N/A** — no permission to ask for; the folder dialog returns a usable path at once (F15) | **N/A** — as Win until its bookmark channel is built | **N/A** — as Win | ✓ — on API 30+ and once below it; Android may **close the app** when access is revoked in step 7, which is expected | same as Android | **N/A** — Open folder is hidden until the iOS bookmark channel is built (F15) | **N/A** — no native folder dialog |
+| **N/A** — no permission to ask for; the folder dialog returns a usable path at once (F15) | **N/A** — no permission to ask for; the open panel is the grant, and a bookmark keeps it (F40) | **N/A** — as Win | ✓ — on API 30+ and once below it; Android may **close the app** when access is revoked in step 7, which is expected | same as Android | **N/A** — no permission to ask for; the document picker is the grant, and a bookmark keeps it (F40) | **N/A** — no native folder dialog |
 
 - **A11y (TalkBack):** both dialogs read title then body, and each button by
   its label. The needs-access row reads as a **button** with the engram's
@@ -2269,6 +2272,80 @@ adb shell 'echo hello > /sdcard/Documents/Plain/a.md'
   rather than *Needs access*, or **MISSING** in step 8, rather than **NO
   ACCESS**, is the bug this case exists for — a revoked permission must never
   look like a deleted folder.
+
+### F40 — iOS and macOS: a picked folder, kept by its bookmark
+
+> **Designed, unverified on hardware.** The Swift behind this case was
+> written without a Mac or an iPhone to run it on (the storage design's
+> Decision 3). The first run of this case is its first run anywhere; a
+> failure here is a finding, not a regression.
+
+The sandboxed Apple builds reach a picked folder only for the launch it was
+picked in. A **security-scoped bookmark**, stored with the engram's registry
+row, is what reaches it again in the next one
+([design](design/sandboxed-folder-adoption.md), Decisions 3 and 5). So the
+case that matters is the **relaunch**, not the pick. There is no permission
+to ask for: the picker is the grant.
+
+**Setup:** the fixture in a folder the picker can reach — on iOS, in the
+Files app (Safety); on macOS, anywhere, e.g. `~/Documents/FieldNotebook`
+(`cp -R test/fixtures/engram ~/Documents/FieldNotebook`). On iOS, a second
+copy in **iCloud Drive** is wanted for step 7.
+
+**Steps:**
+
+1. Engram switcher → **Open folder…**. Read what appears; **Cancel**.
+2. **Open folder…** again; choose the fixture folder (iOS: open it and tap
+   **Open**; macOS: select it and click **Open**).
+3. Edit a note and let it save. Quit the app fully (iOS: swipe it away;
+   macOS: Cmd+Q).
+4. **The case this exists for:** relaunch. Open the switcher; open the
+   fixture if it is not already open.
+5. **Move the folder** within the same volume (Files app, or Finder) — into
+   another folder, or rename it. Relaunch; open the switcher, then
+   Settings → **Housekeeping**.
+6. **Delete** (or, macOS, move to the Trash and empty it) the folder.
+   Relaunch; open the switcher, then Housekeeping, then **Clean up** its row.
+7. iOS: adopt the **iCloud Drive** copy as in step 2; relaunch as in step 4.
+8. macOS only: on a build from **before** this change, adopt a folder; then
+   run this build. Open the switcher.
+
+**Expected:**
+
+- Step 1: no explanation dialog and no permission prompt — the system's own
+  picker (iOS: the Files document picker, folders only; macOS: an open panel
+  as a sheet on the window). Cancel adopts nothing and shows nothing.
+- Step 2: the fixture opens directly (it is an engram already), notes read
+  and the tree fills.
+- Step 3: the save lands on disk (check it in Files / Finder).
+- Step 4: the fixture **is still in the switcher as available** and opens
+  with the edit from step 3. This is the step that failed on macOS before
+  this change: the path alone was refused by the sandbox after a relaunch.
+- Step 5: the engram still opens; Housekeeping shows its **new** path. The
+  bookmark followed the folder and the row followed the bookmark.
+- Step 6: the switcher row is disabled and reads **Its folder can’t be found
+  — open it again with Open folder…** — or *Unavailable*, if the system still
+  resolves the bookmark to the path the folder had (record which: it decides
+  whether the reason is load-bearing here). Housekeeping shows **MISSING**;
+  Clean up removes the row and this device's store without an error.
+- Step 7: the iCloud folder opens after the relaunch too. Files not yet
+  downloaded are absent from the tree until they are, never an error
+  (materializing them is later work; see the design's Decision 7).
+- Step 8: the old row has no bookmark, so the switcher says **Its folder
+  can’t be found — open it again with Open folder…** — never a crash, and
+  never an engram that opens empty. Opening the same folder with **Open
+  folder…** keeps its identity and fixes the row.
+
+| Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
+| --- | --- | --- | --- | --- | --- | --- |
+| **N/A** — not sandboxed; a plain path stays reachable (F15) | ✓ — step 7 **N/A** (iCloud is covered by iOS); the sandbox is the reason this case exists here | **N/A** — as Win | **N/A** — access is a permission, not a bookmark (F39) | **N/A** — as Android | ✓ — step 8 **N/A** (iOS never adopted folders before this change) | **N/A** — no native folder dialog |
+
+- **A11y (VoiceOver):** the pickers are the system's own; check that focus
+  returns to the switcher (or the opened engram) when they close, and that
+  the *can’t be found* row reads as disabled.
+- **Reasons are load-bearing:** in steps 6 and 8, a row must never say
+  *Needs access to your files* — that is Android's reason, and tapping it
+  here would ask for a permission iOS and macOS do not have.
 
 ---
 
@@ -2400,7 +2477,7 @@ cases for these until the code exists.
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
 | **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), two instances over one folder can be driven as two devices on Linux (F36), and the monitor's `deliver` can carry one device's operations into the other's store by hand (F36 step 10, [docs/bfmon.md](bfmon.md)). What stays untestable is the transport itself: operations arriving while the app runs, and what it does at that moment. |
 | **Filesystem watcher (#70)** | External edits and new files are picked up at start, resume, and before open (F29), not live — the tree and the open note both follow the scan (F29 steps 8–11, F36 step 5), so what the watcher would add is only the *trigger*. An edit or a new file that lands while the window is focused waits for the next one. |
-| **"Open folder" on iOS and the Pi** | Desktop and Android adopt folders today (F15, F39). iOS needs its security-scoped bookmark channel, which is step 4 of the [sandboxed folder adoption design](design/sandboxed-folder-adoption.md) and not yet built. The Pi has no native dialog; the reusable folder picker (F14) is earmarked as its in-app directory browser. |
+| **"Open folder" on the Pi** | Every other platform adopts folders today (F15, F39, F40). The Pi has no native dialog; the reusable folder picker (F14) is earmarked as its in-app directory browser. |
 
 When any of these lands, move its row up into the matrix with concrete steps and
 per-platform verdicts, and delete it from this table.

@@ -4,8 +4,9 @@
 /// Which platforms can, and how the picked folder is reached again, is the
 /// [FolderAccess] handed in — by default the repository's own. On the desktop
 /// targets that is a dialog returning a plain path ([PathFolderAccess]).
-/// Android, iOS and macOS are to come through a platform channel that hands
-/// back a path too, plus a bookmark on the Apple platforms (the sandboxed
+/// Android comes through the app's own platform channel
+/// ([ChannelFolderAccess]), which hands back a path too, once All files access
+/// is granted; iOS and macOS are to join it, adding a bookmark (the sandboxed
 /// folder adoption design). The Raspberry Pi (flutter-pi) has no native
 /// dialog, so its pick-any-folder path is a small in-app directory browser
 /// deferred to the Pi-usability work.
@@ -84,6 +85,10 @@ class FolderPreviewing {
 /// question.
 typedef AdoptionConfirmer = Future<bool> Function(FolderPreviewing previewing);
 
+/// Says why the app needs access to folders outside its own storage, before
+/// the platform asks for it, and answers whether to go on and ask.
+typedef AccessExplainer = Future<bool> Function();
+
 /// Prompts for a folder and adopts it into [repository] as a registry root.
 ///
 /// Returns the adopted [Engram], or null if the user cancels the dialog. A
@@ -98,14 +103,26 @@ typedef AdoptionConfirmer = Future<bool> Function(FolderPreviewing previewing);
 /// [confirm] is shown the folder as it is looked at and asked before it is
 /// adopted; with none, adoption proceeds unasked, which is right for a caller
 /// that has already asked in its own way and wrong for a UI.
+///
+/// Where the app lacks the access it needs to read a folder outside its
+/// container ([FolderAccess.hasBroadAccess]; Android), that is settled before
+/// the chooser opens (Decision 4): [explainAccess] says why it is needed and
+/// answers whether to go on, then the platform asks. Declining either, or
+/// having no [explainAccess] to ask with, ends the flow with nothing adopted.
+/// A chosen folder with no usable path throws [FolderNotLocalException].
 Future<Engram?> pickAndAdoptFolder(
   EngramRepository repository, {
   FolderAccess? access,
   AdoptionConfirmer? confirm,
+  AccessExplainer? explainAccess,
 }) async {
   final folders = access ?? repository.folderAccess;
   if (!folders.canPick) {
     throw UnsupportedError('Choosing a folder is not available here.');
+  }
+  if (!await folders.hasBroadAccess) {
+    if (explainAccess == null || !await explainAccess()) return null;
+    if (!await folders.requestBroadAccess()) return null;
   }
   final picked = await folders.pick();
   if (picked == null) return null; // the user dismissed the chooser

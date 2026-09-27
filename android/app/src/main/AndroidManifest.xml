@@ -1,6 +1,26 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Opening a folder outside the app's own storage as an engram (the
+         sandboxed folder adoption design, Decision 4). Engrams are read and
+         written through plain filesystem paths, so the app needs broad access
+         rather than a per-folder document grant: All files access from API 30,
+         the storage runtime permission below it. Asked for only when the user
+         opens such a folder. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <!-- requestLegacyExternalStorage: API 29 alone has scoped storage without
+         All files access; this keeps plain-path access there. Ignored from
+         API 30. -->
     <application
         android:label="BrainFrame"
+        android:requestLegacyExternalStorage="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -348,8 +348,8 @@ class EngramRepository {
   }
 
   /// The engrams held in the registry (the externally-adopted roots), each
-  /// flagged with whether it resolves right now. An unavailable one is a
-  /// dangling entry — its folder is missing or unreadable. Built-in and
+  /// flagged with whether it resolves right now and, if not, why — its folder
+  /// missing or unreadable, or the app's access to it lost. Built-in and
   /// container engrams are not registry-backed, so they never appear here,
   /// matching exactly what [forget] can act on. Backs the Housekeeping pane.
   Future<List<RegisteredEngram>> registeredEngrams() async {
@@ -357,6 +357,10 @@ class EngramRepository {
     final discovery = await discover();
     final entries = await _readRegistry();
     final availableIds = {for (final engram in discovery.available) engram.id};
+    final reasons = {
+      for (final unavailable in discovery.unavailable)
+        unavailable.id: unavailable.reason,
+    };
     return [
       for (final entry in entries)
         RegisteredEngram(
@@ -364,6 +368,7 @@ class EngramRepository {
           displayName: entry.displayName,
           path: entry.path,
           available: availableIds.contains(entry.id),
+          reason: reasons[entry.id] ?? UnreachableReason.missing,
         ),
     ];
   }
@@ -486,6 +491,7 @@ class RegisteredEngram {
     required this.displayName,
     required this.path,
     required this.available,
+    this.reason = UnreachableReason.missing,
   });
 
   final String id;
@@ -493,8 +499,13 @@ class RegisteredEngram {
   final String path;
 
   /// True when this engram resolved in the latest discovery; false for a
-  /// dangling entry (its folder is gone or unreadable).
+  /// dangling entry (its folder is gone or unreadable) or one the app has
+  /// lost access to — [reason] says which.
   final bool available;
+
+  /// Why it did not resolve, when [available] is false; meaningless when it
+  /// is true.
+  final UnreachableReason reason;
 }
 
 /// A persisted registry row: an engram's last-known identity plus where it

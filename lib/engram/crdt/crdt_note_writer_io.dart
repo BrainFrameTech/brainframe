@@ -141,7 +141,7 @@ class CrdtNoteWriter implements NoteWriter {
     // in before anything is written, so the save cannot put the old text back
     // over it. Asked before the document is opened, so the document opened
     // below is the one with the external edit in it.
-    final onDisk = await check?.reconcileBeforeSave(row);
+    await check?.reconcileBeforeSave(row);
 
     final NoteDocument note;
     try {
@@ -177,18 +177,23 @@ class CrdtNoteWriter implements NoteWriter {
     }
 
     try {
-      // The file had changed and is now history; with a base, the buffer is
-      // merged with it rather than written over it (Decision 6). A merge the
+      // With a base, the buffer is merged with whatever the note holds that
+      // the buffer did not grow from (Decision 6) — not only a change this
+      // save's check just took in, but one a scan took in while the buffer
+      // was being typed, which the check cannot see: the file matches the
+      // history by then. Comparing with the history catches both, and will
+      // catch operations arriving from sync (#67) the same way. A merge the
       // ceiling cannot hold is refused whole, before an operation is made:
-      // the external edit is already safe, and the editor holds the merge.
+      // the change is already history, and the editor holds the merge.
       var result = text;
-      if (onDisk != null && base != null) {
-        result = threeWayMerge(base: base, mine: text, theirs: onDisk);
+      final current = note.value;
+      if (base != null && normalizeTerminators(base) != current) {
+        result = threeWayMerge(base: base, mine: text, theirs: current);
         if (noteSizeInBytes(result) > _ceilingBytes) {
           throw NoteMergeOverLimitException(
             path: path,
             merged: result,
-            onDisk: onDisk,
+            onDisk: current,
           );
         }
       }

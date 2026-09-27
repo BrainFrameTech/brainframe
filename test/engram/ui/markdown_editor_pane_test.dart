@@ -437,6 +437,36 @@ void main() {
       expect(store.writes, isEmpty, reason: 'a reload is not a save');
     });
 
+    testWidgets(
+      'a note reconciled under unsaved typing is merged, caret kept',
+      (tester) async {
+        // The watcher design, Decision 7. Before, the typing was dropped in
+        // favour of the file and the caret thrown to the end.
+        final store = _RwStore({'a.md': 'one\ntwo\n'});
+        final reconciler = _FakeReconciler(store);
+        await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'ONE\ntwo\n');
+        final field = tester
+            .widget<EditableText>(find.byType(EditableText))
+            .controller;
+        field.selection = const TextSelection.collapsed(offset: 3); // ONE|
+
+        reconciler.reconciledElsewhere('a.md', 'zero\none\ntwo\n');
+        await tester.pump();
+        await tester.pump();
+
+        expect(field.text, 'zero\nONE\ntwo\n');
+        expect(field.selection.baseOffset, 8, reason: 'still after ONE');
+        expect(find.text('Unsaved changes'), findsOneWidget);
+
+        // The ordinary debounce saves the merge.
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+        expect(store.files['a.md'], 'zero\nONE\ntwo\n');
+      },
+    );
+
     testWidgets('the status bar counts the buffer and follows edits', (
       tester,
     ) async {

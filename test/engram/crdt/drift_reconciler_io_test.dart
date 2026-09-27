@@ -460,18 +460,76 @@ void main() {
       await expectLater(d.reconciler.reconcile('a.md'), throwsFormatException);
     });
 
-    test('two overlapping scans are one scan', () async {
-      final d = await device();
-      await d.writer.write('a.md', 'a\n');
-      await engram.writeString('a.md', 'a changed\n');
+    group('a scan requested during a scan (watcher design, Decision 3)', () {
+      test('is not joined: one follow-up serves every such request', () async {
+        final lines = <String>[];
+        final d = await device(trace: lines.add);
+        await d.writer.write('a.md', 'a\n');
+        await engram.writeString('a.md', 'a changed\n');
 
-      final first = d.reconciler.scan();
-      final second = d.reconciler.scan();
+        final first = d.reconciler.scan();
+        final second = d.reconciler.scan();
+        final third = d.reconciler.scan();
 
-      expect(identical(first, second), isTrue);
-      expect((await first).reconciled, ['a.md']);
-      // And once it is done, the next one is fresh — and quiet.
-      expect((await d.reconciler.scan()).isClean, isTrue);
+        expect(identical(first, second), isFalse);
+        expect(identical(second, third), isTrue, reason: 'one follow-up');
+        expect((await first).reconciled, ['a.md']);
+        expect((await second).isClean, isTrue, reason: 'nothing new since');
+        expect(lines.where((l) => l.startsWith('scan: start')), hasLength(2));
+      });
+
+      test('catches a change the running scan had already passed', () async {
+        // The reason it cannot join: the running scan listed the folder and
+        // visited a.md before this edit landed. Joined, the request would
+        // get that scan's report, and the edit would wait for a resume.
+        late _Device d;
+        Future<DriftScanReport>? late;
+        d = await device(
+          trace: (line) {
+            if (line.startsWith('scan: done') && late == null) {
+              File('$engramRoot/a.md').writeAsStringSync('a changed late\n');
+              late = d.reconciler.scan(trigger: ScanTrigger.watcher);
+            }
+          },
+        );
+        await d.writer.write('a.md', 'a\n');
+
+        expect((await d.reconciler.scan()).isClean, isTrue);
+        expect((await late!).reconciled, ['a.md']);
+        expect(d.valueOf('a.md'), 'a changed late\n');
+        // Recorded under the trigger of the request that queued it.
+        final recorded = await d.reconciler.recentScans();
+        expect(recorded.first.trigger, ScanTrigger.watcher);
+      });
+
+      test('a new request once the follow-up is done starts fresh', () async {
+        final lines = <String>[];
+        final d = await device(trace: lines.add);
+
+        final first = d.reconciler.scan();
+        final queued = d.reconciler.scan();
+        await first;
+        await queued;
+        await d.reconciler.scan();
+
+        expect(lines.where((l) => l.startsWith('scan: start')), hasLength(3));
+      });
+
+      test('a queued scan does not start once the reconciler is closed',
+          () async {
+        final lines = <String>[];
+        final d = await device(trace: lines.add);
+        await d.writer.write('a.md', 'a\n');
+        await engram.writeString('a.md', 'a changed\n');
+
+        final first = d.reconciler.scan();
+        final queued = d.reconciler.scan();
+        await d.reconciler.close();
+
+        final report = await queued;
+        expect(identical(report, await first), isTrue);
+        expect(lines.where((l) => l.startsWith('scan: start')), hasLength(1));
+      });
     });
 
     test('every reconciled path is announced on the stream', () async {
@@ -2781,6 +2839,26 @@ void main() {
       expect(saved, 'ONE\ntwo\nthree\n');
       expect(await engram.readString('a.md'), 'ONE\ntwo\nthree\n');
       expect(d.valueOf('a.md'), 'ONE\ntwo\nthree\n');
+    });
+
+    test('a change a scan already took in is merged with, not undone', () async {
+      // The scan reconciled the file under an open, dirty buffer, so by the
+      // time the buffer saves, the file matches the history and a check of
+      // the file alone sees nothing. The history is what the base is
+      // compared with, so the save still merges.
+      final d = await device();
+      await d.writer.write('a.md', 'one\ntwo\n');
+      await engram.writeString('a.md', 'one\ntwo\nthree\n');
+      await d.reconciler.scan();
+
+      final saved = await d.writer.write(
+        'a.md',
+        'ONE\ntwo\n',
+        base: 'one\ntwo\n',
+      );
+
+      expect(saved, 'ONE\ntwo\nthree\n');
+      expect(await engram.readString('a.md'), 'ONE\ntwo\nthree\n');
     });
 
     test('without a base, the external edit is still history first', () async {

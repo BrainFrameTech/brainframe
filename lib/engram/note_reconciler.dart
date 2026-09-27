@@ -392,8 +392,10 @@ abstract class NoteReconciler {
   ///
   /// Never throws for one note's sake — per-note failures are collected into
   /// the report so a single unreadable file cannot leave the rest of the
-  /// engram unreconciled. Two overlapping calls share one scan rather than
-  /// racing each other.
+  /// engram unreconciled. Scans never overlap: a call made while one runs is
+  /// answered by one follow-up scan after it, shared by every call made
+  /// meanwhile — not by the running scan, which may already have passed the
+  /// change the call is about (the filesystem watcher design, Decision 3).
   ///
   /// **Runs behind the UI, not ahead of it.** The session host starts it and
   /// does not wait: a first scan over a large folder mints every note in it,

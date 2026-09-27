@@ -132,10 +132,19 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   /// happens, and the next open of that engram resumes where this left off.
   bool _closed = false;
 
-  /// The scan in progress, so a second trigger joins it instead of starting a
-  /// concurrent one. A resume that lands while the start-up scan is still
-  /// running is the ordinary way this happens.
+  /// The scan in progress, so a second trigger never starts a concurrent one.
   Future<DriftScanReport>? _running;
+
+  /// The one scan queued behind [_running], which every request made while it
+  /// runs shares (the filesystem watcher design, Decision 3).
+  ///
+  /// A request during a scan cannot simply join it: the scan may already have
+  /// listed the folder, or passed the very note the request is about — a
+  /// file created, or saved in another editor, a moment ago. So it runs
+  /// again afterwards, once, however many requests arrived: a burst of
+  /// watcher events, or a resume landing during the start-up scan, is one
+  /// follow-up, not one each.
+  Future<DriftScanReport>? _queued;
 
   /// The one `bf_meta` key overwritten with the finish time of the latest
   /// scan, clean or not. A clean scan writes nothing else: it changed
@@ -161,10 +170,32 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     if (!_adoption.isClosed) _adoption.add(progress);
   }
 
+  /// Scans now, or — while a scan is running — once it has finished, sharing
+  /// that follow-up with every other request made meanwhile ([_queued]). The
+  /// follow-up is recorded with the trigger of the request that queued it.
+  ///
+  /// A follow-up waits for the running scan however it ends, failure
+  /// included: a scan that threw has found nothing the follow-up could rely
+  /// on. It does not start once the reconciler is closed; its callers get the
+  /// running scan's report, or a clean one if that scan failed.
   @override
   Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) {
+    final running = _running;
+    if (running == null) return _queued ?? _start(trigger);
+    return _queued ??= running
+        .then<DriftScanReport?>((report) => report)
+        .catchError((Object _) => null)
+        .then((previous) {
+          _queued = null;
+          if (_closed) return previous ?? DriftScanReport.clean;
+          return _start(trigger);
+        });
+  }
+
+  /// Starts a scan, as [_running], and records it under [trigger].
+  Future<DriftScanReport> _start(ScanTrigger trigger) {
     final started = DateTime.now();
-    return _running ??= _scan()
+    return _running = _scan()
         .then((report) {
           _recordScan(report, trigger: trigger, startedAt: started);
           return report;
@@ -775,7 +806,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       // file before it.
       final current = database.catalog.byUlid(row.ulid);
       if (current == null || !_hasFile(current.state)) return _Drift.none;
-      return (await _reconcileHeld(current)).drift;
+      return _reconcileHeld(current);
     });
   }
 
@@ -783,47 +814,41 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   /// [_reconcileHeld] for a note about to be saved, under the writer's lock,
   /// announcing nothing.
   @override
-  Future<String?> reconcileBeforeSave(CatalogRow row) async {
+  Future<void> reconcileBeforeSave(CatalogRow row) async {
     final current = database.catalog.byUlid(row.ulid);
-    if (current == null || !_hasFile(current.state)) return null;
-    final (:drift, :text) = await _reconcileHeld(current, announce: false);
+    if (current == null || !_hasFile(current.state)) return;
+    final drift = await _reconcileHeld(current, announce: false);
     if (drift == _Drift.awaitingDecision) {
       throw StateError(
         '${current.path} grew past the note size ceiling outside the app and '
         'awaits a decision',
       );
     }
-    return drift == _Drift.reconciled ? text : null;
   }
 
   /// Decision 6, steps 2–6, for [current], with the lock already held: what
   /// both the scan and a save run.
   ///
-  /// Returns what happened and, for a text note whose drift was reconciled,
-  /// the note's text afterwards — which a save merges its buffer with.
   /// [announce] is whether a change goes out on [reconciled]; a save turns it
   /// off, since the saving editor learns the result from the save itself.
-  Future<({_Drift drift, String? text})> _reconcileHeld(
+  Future<_Drift> _reconcileHeld(
     CatalogRow found, {
     bool announce = true,
   }) async {
-    const unchanged = (drift: _Drift.none, text: null);
+    const unchanged = _Drift.none;
     var current = found;
     final stat = await engram.statFile(current.path);
     if (stat == null) return unchanged; // gone: the scan's question
     if (current.mergePolicy != MergePolicy.fugueText) {
       return await _reconcileBlob(current, stat, announce: announce)
-          ? (drift: _Drift.reconciled, text: null)
+          ? _Drift.reconciled
           : unchanged;
     }
     // Nothing to diff into, so none of the below applies — not the ceiling
     // either, which guards a history from being opened whole, and this note
     // has none here. What the scan can still do is look.
     if (current.state == NoteState.historyPending) {
-      return (
-        drift: await _observe(current, stat, announce: announce),
-        text: null,
-      );
+      return _observe(current, stat, announce: announce);
     }
 
     // The ceiling, from the stat and before any read, and whether or not
@@ -836,7 +861,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     if (stat.size > noteSizeCeilingBytes) {
       if (current.state == NoteState.oversized) return unchanged;
       database.catalog.upsert(_withState(current, NoteState.oversized));
-      return (drift: _Drift.awaitingDecision, text: null);
+      return _Drift.awaitingDecision;
     }
     if (current.state == NoteState.oversized) {
       current = _withState(current, NoteState.live);
@@ -874,17 +899,13 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       // file stays as the user left it, which is what Decision 4's bounded
       // exception promises, and the eventual log reconciles it then. What
       // it holds is still noted, as for a history-pending row.
-      return (
-        drift: await _recordObserved(
-          current,
-          ContentDigest(hash: onDiskHash, size: bytes.length),
-          utf8.decode(bytes),
-          announce: announce,
-        ),
-        text: null,
+      return _recordObserved(
+        current,
+        ContentDigest(hash: onDiskHash, size: bytes.length),
+        utf8.decode(bytes),
+        announce: announce,
       );
     }
-    final String text;
     try {
       // Steps 3 and 4: a minimal script — never replace-all — applied in
       // one transaction. Terminators are normalized on the way in, so a
@@ -901,12 +922,11 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
         note: note,
         onDiskHash: onDiskHash,
       );
-      text = note.value;
     } finally {
       note.dispose();
     }
     if (announce) _reconciled.add(current.path);
-    return (drift: _Drift.reconciled, text: text);
+    return _Drift.reconciled;
   }
 
   /// Whether a row in [state] has a file the scan should look at. A

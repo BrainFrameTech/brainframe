@@ -185,3 +185,33 @@ List<_Cluster> _clusters(List<(_Hunk, _Side)> hunks) {
   }
   return clusters;
 }
+
+/// Where a position in [before] lands in [after], for keeping the caret and
+/// the selection where the user left them when the text changes under them
+/// (the filesystem watcher design, Decision 7).
+///
+/// The rule, per change between the two texts: a position before the change,
+/// or exactly where an insertion lands, stays; one after it shifts by what the
+/// change added or removed; one strictly inside a replaced span moves to the
+/// end of what replaced it. Staying put at an insertion point is what lets the
+/// user keep typing where they were when text arrives right at the caret.
+///
+/// No normalization: this maps between the exact strings a text field held
+/// and will hold. The diff is the bounded one, and it runs once per mapping,
+/// however many positions are then mapped through it.
+int Function(int offset) offsetMapping(String before, String after) {
+  if (before == after) return (offset) => offset;
+  final hunks = _hunks(lineChunkedDiff(before, after));
+  return (offset) {
+    var shift = 0;
+    for (final hunk in hunks) {
+      if (offset <= hunk.start) break;
+      if (offset >= hunk.end) {
+        shift += hunk.text.length - (hunk.end - hunk.start);
+        continue;
+      }
+      return hunk.start + shift + hunk.text.length;
+    }
+    return (offset + shift).clamp(0, after.length);
+  };
+}

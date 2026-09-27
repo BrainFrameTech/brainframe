@@ -1282,8 +1282,9 @@ folder.
 **Steps:**
 
 1. Open a note **X** in Edit mode; make an edit and let it save (`saved`).
-2. **Resume:** switch to the other editor (BrainFrame's window loses focus).
-   Add a line to **X** there and save it. Switch back to BrainFrame.
+2. **Resume:** put the caret in the middle of **X**'s *last* line, then
+   switch to the other editor (BrainFrame's window loses focus). Add a line
+   to the **top** of **X** there and save it. Switch back to BrainFrame.
 3. **Before open:** in BrainFrame select a different note **Y**. In the other
    editor, add another line to **X**. In BrainFrame, select **X** again.
 4. **Start:** quit BrainFrame fully. In the other editor, add a third line to
@@ -1334,9 +1335,12 @@ folder.
 - Step 7: the typed text is on disk (the resume flushes the editor before it
   scans), and the chip settles at `saved`.
 - Throughout: the pane never flickers to a spinner on resume; only a note that
-  actually changed on disk is reloaded. Reloading moves the caret to the end
-  of the text — accepted for now, note it only if it happens *without* an
-  external change. This holds for a note the instance has no history for as
+  actually changed on disk is reloaded. **The caret stays where it was**,
+  carried through the change (#70, step 4): after step 2 it is still in the
+  middle of the same last line, not at the end of the text and not on the
+  line that was added above it. A defect looks like a caret thrown to the
+  end, or left at the old character offset — one line too high, since the
+  text above it grew. This holds for a note the instance has no history for as
   well (an adopted one — F36): it is reloaded on the same triggers, without
   a Housekeeping card, because nothing became history.
 - Step 8: `X-renamed.md` appears in the tree **on the switch back**, without
@@ -1378,20 +1382,20 @@ folder.
 - Step 14: `cat` shows **both** the word typed in BrainFrame and
   `appended outside`, and so does BrainFrame's editor once the chip reads
   `saved`. No scan ran — the window stayed focused — so it is the save
-  itself that found the change and merged with it. The caret may jump to the
-  end when the merge lands; that is accepted until the watcher's editor step.
-  A defect looks like `appended outside` missing from the file: the save
-  wrote over an edit it never saw, which is what it did before this step.
+  itself that found the change and merged with it. The caret stays on the
+  first line, where you were typing. A defect looks like `appended outside`
+  missing from the file: the save wrote over an edit it never saw, which is
+  what it did before step 3.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
 | ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder. Step 14 also needs that app to write while BrainFrame stays in the foreground — split screen — or it is **N/A** | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android; step 14 as Android | ✓ for steps 3–6 and 14 with the file edited over SSH; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
 
-- **The window of loss, on record:** a keystroke made between the resume and
-  the reload of a note that *did* change externally is dropped in favour of
-  the external edit — a whole-buffer save cannot tell "deleted" from "never
-  saw". The window is one note's reconciliation, milliseconds. Report it only
-  if it exceeds that.
+- **No window of loss:** a keystroke made between the resume and the reload
+  of a note that *did* change externally is merged with the external edit,
+  not dropped (#70, step 4). The window is milliseconds and cannot be hit by
+  hand; the merge on reload becomes testable once the watcher can reload a
+  note while it is being typed in.
 - **Edits to a file while the app is focused and the note is open** are
   *not* picked up until the next trigger — there is no filesystem watcher yet
   (**#70**). A save made in that state no longer overwrites the external

@@ -30,6 +30,9 @@ In scope:
 Explicitly **out** of v1 (named so they don't creep in): a real markdown
 editor, backlinks/graph, search indexing, file watching / sync (v3),
 sandboxed-platform folder picking and iCloud (v2), and web user-engrams.
+(Sandboxed-platform folder picking has since been built, per
+[sandboxed-folder-adoption.md](../design/sandboxed-folder-adoption.md); web
+has been removed, per [no-web.md](../design/no-web.md).)
 
 ## Storage architecture
 

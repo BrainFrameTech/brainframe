@@ -2,8 +2,11 @@
 
 - **Status:** accepted (2026-06-30); amended 2026-07-02 (Decision 7 —
   bytes-first store), 2026-07-03 (Decision 8 — help dual-mode, refines
-  Decision 6), and 2026-07-04 (built-in content is now locale-partitioned —
-  refines Decision 5; see `i18n.md` Decision 7)
+  Decision 6), 2026-07-04 (built-in content is now locale-partitioned —
+  refines Decision 5; see `i18n.md` Decision 7), and 2026-09-26 (Location B
+  on the sandboxed platforms is built, and Decision 2's release order is
+  relaxed — see
+  [sandboxed-folder-adoption.md](sandboxed-folder-adoption.md))
 - **Author:** Claude
 - **Date:** 2026-06-30
 
@@ -62,6 +65,17 @@ launch → coordinate access), which no Flutter plugin covers cleanly and which
 needs a small Swift platform channel; that piece is deferred to v2. The
 abstraction is identical either way, so the deferral never touches screen
 code.
+
+**(Amended 2026-09-26 — v2 is built; see
+[sandboxed-folder-adoption.md](sandboxed-folder-adoption.md).)** Every
+platform but the Pi now picks a folder, and every one ends in a plain path
+that `dart:io` reaches. Android asks for All files access and maps the
+system picker's answer to its `/storage` path — not the Storage Access
+Framework this section assumed. iOS keeps a security-scoped bookmark in the
+registry row, as sketched above. macOS does too, because its build turned out
+to be sandboxed, which "trivial on desktop" had missed. The coordination step
+in the pick → resolve chain above is still deferred (that design's
+Decision 7).
 
 The key design move: **Location A and Location B differ only in how you
 obtain a directory handle.** Above the file layer, a *filesystem* engram is
@@ -205,7 +219,10 @@ top-level concept — it is an implementation detail of the filesystem store,
 answering "which directory, and how do I get access to it" (container path
 now; picked path and security-scoped bookmarks later). Only that store ever
 touches a `Directory`. The concrete `lib/engram/` file layout lives in the
-implementation plan.
+implementation plan. **(Amended 2026-09-26:** the "how do I get access" half
+went elsewhere. `EngramLocation` stays a plain path; a bookmark or a
+permission is how that path is *reached*, and belongs to the registry row and
+the `FolderAccess` seam — the sandboxed folder adoption design, Decision 1.**)**
 
 The current engram is exposed to the widget tree by an `EngramScope`
 `InheritedWidget`, so screens read `EngramScope.of(context).engram` the same
@@ -242,6 +259,10 @@ sole writer.** This shapes the file layer even in v1:
   may not be materialized yet.
 - Use OS file coordination when we add Location B (the picker world expects
   `NSFileCoordinator`); design the write path so coordination can wrap it.
+  **(Amended 2026-09-26:** Location B landed without it. Until it is built,
+  folders served by another app's File Provider are unsupported on iOS and
+  macOS and iCloud Drive is unproven — the sandboxed folder adoption design,
+  Decision 7.**)**
 
 Baking these assumptions in now is cheap; retrofitting them onto a
 sole-writer design later is not.
@@ -250,16 +271,19 @@ sole-writer design later is not.
 
 | Platform | Default engram | Pick any folder | Notes |
 | --- | --- | --- | --- |
-| macOS / Windows / Linux | Yes | v1 — native dir picker, plain path | No sandbox; the container is just a default. |
+| Windows / Linux | Yes | v1 — native dir picker, plain path | No sandbox; the container is just a default. |
+| macOS | Yes | v2 — open panel + app-scoped bookmark | The build is sandboxed, so a plain path is not enough past one launch. Written, unverified on hardware. |
 | Pi (flutter-pi) | Yes | later — in-app browser (no native dialog) | No sandbox; free-folder rides with Pi-usability work. |
-| Android | Yes | v2 — SAF folder | App-specific storage by default. |
-| iOS | Yes | v2 — security-scoped bookmarks | v1 ships the Files-exposed container (Info.plist keys). |
+| Android | Yes | v2 — All files access + system picker, plain path | App-specific storage by default. SAF was considered and rejected. |
+| iOS | Yes | v2 — document picker + security-scoped bookmark | v1 ships the Files-exposed container (Info.plist keys). Written, unverified on hardware. |
 | Web | No | — | **Removed 2026-09-22** — not a target at all; see [no-web.md](no-web.md). Decision 4 below is superseded. |
 
 New dependency: `path_provider`. Desktop/Pi free folder choice is a native
 directory picker plus a stored path — cheap, v1. The iOS work is two
 Info.plist keys for v1; the Swift security-scoped-bookmark channel is a
-separate, later piece.
+separate, later piece. **(Amended 2026-09-26:** the table's v2 rows are
+built — see [sandboxed-folder-adoption.md](sandboxed-folder-adoption.md) for
+how, and for why macOS moved out of the plain-path row.**)**
 
 ## UI touchpoints (brief)
 
@@ -281,7 +305,10 @@ out here only so it is not forgotten; full UI is out of scope for this doc.
 2. **v2 — free folder choice on the sandboxed platforms.** iOS document-picker
    adoption + security-scoped bookmarks (Swift channel), plus optional
    iCloud-container storage; Android SAF folder picking. All Apple-side work
-   awaits Mac + iPhone hardware to verify.
+   awaits Mac + iPhone hardware to verify. **(Amended 2026-09-26:** built,
+   except iCloud-container storage, with Android on All files access rather
+   than SAF and macOS added; the Apple side still awaits that hardware. See
+   [sandboxed-folder-adoption.md](sandboxed-folder-adoption.md).**)**
 3. **v3 — sync awareness.** File watching, conflict surfacing, coordinated
    writes, iCloud placeholder handling hardened.
 
@@ -304,7 +331,14 @@ out here only so it is not forgotten; full UI is out of scope for this doc.
    (each instance's current engram is in-memory; the shared "last opened"
    hint is last-writer-wins across instances, which is harmless). On
    iOS/Android it is not offered — no multi-window, and small screens make a
-   single focused engram the right model regardless.
+   single focused engram the right model regardless. **(Amended 2026-09-26 —
+   the release order is relaxed.** The platform does not require the old
+   handle to be released before the new one is resolved, and discovery,
+   the switcher and Housekeeping all read registered folders besides the
+   open one. So security-scoped access is started when a row is resolved and
+   held for the session, and `release()` stays the seam where a per-engram
+   handle could be freed if the system's cap ever mattered — the sandboxed
+   folder adoption design, Decision 5.**)**
 3. **iCloud container deferred to v2** (2026-06-30), with the rest of
    Location B. It cannot be built or tested without a Mac and an iPhone, so
    shipping it now would be unverifiable complexity. The same caveat applies
@@ -314,6 +348,10 @@ out here only so it is not forgotten; full UI is out of scope for this doc.
    path: the cross-platform core is fully exercised on desktop, Android, and
    Pi, and iCloud, when built, is just another `EngramLocation` (resolve a
    ubiquity-container directory), so deferring it changes no interface.
+   **(Amended 2026-09-26:** a folder in iCloud Drive can now be *picked* on
+   iOS and macOS, through the same bookmark as any other folder; the app's
+   own ubiquity container, as a place to *create* engrams, is still deferred.
+   The designed-but-unverified caveat stands for all of it.**)**
 4. **Web storage deferred; revisited post-Pi as its own backend**
    (2026-06-30). **Superseded 2026-09-22 — see [no-web.md](no-web.md): web is
    removed rather than deferred, and the seam this decision asked for is gone.

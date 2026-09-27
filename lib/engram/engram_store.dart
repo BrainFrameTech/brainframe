@@ -253,8 +253,12 @@ abstract class EngramStore {
   /// engram-relative path methods above.
   String? get locationDescription => null;
 
-  /// Releases any resources this store holds — an open location handle, a file
-  /// watcher — when its engram is switched away from or the app tears down.
+  /// Releases any resources this store holds — an open location handle —
+  /// when its engram is switched away from or the app tears down.
+  ///
+  /// Not the folder's watcher: that belongs to the CRDT session, whose
+  /// reconciler is its only consumer, and closes with it (the filesystem
+  /// watcher design, Decision 8).
   ///
   /// A no-op for every store today (the asset bundle, a filesystem path).
   /// Security-scoped access to an adopted folder on iOS and macOS is not held

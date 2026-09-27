@@ -1,5 +1,7 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+
 import '../engram.dart';
 import '../fs/fs_store_io.dart';
 import '../note_reconciler.dart';
@@ -11,6 +13,8 @@ import 'identity_authorship_io.dart';
 import 'identity_map_io.dart';
 import 'metadata_db_io.dart';
 import 'note_document_lock.dart';
+import '../watch/engram_watcher.dart';
+import '../watch/engram_watcher_io.dart';
 
 /// The `dart:developer` log name for the session's own messages.
 const String crdtSessionLogName = 'brainframe.engram.session';
@@ -27,10 +31,35 @@ const String crdtSessionLogName = 'brainframe.engram.session';
 /// transaction boundary the schema depends on, so switching engrams closes the
 /// outgoing session before the incoming one opens.
 class CrdtSession {
-  CrdtSession._(this._database, this.writer, this._reconciler, this._identity);
+  CrdtSession._(
+    this._database,
+    this.writer,
+    this._reconciler,
+    this._identity,
+    this._folder,
+    this._watcherFor,
+  );
 
   final MetadataDatabase _database;
   final AuthoredIdentity? _identity;
+
+  /// The engram folder, for the watcher; null for an engram with none.
+  final String? _folder;
+  final EngramWatcher? Function(String root) _watcherFor;
+
+  /// The watch while it runs (the filesystem watcher design, Decision 8).
+  WatchDispatcher? _watching;
+
+  final ValueNotifier<EngramWatchUnavailable?> _watchStatus = ValueNotifier(
+    null,
+  );
+
+  /// Why live updates are off for this engram, or null while they are on
+  /// (Decision 9): what Housekeeping says, once, rather than a notice on
+  /// every open. Null too before the first [startWatching], and while
+  /// watching is paused with the app in the background — those are not
+  /// failures, and the resume scan is the catch-up.
+  ValueListenable<EngramWatchUnavailable?> get watchStatus => _watchStatus;
 
   /// How the editor should save into this engram.
   final NoteWriter writer;
@@ -55,10 +84,15 @@ class CrdtSession {
   ///
   /// [trace] is handed to the reconciler as the scan's narration sink — the
   /// `--trace-scan` startup option; see [DriftReconciler.trace].
+  ///
+  /// [watcherFor] makes the folder's watcher, which [startWatching] starts;
+  /// it defaults to this platform's ([engramWatcherFor]), and a test hands in
+  /// a fake.
   static Future<CrdtSession?> openFor(
     Engram engram, {
     AppDataRootResolver? resolveRoot,
     void Function(String line)? trace,
+    EngramWatcher? Function(String root) watcherFor = engramWatcherFor,
   }) async {
     if (engram.readOnly) return null;
     final root = resolveRoot ?? appDataRootResolver();
@@ -139,7 +173,58 @@ class CrdtSession {
       ),
       reconciler,
       identity,
+      store is FileSystemEngramStore ? store.location.path : null,
+      watcherFor,
     );
+  }
+
+  /// Starts watching the engram folder for changes made outside the app
+  /// (Decisions 8 and 3), if it is not watched already.
+  ///
+  /// Called before the scan that opens the session, so a change made during
+  /// a long first scan is an event, and the scan runs again once it is done;
+  /// and on mobile, again before the resume scan. Never throws: a folder that
+  /// cannot be watched — the platform, the system's limit, anything else —
+  /// becomes [watchStatus], and the session carries on with the triggers it
+  /// had before.
+  Future<void> startWatching() async {
+    if (_watching != null || _watchStatus.value != null) return;
+    final folder = _folder;
+    final watcher = folder == null ? null : _watcherFor(folder);
+    if (watcher == null) {
+      _watchStatus.value = const EngramWatchUnavailable.unsupported();
+      return;
+    }
+    final dispatcher = WatchDispatcher(
+      watcher: watcher,
+      reconciler: _reconciler,
+      isTracked: (path) => _database.catalog.byPath(path) != null,
+      onFailure: (failure) {
+        _watching = null;
+        _watchStatus.value = failure;
+      },
+    );
+    _watching = dispatcher;
+    try {
+      await dispatcher.start();
+    } on EngramWatchUnavailable catch (failure) {
+      _watching = null;
+      _watchStatus.value = failure;
+      developer.log(
+        'cannot watch this engram',
+        name: crdtSessionLogName,
+        error: failure,
+      );
+    }
+  }
+
+  /// Stops watching, if it is: on mobile when the app goes to the background
+  /// (Decision 8), and on the way to [close]. Not a failure — [watchStatus]
+  /// is left as it was.
+  Future<void> stopWatching() async {
+    final dispatcher = _watching;
+    _watching = null;
+    await dispatcher?.stop();
   }
 
   /// Writes any identity-map rows still in the timers, without closing.
@@ -159,6 +244,8 @@ class CrdtSession {
   /// recorded seconds before the engram was switched away from must reach
   /// the folder, or every other device keeps the old path.
   Future<void> close() async {
+    // First: nothing the watcher dispatches may reach a closing reconciler.
+    await stopWatching();
     await _identity?.flush();
     await _reconciler.close();
     _database.close();

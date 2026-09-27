@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import '../engram/crdt/catalog.dart';
@@ -6,6 +7,7 @@ import '../engram/engram_repository.dart';
 import '../engram/fs/folder_access.dart';
 import '../engram/note_reconciler.dart';
 import '../engram/ui/note_status_bar.dart';
+import '../engram/watch/engram_watcher.dart';
 import '../l10n/gen/app_localizations.dart';
 
 /// Lists the registry-backed engrams that can be forgotten.
@@ -61,6 +63,7 @@ class HousekeepingPane extends StatefulWidget {
     required this.cleanUp,
     this.engram,
     this.notes,
+    this.liveUpdates,
     this.changeCeiling,
     this.onCeilingChanged,
     this.onOpenNote,
@@ -73,6 +76,7 @@ class HousekeepingPane extends StatefulWidget {
     Key? key,
     Engram? engram,
     NoteReconciler? notes,
+    ValueListenable<EngramWatchUnavailable?>? liveUpdates,
     void Function(Engram engram)? onCeilingChanged,
     void Function(String path)? onOpenNote,
   }) : this(
@@ -82,6 +86,7 @@ class HousekeepingPane extends StatefulWidget {
          cleanUp: repository.cleanUp,
          engram: engram,
          notes: notes,
+         liveUpdates: liveUpdates,
          changeCeiling: repository.setNoteSizeCeiling,
          onCeilingChanged: onCeilingChanged,
          onOpenNote: onOpenNote,
@@ -112,6 +117,12 @@ class HousekeepingPane extends StatefulWidget {
   /// read-only engram, or a platform with no local database. Then the
   /// section says so instead of counting.
   final NoteReconciler? notes;
+
+  /// Why live updates are off for the active engram — null while they are
+  /// on — or null itself with no session to watch for (the filesystem
+  /// watcher design, Decision 9). Listened to, so a watch that dies while
+  /// Settings is open is said at once.
+  final ValueListenable<EngramWatchUnavailable?>? liveUpdates;
 
   @override
   State<HousekeepingPane> createState() => _HousekeepingPaneState();
@@ -343,6 +354,7 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                   _LedgerSection(
                     engram: _engram!,
                     notes: widget.notes,
+                    liveUpdates: widget.liveUpdates,
                     ledger: _ledger,
                     scans: _scans,
                     pending: _pending,
@@ -399,10 +411,40 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
 
 /// What this device knows about the active engram's notes: the counts, and
 /// this session's scans that changed something.
+/// The one line that says live updates are off for this engram, and why —
+/// nothing while they are on (the filesystem watcher design, Decision 9).
+///
+/// Said here, once, and not as a notice on every open: an engram that cannot
+/// be watched on this device never will be, and nothing is lost by it — the
+/// scan on open, on resume, and before a note opens still runs.
+class _LiveUpdatesOff extends StatelessWidget {
+  const _LiveUpdatesOff({required this.status});
+
+  final ValueListenable<EngramWatchUnavailable?> status;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return ValueListenableBuilder<EngramWatchUnavailable?>(
+      valueListenable: status,
+      builder: (context, off, _) {
+        if (off == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _Card(
+            child: _Line(l10n.housekeepingLiveUpdatesOff(off.kind.name)),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _LedgerSection extends StatelessWidget {
   const _LedgerSection({
     required this.engram,
     required this.notes,
+    required this.liveUpdates,
     required this.ledger,
     required this.scans,
     required this.pending,
@@ -415,6 +457,7 @@ class _LedgerSection extends StatelessWidget {
 
   final Engram engram;
   final NoteReconciler? notes;
+  final ValueListenable<EngramWatchUnavailable?>? liveUpdates;
   final Future<NoteLedger>? ledger;
   final Future<List<ScanNotice>>? scans;
   final Future<List<PendingNote>>? pending;
@@ -448,6 +491,7 @@ class _LedgerSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (liveUpdates case final status?) _LiveUpdatesOff(status: status),
         if (notes == null || ledger == null || scans == null)
           _Card(child: _Line(l10n.housekeepingLedgerUnavailable))
         else ...[

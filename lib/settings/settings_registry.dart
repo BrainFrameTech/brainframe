@@ -231,6 +231,7 @@ List<SettingsGroup> buildCoreGroups(BuildContext context) {
             RepositoryScope.of(ctx),
             engram: engramScope?.engram,
             notes: CrdtSessionScope.maybeReconcilerOf(ctx),
+            liveUpdates: CrdtSessionScope.maybeWatchStatusOf(ctx),
             // A changed ceiling is pushed back down into the real scope, as
             // a rename is, so the editor behind this route enforces it.
             onCeilingChanged: engramScope?.updateActive,

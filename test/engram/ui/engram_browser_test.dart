@@ -20,6 +20,7 @@ import 'package:brainframe/engram/ui/markdown_editor_pane.dart';
 import 'package:brainframe/engram/ui/markdown_reader.dart';
 import 'package:brainframe/theme/app_settings.dart';
 import 'package:brainframe/theme/design_language.dart';
+import 'package:brainframe/engram/watch/engram_watcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -1676,6 +1677,16 @@ class _FakeSession implements CrdtSession {
 
   @override
   Future<void> close() async {}
+
+  @override
+  ValueListenable<EngramWatchUnavailable?> get watchStatus =>
+      ValueNotifier(null);
+
+  @override
+  Future<void> startWatching() async {}
+
+  @override
+  Future<void> stopWatching() async {}
 }
 
 class _InertWriter implements NoteWriter {

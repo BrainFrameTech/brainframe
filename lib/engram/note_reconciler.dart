@@ -284,7 +284,8 @@ enum ScanTrigger {
   /// The app came back to the foreground.
   resume,
 
-  /// The filesystem watcher (**#70**), once it exists.
+  /// The filesystem watcher (**#70**): the folder changed while the engram
+  /// was open, focused or not.
   watcher,
 
   /// Anything else — a test, a future button.

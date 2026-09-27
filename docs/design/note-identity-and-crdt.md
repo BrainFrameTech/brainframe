@@ -474,8 +474,8 @@ script.
 ### Decision 6 — external edits become operations via a minimal diff
 
 This is the heart of "locally arriving CRDTs work." A scan runs on app start,
-on app resume, on filesystem-watcher events once **#70** lands, and immediately
-before a file is opened for editing.
+on app resume, on filesystem-watcher events (**#70**), and immediately before
+a file is opened for editing.
 
 **Amended by the [filesystem watcher](filesystem-watcher.md)** (its Decision 5,
 2026-09-26). Every write of a note's file now checks the file under the note

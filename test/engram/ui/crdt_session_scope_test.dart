@@ -8,6 +8,7 @@ import 'package:brainframe/engram/engram_scope.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/note_writer.dart';
 import 'package:brainframe/engram/ui/crdt_session_scope.dart';
+import 'package:brainframe/engram/watch/engram_watcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -303,6 +304,99 @@ void main() {
     });
   });
 
+  group('watching (the filesystem watcher design, Decision 8)', () {
+    Future<_FakeSession> host(
+      WidgetTester tester, {
+      required List<String> log,
+      Future<void>? startGate,
+    }) async {
+      final session = _FakeSession(
+        () {},
+        reconciler: _RecordingReconciler(log: log),
+        log: log,
+      )..startGate = startGate;
+      await tester.pumpWidget(
+        EngramScope(
+          initialEngram: engramNamed('a'),
+          child: CrdtSessionHost(
+            openSession: (_) async => session,
+            pendingSaves: PendingSaves(),
+            child: probe(),
+          ),
+        ),
+      );
+      return session;
+    }
+
+    testWidgets('the watch starts before the scan on open', (tester) async {
+      // A change made during a long first scan is then an event, and the
+      // scan runs again after it; started after, it would be missed.
+      final log = <String>[];
+      final gate = Completer<void>();
+      await host(tester, log: log, startGate: gate.future);
+      await tester.pump();
+      expect(log, ['watch start'], reason: 'the scan waits for the watch');
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(log, ['watch start', 'scan open']);
+    });
+
+    testWidgets('the watch is published for Housekeeping', (tester) async {
+      final session = await host(tester, log: []);
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.text('crdt'));
+      expect(
+        CrdtSessionScope.maybeWatchStatusOf(context),
+        same(session.watchStatus),
+      );
+    });
+
+    testWidgets('on a phone, the background stops it and the front restarts '
+        'it before the resume scan', (tester) async {
+      final log = <String>[];
+      await host(tester, log: log);
+      await tester.pumpAndSettle();
+      log.clear();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pumpAndSettle();
+      expect(log, ['watch stop']);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(log, ['watch stop', 'watch start', 'scan resume']);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('on desktop, the background leaves it running', (tester) async {
+      // The editor beside BrainFrame is the case the watch exists for.
+      final log = <String>[];
+      final session = await host(tester, log: log);
+      await tester.pumpAndSettle();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pumpAndSettle();
+
+      expect(session.watching, ['start'], reason: 'never stopped');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+
+    testWidgets('a session switched away from mid-start is not scanned', (
+      tester,
+    ) async {
+      final log = <String>[];
+      final gate = Completer<void>();
+      await host(tester, log: log, startGate: gate.future);
+      await tester.pump();
+
+      await tester.pumpWidget(const SizedBox());
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(log, ['watch start'], reason: 'no scan for a closed session');
+    });
+  });
+
   group('the scan on resume', () {
     testWidgets('flushes every registered editor, then scans', (tester) async {
       // Decision 6's first step: reconciling underneath an unsaved buffer
@@ -444,8 +538,12 @@ void main() {
 
 /// A session that records its close without touching a database.
 class _FakeSession implements CrdtSession {
-  _FakeSession(this._onClose, {_RecordingReconciler? reconciler})
+  _FakeSession(this._onClose, {_RecordingReconciler? reconciler, this.log})
     : reconciler = reconciler ?? _RecordingReconciler();
+
+  /// Where the watch's starts and stops are recorded beside the scans, when
+  /// a test needs their order.
+  final List<String>? log;
 
   final void Function() _onClose;
 
@@ -463,6 +561,30 @@ class _FakeSession implements CrdtSession {
 
   @override
   Future<void> close() async => _onClose();
+
+  /// What the host asked of the watch, in order: `start` and `stop`.
+  final List<String> watching = [];
+
+  /// Held open until completed, when set: a watch still being placed.
+  Future<void>? startGate;
+
+  @override
+  final ValueNotifier<EngramWatchUnavailable?> watchStatus = ValueNotifier(
+    null,
+  );
+
+  @override
+  Future<void> startWatching() async {
+    watching.add('start');
+    log?.add('watch start');
+    await startGate;
+  }
+
+  @override
+  Future<void> stopWatching() async {
+    watching.add('stop');
+    log?.add('watch stop');
+  }
 }
 
 /// A reconciler that records each scan, optionally via a shared log, and can

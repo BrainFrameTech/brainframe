@@ -6,6 +6,7 @@ import 'package:brainframe/engram/engram_repository.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/fs/folder_access.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
+import 'package:brainframe/engram/watch/engram_watcher.dart';
 import 'package:brainframe/settings/housekeeping_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +59,7 @@ void main() {
   Widget host({
     Engram? engram,
     NoteReconciler? notes,
+    ValueNotifier<EngramWatchUnavailable?>? liveUpdates,
     CeilingChanger? changeCeiling,
     void Function(Engram engram)? onCeilingChanged,
     void Function(String path)? onOpenNote,
@@ -69,6 +71,7 @@ void main() {
         cleanUp: cleanUp,
         engram: engram,
         notes: notes,
+        liveUpdates: liveUpdates,
         changeCeiling: changeCeiling,
         onCeilingChanged: onCeilingChanged,
         onOpenNote: onOpenNote,
@@ -325,6 +328,54 @@ void main() {
 
       expect(find.textContaining('Cleaning up also deletes'), findsOneWidget);
       expect(find.textContaining('leaving only your notes'), findsOneWidget);
+    });
+  });
+
+  group('live updates (the filesystem watcher design, Decision 9)', () {
+    testWidgets('nothing is said while they are on', (tester) async {
+      await tester.pumpWidget(
+        host(engram: field, liveUpdates: ValueNotifier(null)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Live updates are off'), findsNothing);
+    });
+
+    for (final (kind, why) in [
+      (WatchUnavailableKind.unsupported, 'this device cannot watch folders'),
+      (
+        WatchUnavailableKind.watchLimit,
+        'limit on watched folders is reached',
+      ),
+      (WatchUnavailableKind.failed, 'watching the folder failed'),
+    ]) {
+      testWidgets('off because ${kind.name}: says so, why, and what still '
+          'works', (tester) async {
+        await tester.pumpWidget(
+          host(
+            engram: field,
+            liveUpdates: ValueNotifier(EngramWatchUnavailable('x', kind: kind)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Live updates are off'), findsOneWidget);
+        expect(find.textContaining(why), findsOneWidget);
+        expect(find.textContaining('still picked up'), findsOneWidget);
+      });
+    }
+
+    testWidgets('a watch that dies while Settings is open is said at once', (
+      tester,
+    ) async {
+      final status = ValueNotifier<EngramWatchUnavailable?>(null);
+      await tester.pumpWidget(host(engram: field, liveUpdates: status));
+      await tester.pumpAndSettle();
+
+      status.value = const EngramWatchUnavailable('lost');
+      await tester.pump();
+
+      expect(find.textContaining('Live updates are off'), findsOneWidget);
     });
   });
 

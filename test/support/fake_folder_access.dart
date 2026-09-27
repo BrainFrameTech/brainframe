@@ -14,10 +14,27 @@ class FakeFolderAccess extends FolderAccess {
   /// What [pick] returns; null plays a cancelled chooser.
   PickedFolder? picked;
 
+  /// Thrown by [pick] instead of returning, when set — a
+  /// [FolderNotLocalException], say.
+  Object? pickError;
+
+  /// How many times [pick] was called.
+  int picks = 0;
+
+  /// How many times [requestBroadAccess] was called.
+  int requests = 0;
+
+  /// Thrown by [requestBroadAccess] instead of answering, when set.
+  Object? requestError;
+
+  /// What [requestBroadAccess] leaves [broadAccess] as: true plays the user
+  /// granting it, false turning it down.
+  bool grants = true;
+
   @override
   final bool canPick;
 
-  /// What [hasBroadAccess] reports; [requestBroadAccess] grants it.
+  /// What [hasBroadAccess] reports; [requestBroadAccess] sets it to [grants].
   bool broadAccess;
 
   /// How a row resolves; throw [FolderAccessException] from it to refuse.
@@ -28,7 +45,11 @@ class FakeFolderAccess extends FolderAccess {
   final List<({String path, String? bookmark})> resolved = [];
 
   @override
-  Future<PickedFolder?> pick() async => picked;
+  Future<PickedFolder?> pick() async {
+    picks++;
+    if (pickError case final error?) throw error;
+    return picked;
+  }
 
   @override
   Future<ResolvedFolder> resolve({
@@ -43,5 +64,9 @@ class FakeFolderAccess extends FolderAccess {
   Future<bool> get hasBroadAccess async => broadAccess;
 
   @override
-  Future<bool> requestBroadAccess() async => broadAccess = true;
+  Future<bool> requestBroadAccess() async {
+    requests++;
+    if (requestError case final error?) throw error;
+    return broadAccess = grants;
+  }
 }

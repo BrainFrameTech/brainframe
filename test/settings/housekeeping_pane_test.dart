@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_repository.dart';
 import 'package:brainframe/engram/engram_store.dart';
+import 'package:brainframe/engram/fs/folder_access.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/watch/engram_watcher.dart';
 import 'package:brainframe/settings/housekeeping_pane.dart';
@@ -17,11 +18,13 @@ RegisteredEngram _engram(
   String name = 'Field Notebook',
   String path = '/home/user/notes',
   bool available = true,
+  UnreachableReason reason = UnreachableReason.missing,
 }) => RegisteredEngram(
   id: id,
   displayName: name,
   path: path,
   available: available,
+  reason: reason,
 );
 
 void main() {
@@ -126,6 +129,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('MISSING'), findsOneWidget); // badge, uppercased
+  });
+
+  testWidgets('lost access is badged No access, never Missing', (
+    tester,
+  ) async {
+    engrams = [
+      _engram(
+        'a',
+        available: false,
+        reason: UnreachableReason.accessNeeded,
+      ),
+    ];
+
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+
+    expect(find.text('NO ACCESS'), findsOneWidget);
+    expect(find.text('MISSING'), findsNothing);
   });
 
   testWidgets('confirming Forget calls forget and drops it from the list', (
@@ -270,6 +291,33 @@ void main() {
       expect(find.text('Could not clean up “Field Notebook”'), findsNothing);
       expect(find.text('Field Notebook'), findsOneWidget);
       expect(button(), findsOneWidget);
+    });
+
+    testWidgets('lost file access is said in words, not the exception', (
+      tester,
+    ) async {
+      engrams = [_engram('a', name: 'Field Notebook')];
+      cleanUpError = const FolderAccessException(
+        UnreachableReason.accessNeeded,
+        'Broad storage access is not granted.',
+      );
+
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      await tester.tap(button());
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Clean up'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Could not clean up “Field Notebook”'), findsOneWidget);
+      expect(
+        find.textContaining('no longer has permission to reach this folder'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('FolderAccessException'), findsNothing);
+      expect(find.textContaining('Broad storage access'), findsNothing);
+      expect(find.textContaining('try again'), findsOneWidget);
     });
 
     testWidgets('the intro names both actions and what each deletes', (

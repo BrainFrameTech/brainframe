@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../engram/crdt/catalog.dart';
 import '../engram/engram.dart';
 import '../engram/engram_repository.dart';
+import '../engram/fs/folder_access.dart';
 import '../engram/note_reconciler.dart';
 import '../engram/ui/note_status_bar.dart';
 import '../engram/watch/engram_watcher.dart';
@@ -302,7 +303,16 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
         context: context,
         builder: (context) => AlertDialog.adaptive(
           title: Text(l10n.housekeepingCleanUpFailedTitle(engram.displayName)),
-          content: Text(l10n.housekeepingCleanUpFailedBody(error.toString())),
+          // A lost permission gets a sentence of its own: the exception's
+          // text is the platform's untranslated words, meant for the log.
+          content: Text(
+            l10n.housekeepingCleanUpFailedBody(
+              error is FolderAccessException &&
+                      error.reason == UnreachableReason.accessNeeded
+                  ? l10n.housekeepingCleanUpNeedsAccess
+                  : error.toString(),
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -1070,7 +1080,13 @@ class _EngramRow extends StatelessWidget {
                     ),
                     if (!engram.available) ...[
                       const SizedBox(width: 8),
-                      _MissingBadge(label: l10n.housekeepingMissing),
+                      // Lost access is not a lost folder: the folder is most
+                      // likely there, and granting access brings it back.
+                      _MissingBadge(
+                        label: engram.reason == UnreachableReason.accessNeeded
+                            ? l10n.housekeepingNoAccess
+                            : l10n.housekeepingMissing,
+                      ),
                     ],
                   ],
                 ),

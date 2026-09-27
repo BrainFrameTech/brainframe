@@ -76,6 +76,24 @@ class FolderAccessException implements Exception {
       'FolderAccessException(${reason.name}${message == null ? '' : ': $message'})';
 }
 
+/// A folder the user chose that cannot be adopted: the chooser offered it, but
+/// it has no path this app can use (the design's Decision 4 — on Android, a
+/// folder from a cloud provider such as Drive rather than from the device's
+/// own storage).
+///
+/// Like [FolderAccessException], its [message] is for the log; UI tells the
+/// user in a localized sentence of its own.
+class FolderNotLocalException implements Exception {
+  const FolderNotLocalException([this.message]);
+
+  /// The platform's own words, for the log.
+  final String? message;
+
+  @override
+  String toString() =>
+      'FolderNotLocalException${message == null ? '' : '($message)'}';
+}
+
 /// Chooses folders and reaches them again.
 abstract class FolderAccess {
   const FolderAccess();
@@ -84,7 +102,11 @@ abstract class FolderAccess {
   /// is offered only where this is true.
   bool get canPick;
 
-  /// Shows the platform's folder chooser; null if the user cancels.
+  /// Shows the platform's folder chooser; null if the user cancels. Throws
+  /// [FolderNotLocalException] for a chosen folder that has no usable path.
+  ///
+  /// Where [hasBroadAccess] is false, ask for it first: a folder picked
+  /// without it could not be read.
   Future<PickedFolder?> pick();
 
   /// Turns a stored row — its last known [path] and, if it has one, its

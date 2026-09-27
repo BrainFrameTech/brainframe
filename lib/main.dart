@@ -10,6 +10,7 @@ import 'engram/container_resolver.dart';
 import 'engram/crdt/crdt_session.dart';
 import 'engram/engram.dart';
 import 'engram/engram_repository.dart';
+import 'engram/platform_folder_access.dart';
 import 'settings/app_settings_controller.dart';
 import 'settings/settings_store.dart';
 import 'startup_options.dart';
@@ -71,6 +72,9 @@ Future<void> main(List<String> args) async {
     containerPathResolver: engramContainerResolver(
       ignoreConfig: options.ignoreConfig,
     ),
+    // How folders outside the container are picked and reached again: a
+    // channel of the app's own on Android, plain paths elsewhere.
+    folderAccess: platformFolderAccess(),
   );
 
   // Look-and-feel state (the device-default theme), restored from the settings

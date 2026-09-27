@@ -41,19 +41,19 @@ void main() {
   });
 
   group('PathFolderAccess', () {
-    test('can pick on desktop targets', () {
-      for (final platform in [
-        TargetPlatform.windows,
-        TargetPlatform.linux,
-        TargetPlatform.macOS,
-      ]) {
+    test('can pick on Linux and Windows', () {
+      for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(const PathFolderAccess().canPick, isTrue, reason: '$platform');
       }
     });
 
-    test('cannot pick on mobile targets', () {
-      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    test('cannot pick on the sandboxed targets, macOS included', () {
+      for (final platform in [
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(const PathFolderAccess().canPick, isFalse, reason: '$platform');
       }
@@ -100,7 +100,7 @@ void main() {
 
     test('returns null and registers nothing when the picker is cancelled',
         () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
       final engram = await pickAndAdoptFolder(
         repository,
@@ -311,6 +311,99 @@ void main() {
         access.resolved,
         [(path: picked, bookmark: 'opaque-token')],
         reason: 'discovery resolves the row with the bookmark it was given',
+      );
+    });
+  });
+
+  group('pickAndAdoptFolder without broad access (Decision 4)', () {
+    late String picked;
+    late FakeFolderAccess access;
+
+    setUp(() async {
+      picked = '${tempRoot.path}/Outside';
+      await Directory(picked).create(recursive: true);
+      access = FakeFolderAccess(
+        broadAccess: false,
+        picked: PickedFolder(picked),
+      );
+    });
+
+    test('with nothing to explain it, stops before asking or picking',
+        () async {
+      final engram = await pickAndAdoptFolder(repository, access: access);
+
+      expect(engram, isNull);
+      expect(access.requests, 0);
+      expect(access.picks, 0);
+    });
+
+    test('an explanation turned down stops there', () async {
+      var explained = 0;
+      final engram = await pickAndAdoptFolder(
+        repository,
+        access: access,
+        explainAccess: () async {
+          explained++;
+          return false;
+        },
+      );
+
+      expect(engram, isNull);
+      expect(explained, 1);
+      expect(access.requests, 0);
+      expect(access.picks, 0);
+    });
+
+    test('access refused stops before the chooser', () async {
+      access.grants = false;
+      final engram = await pickAndAdoptFolder(
+        repository,
+        access: access,
+        explainAccess: () async => true,
+      );
+
+      expect(engram, isNull);
+      expect(access.requests, 1);
+      expect(access.picks, 0);
+    });
+
+    test('access granted goes on to pick and adopt', () async {
+      final engram = await pickAndAdoptFolder(
+        repository,
+        access: access,
+        explainAccess: () async => true,
+      );
+
+      expect(engram, isNotNull);
+      expect(access.requests, 1);
+      expect(access.picks, 1);
+      expect(File('$picked/.brainframe/engram.json').existsSync(), isTrue);
+    });
+
+    test('with access already held, nothing is explained or asked', () async {
+      access.broadAccess = true;
+      var explained = 0;
+      await pickAndAdoptFolder(
+        repository,
+        access: access,
+        explainAccess: () async {
+          explained++;
+          return true;
+        },
+      );
+
+      expect(explained, 0);
+      expect(access.requests, 0);
+      expect(access.picks, 1);
+    });
+
+    test('a folder with no usable path is thrown to the caller', () async {
+      access
+        ..broadAccess = true
+        ..pickError = const FolderNotLocalException();
+      await expectLater(
+        pickAndAdoptFolder(repository, access: access),
+        throwsA(isA<FolderNotLocalException>()),
       );
     });
   });

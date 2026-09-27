@@ -46,7 +46,52 @@
 
   "switcherOpenFolder": "Open folder…",
   "@switcherOpenFolder": {
-    "description": "Switcher action (desktop only) that opens an existing folder as an engram. The trailing ellipsis signals a dialog follows."
+    "description": "Switcher action (desktop and Android) that opens an existing folder as an engram. The trailing ellipsis signals a dialog follows."
+  },
+
+  "switcherNeedsAccess": "Needs access to your files — tap to grant",
+  "@switcherNeedsAccess": {
+    "description": "Subtitle on a switcher row for an engram whose folder the app has lost permission to reach (Android, after All files access was turned off). Tapping the row asks for the permission again."
+  },
+
+  "switcherBookmarkInvalid": "Its folder can’t be found — open it again with Open folder…",
+  "@switcherBookmarkInvalid": {
+    "description": "Subtitle on a switcher row for an engram whose saved link to its folder no longer works (iOS/macOS). Opening the folder again with the Open folder… action reconnects it."
+  },
+
+  "folderAccessTitle": "Allow access to your files?",
+  "@folderAccessTitle": {
+    "description": "Title of the dialog shown before Android asks for permission to reach folders outside the app's own storage."
+  },
+
+  "folderAccessBody": "To open a folder outside its own storage, BrainFrame needs access to the files on this device. Android asks next: if it shows a settings screen, turn on access to all files for BrainFrame, then come back.",
+  "@folderAccessBody": {
+    "description": "Body of the dialog shown before Android asks for All files access: why it is needed and what the next screen will ask."
+  },
+
+  "folderAccessContinue": "Continue",
+  "@folderAccessContinue": {
+    "description": "Button in the file-access explanation dialog that goes on to Android's own permission prompt."
+  },
+
+  "folderPickerFailedTitle": "Couldn’t choose a folder",
+  "@folderPickerFailedTitle": {
+    "description": "Title of the dialog shown when the system's folder picker, or the request for file access, failed to open or answer."
+  },
+
+  "folderPickerFailedBody": "The system’s folder picker didn’t open or didn’t answer, so nothing was opened. Try again; if it keeps happening, restart BrainFrame.",
+  "@folderPickerFailedBody": {
+    "description": "Body of the dialog shown when the system's folder picker, or the request for file access, failed: nothing was adopted, and what to try."
+  },
+
+  "folderNotLocalTitle": "This folder can’t be opened",
+  "@folderNotLocalTitle": {
+    "description": "Title of the dialog shown when the folder picked is not on the device's own storage (for example a cloud drive folder)."
+  },
+
+  "folderNotLocalBody": "BrainFrame can only open a folder it can reach on this device’s own storage. Folders offered by other apps, such as a cloud drive or the Downloads list, can’t be opened. Choose a folder on the device’s storage instead.",
+  "@folderNotLocalBody": {
+    "description": "Body of the dialog shown when the folder picked has no path on the device's own storage (a cloud drive, the Downloads list, a storage card the system does not expose): what can be opened, and what to do instead."
   },
 
   "newEngramNameLabel": "Name",
@@ -592,6 +637,11 @@
     }
   },
 
+  "housekeepingCleanUpNeedsAccess": "BrainFrame no longer has permission to reach this folder. Tap the engram in the engram switcher to grant access.",
+  "@housekeepingCleanUpNeedsAccess": {
+    "description": "Why cleaning up an engram failed when the app has lost permission to reach its folder (Android, All files access turned off), and how to restore it. Shown as the error part of the clean-up failure dialog."
+  },
+
   "ok": "OK",
   "@ok": {
     "description": "Generic acknowledgement button that dismisses an informational dialog."
@@ -600,6 +650,11 @@
   "housekeepingMissing": "Missing",
   "@housekeepingMissing": {
     "description": "Badge on a Housekeeping row whose engram folder no longer resolves (a dangling entry)."
+  },
+
+  "housekeepingNoAccess": "No access",
+  "@housekeepingNoAccess": {
+    "description": "Badge on a Housekeeping row whose engram folder the app has lost permission to reach (Android, All files access turned off). Distinct from Missing: the folder is most likely still there."
   },
 
   "housekeepingForget": "Forget",

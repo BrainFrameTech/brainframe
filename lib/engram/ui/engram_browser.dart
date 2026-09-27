@@ -366,6 +366,7 @@ class _EngramBrowserState extends State<EngramBrowser> {
               ? _MenuButton(onPressed: () => setState(() => _drawerOpen = true))
               : null,
           actions: [
+            _FindButton(commands: _commands),
             IconButton(
               icon: const Icon(Icons.help_outline),
               tooltip: AppLocalizations.of(context).helpTitle,
@@ -1243,6 +1244,41 @@ class _MenuButton extends StatelessWidget {
       icon: const Icon(Icons.menu),
       onPressed: onPressed,
       tooltip: AppLocalizations.of(context).menuOpenBrowser,
+    );
+  }
+}
+
+/// The title bar's find-in-page button, beside Help.
+///
+/// Find belongs to the document pane, which publishes it through
+/// [AppCommands]; the button is there only while the pane on screen has a find
+/// to offer, and stays lit while its bar is open so it reads as the thing that
+/// opened it. It lives here rather than in the pane's own header because a
+/// phone has no room for it there.
+class _FindButton extends StatelessWidget {
+  const _FindButton({required this.commands});
+
+  final AppCommands? commands;
+
+  @override
+  Widget build(BuildContext context) {
+    final commands = this.commands;
+    if (commands == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: commands,
+      builder: (context, _) {
+        final find = commands.find;
+        if (find == null) return const SizedBox.shrink();
+        return Semantics(
+          toggled: commands.findOpen,
+          child: IconButton(
+            icon: const Icon(Icons.search),
+            isSelected: commands.findOpen,
+            tooltip: AppLocalizations.of(context).findInPageTooltip,
+            onPressed: find,
+          ),
+        );
+      },
     );
   }
 }

@@ -328,8 +328,10 @@ format" message naming the file. No crash, no blank pane.
 **Steps:**
 
 1. Open a **writable** engram; select a `.md` file. It opens in **Edit** mode.
-2. Confirm the header shows a breadcrumb, a **magnifying glass** (F27), a
-   save-status chip, and an **Edit/Preview** segmented control.
+2. Confirm the title bar shows a **magnifying glass** (F27) left of Help, and
+   the header under it shows the save-status chip and an **Edit/Preview**
+   segmented control on one row, with the file-path breadcrumb on its own line
+   beneath them.
 3. Type a new heading in the source.
 4. Switch to **Preview**.
 5. Switch back to **Edit**.
@@ -344,8 +346,15 @@ snapshot.
 | ✓ | ✓ | ✓ | ✓ (on-screen keyboard) | ✓ | ✓ | ✓ but see e-ink editor open item — live keystrokes are the unsolved panel case |
 
 - **Read-only engram:** N/A — a built-in engram shows the reader with **no**
-  toggle, no chip and no magnifying glass (verify the absence explicitly; F17
-  checks chrome).
+  toggle, no chip and no magnifying glass in the title bar (verify the absence
+  explicitly; F17 checks chrome).
+- **Narrow screen / soft keyboard:** on a phone, open a note several folders
+  deep with a long name, type a character (the chip reads **Unsaved changes**,
+  its longest label), and bring up the on-screen keyboard. The breadcrumb stays
+  **one line**, clipped at the right edge — never wrapped, never one character
+  per line; the chip and the whole Edit/Preview toggle fit on their row (the
+  chip's label may shorten with an ellipsis before the toggle is cut off); and
+  the lines being typed stay visible above the keyboard.
 - **Declarative-trap probe:** toggle Edit→Preview→Edit without typing — the
   editor must show the same text each time (buffer is source of truth), and
   Preview must reflect the last edit, not a cached render.
@@ -1175,8 +1184,9 @@ built-in engrams are read-only here.
 **Steps:**
 
 1. Open a writable `.md` file with a word that occurs several times. Click the
-   **magnifying glass** in the editor header. A **Find** bar appears under the
-   header with the caret in it.
+   **magnifying glass** in the title bar, left of Help. A **Find** bar appears
+   under the editor header with the caret in it, and the glass stays lit while
+   the bar is open.
 2. Type a few letters. Watch the counter and the document.
 3. Press **Enter** repeatedly, then **Shift+Enter** repeatedly, past both ends
    of the list.
@@ -1221,8 +1231,9 @@ built-in engrams are read-only here.
 | --- | --- | --- | --- | --- | --- | --- |
 | ✓ | ✓ (Cmd+F; menu item under **Edit**) | ✓ | ✓ via the magnifying glass; **N/A** for the menu item (no menu bar, F24) and for the hotkey unless a hardware keyboard is attached | ✓ as Android | ✓ as Android | ✓ for the button and the stepping; typing a query is the same unsolved live-keystroke case as F9 |
 
-- **Read-only engrams:** find is deliberately **not** offered there today — it
-  lives on the editor header, which the reader has no equivalent of. Searching a
+- **Read-only engrams:** find is deliberately **not** offered there today — the
+  editor pane is what offers it, and the reader has no equivalent, so the
+  title bar shows no glass. Searching a
   built-in guide (and searching a whole engram) is still in
   [Not yet testable](#not-yet-testable-the-frontier).
 - **Layout switch:** narrow the window past the 720 px breakpoint with find
@@ -2568,7 +2579,7 @@ cases for these until the code exists.
 | **Wikilinks `[[…]]` & backlinks** | Explicitly out of scope in the markdown-editing plan; only relative-path Markdown links resolve (F6). |
 | **Graph view** | Obsidian-style graph is vision-level; no widget exists. |
 | **Tagging** | No tag parsing, tag UI, or tag index in code. |
-| **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which has no editor header to hang it on. |
+| **Engram-wide search / full-text index** | Find-in-page now searches the **open document** (F27), but there is still no search field or index across an engram's files — and no find at all in the read-only reader, which does not offer one to the title bar. |
 | **Live Markdown preview (side-by-side) & syntax highlighting** | Out of scope in the current plan; Edit/Preview is a discrete toggle (F9), source is plain monospace. |
 | **Design-language & locale pickers** | Settings now drives **theme** (F19), but there is still no UI for `AppSettings.designOverride` (Material vs Cupertino) or the app locale — both stay platform/OS-driven (F17). |
 | **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), two instances over one folder can be driven as two devices on Linux (F36), and the monitor's `deliver` can carry one device's operations into the other's store by hand (F36 step 10, [docs/bfmon.md](bfmon.md)). What stays untestable is the transport itself: operations arriving while the app runs, and what it does at that moment. |

@@ -181,20 +181,40 @@ class _FakeReconciler implements NoteReconciler {
   Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
 }
 
-Widget _host(EngramStore store, String path, {NoteReconciler? reconciler}) =>
-    localizedApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 1000,
-          height: 600,
-          child: MarkdownEditorPane(
-            store: store,
-            path: path,
-            reconciler: reconciler,
-          ),
+/// Hosts the pane under an [AppCommandsScope], as the app does: its find
+/// button lives in the title bar, which reaches it through [commands].
+Widget _host(
+  EngramStore store,
+  String path, {
+  NoteReconciler? reconciler,
+  AppCommands? commands,
+  double width = 1000,
+}) => AppCommandsScope(
+  commands: commands ?? AppCommands(),
+  child: localizedApp(
+    home: Scaffold(
+      body: SizedBox(
+        width: width,
+        height: 600,
+        child: MarkdownEditorPane(
+          store: store,
+          path: path,
+          reconciler: reconciler,
         ),
       ),
-    );
+    ),
+  ),
+);
+
+/// Opens find the way the title bar's magnifying glass does: through the
+/// command the pane published.
+Future<void> _openFind(WidgetTester tester) async {
+  final commands = AppCommandsScope.maybeOf(
+    tester.element(find.byType(MarkdownEditorPane)),
+  )!;
+  commands.find!();
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('opens in Edit mode showing the file source and a clean status',
@@ -208,6 +228,36 @@ void main() {
     expect(find.text('Edit'), findsOneWidget);
     expect(find.text('Preview'), findsOneWidget);
     expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('on a phone the header keeps to two short lines, the path '
+      'clipped to one', (tester) async {
+    // The width of a small phone, and a path deep enough that sharing a row
+    // with the chip and the toggle once squeezed it to a character per line.
+    const deep = 'games/eso/guilds/We Went Elsweyr/ads/We Went Elsweyr ad.md';
+    final store = _RwStore({deep: 'text'});
+    await tester.pumpWidget(_host(store, deep, width: 360));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'text, edited');
+    await tester.pump(); // the longest status label: Unsaved changes
+
+    expect(tester.takeException(), isNull, reason: 'nothing overflows');
+    final path = find.text(deep);
+    final line = tester.getSize(path).height;
+    final style = tester.widget<Text>(path).style!;
+    expect(
+      line,
+      lessThan(style.fontSize! * 2),
+      reason: 'one line, never wrapped',
+    );
+    expect(
+      tester.getTopLeft(path).dy,
+      greaterThan(tester.getBottomLeft(find.text('Edit')).dy),
+      reason: 'the path sits beneath the chip and the toggle',
+    );
+    expect(find.text('Preview'), findsOneWidget);
+    expect(find.byTooltip('Find in page'), findsNothing,
+        reason: 'find lives in the title bar now');
   });
 
   testWidgets('Preview renders the reader and hides the editor',
@@ -914,8 +964,7 @@ void main() {
       final reconciler = _FakeReconciler(store);
       await tester.pumpWidget(_host(store, 'a.md', reconciler: reconciler));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Find in page'));
-      await tester.pumpAndSettle();
+      await _openFind(tester);
       await tester.enterText(
         find.descendant(
           of: find.byType(FindInPageBar),
@@ -971,12 +1020,9 @@ void main() {
         .controller
         .selection;
 
-    Future<void> openFind(WidgetTester tester) async {
-      await tester.tap(find.byTooltip('Find in page'));
-      await tester.pumpAndSettle();
-    }
+    Future<void> openFind(WidgetTester tester) => _openFind(tester);
 
-    testWidgets('the magnifying glass opens the bar and counts the matches', (
+    testWidgets('the find command opens the bar and counts the matches', (
       tester,
     ) async {
       final store = _RwStore({'a.md': 'one two one'});
@@ -1142,18 +1188,23 @@ void main() {
       addTearDown(commands.dispose);
       final store = _RwStore({'a.md': 'one two one'});
 
-      await tester.pumpWidget(
-        AppCommandsScope(
-          commands: commands,
-          child: _host(store, 'a.md'),
-        ),
-      );
+      await tester.pumpWidget(_host(store, 'a.md', commands: commands));
       await tester.pumpAndSettle();
 
       expect(commands.find, isNotNull);
+      expect(commands.findOpen, isFalse);
       commands.find!();
       await tester.pumpAndSettle();
       expect(find.byType(FindInPageBar), findsOneWidget);
+      expect(
+        commands.findOpen,
+        isTrue,
+        reason: 'the title bar keeps its glass lit while the bar is open',
+      );
+
+      await tester.tap(find.byTooltip('Close find'));
+      await tester.pumpAndSettle();
+      expect(commands.findOpen, isFalse);
 
       await tester.pumpWidget(
         AppCommandsScope(

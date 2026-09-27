@@ -16,6 +16,7 @@ import 'package:brainframe/engram/ui/browser_preferences.dart';
 import 'package:brainframe/engram/ui/crdt_session_scope.dart';
 import 'package:brainframe/engram/ui/engram_browser.dart';
 import 'package:brainframe/engram/ui/file_tree.dart';
+import 'package:brainframe/engram/ui/find_in_page.dart';
 import 'package:brainframe/engram/ui/markdown_editor_pane.dart';
 import 'package:brainframe/engram/ui/markdown_reader.dart';
 import 'package:brainframe/theme/app_settings.dart';
@@ -1479,6 +1480,63 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(reconciler.log, contains('moved welcome.md -> archive/welcome.md'));
+    });
+  });
+
+  group('the title bar\'s find button', () {
+    Engram writable(EngramStore store) =>
+        Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
+
+    testWidgets('sits beside Help while the pane offers find, and is lit '
+        'while the bar is open', (tester) async {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      setWidth(tester, 400);
+      await tester.pumpWidget(
+        harnessFor(
+          repo(),
+          writable(_RwStore({'a.md': 'one two one'})),
+          commands: commands,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final glass = find.byTooltip('Find in page');
+      expect(glass, findsOneWidget);
+      expect(
+        tester.getTopLeft(glass).dx,
+        lessThan(tester.getTopLeft(find.byTooltip('Help')).dx),
+        reason: 'find sits to the left of Help',
+      );
+      IconButton button() => tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.search),
+      );
+      expect(button().isSelected, isFalse);
+
+      await tester.tap(glass);
+      await tester.pumpAndSettle();
+      expect(find.byType(FindInPageBar), findsOneWidget);
+      expect(button().isSelected, isTrue);
+
+      await tester.tap(find.byTooltip('Close find'));
+      await tester.pumpAndSettle();
+      expect(button().isSelected, isFalse);
+    });
+
+    testWidgets('is absent when nothing on screen can be searched',
+        (tester) async {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      setWidth(tester, 1000);
+      // The tutorial is read-only, so its notes open in the reader, which has
+      // no find of its own.
+      await tester.pumpWidget(
+        harnessFor(repo(), tutorial(), commands: commands),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Help'), findsOneWidget);
+      expect(find.byTooltip('Find in page'), findsNothing);
     });
   });
 

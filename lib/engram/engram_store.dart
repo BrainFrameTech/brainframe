@@ -256,10 +256,14 @@ abstract class EngramStore {
   /// Releases any resources this store holds — an open location handle, a file
   /// watcher — when its engram is switched away from or the app tears down.
   ///
-  /// A no-op for v1's stateless stores (the asset bundle, a plain filesystem
-  /// path); the seam exists so a future security-scoped filesystem handle
-  /// (Location B, v2) can be freed before the next engram's store is used, per
-  /// Decision 2. `EngramScope` calls this on the outgoing engram; releasing a
-  /// store twice, or using it after release, is a backend's own concern.
+  /// A no-op for every store today (the asset bundle, a filesystem path).
+  /// Security-scoped access to an adopted folder on iOS and macOS is not held
+  /// by the store: it is started when discovery resolves the folder and held
+  /// for the session, because discovery, the switcher and Housekeeping read
+  /// registered folders besides the open one (the sandboxed folder adoption
+  /// design, Decision 5). The seam stays so a per-engram handle can be freed
+  /// here if the system's cap on held access ever matters. `EngramScope` calls
+  /// this on the outgoing engram; releasing a store twice, or using it after
+  /// release, is a backend's own concern.
   Future<void> release() async {}
 }

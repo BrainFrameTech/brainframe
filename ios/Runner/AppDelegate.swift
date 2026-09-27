@@ -150,11 +150,19 @@ final class FolderAccessChannel: NSObject, UIDocumentPickerDelegate {
   }
 
   /// Starts security-scoped access to `url` unless it is already held;
-  /// false if the system refuses it.
+  /// false if the folder cannot be reached.
+  ///
+  /// The system answers false for a URL that needs no scope at all — a folder
+  /// inside this app's own container, which the Files app shows as
+  /// *On My iPhone › BrainFrame* because the app shares its Documents
+  /// directory. That is not a refusal, so a false is taken at its word only
+  /// if the folder cannot be read without it.
   private func startAccess(_ url: URL) -> Bool {
     if accessed[url.path] != nil { return true }
-    guard url.startAccessingSecurityScopedResource() else { return false }
-    accessed[url.path] = url
-    return true
+    if url.startAccessingSecurityScopedResource() {
+      accessed[url.path] = url
+      return true
+    }
+    return FileManager.default.isReadableFile(atPath: url.path)
   }
 }

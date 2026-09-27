@@ -253,6 +253,28 @@ today's disabled row, with a subtitle that says which case it is.
   treatment of hidden paths (`isHiddenEngramPath`), not as notes. They are
   absent rather than broken until downloaded. Materializing them is the
   storage design's v3 work.
+- **What these two leave supported on iOS** (added 2026-09-26, in step 4's
+  review). They fix how far "adopt a folder on iOS" reaches, and it is not
+  every folder the picker offers:
+  - **On My iPhone / On My iPad** folders — including ones inside the app's
+    own shared Documents, which need no security scope at all — are plain
+    local directories. Uncoordinated `dart:io` reads and writes are what
+    every other app does there, so they are **supported**.
+  - **iCloud Drive** folders are **expected to work, unproven.** The folder
+    is local and the system syncs what is written into it, but a file not
+    yet downloaded is missing from the tree until it is, and a write that
+    races a download is exactly what coordination exists to serialize.
+  - **Folders served by another app's File Provider** — Dropbox, Google
+    Drive, OneDrive and the like — are **not supported.** Such a provider
+    learns of changes through coordinated access; uncoordinated writes may
+    never be uploaded, and its placeholders are not `.icloud` stubs, so they
+    may be listed as notes that cannot be read. The picker still offers these
+    folders, and nothing refuses them yet.
+
+  Supporting the last two properly is the coordination and placeholder work
+  above, which gets a design of its own before it is built. The same three
+  tiers hold on macOS, whose open panel offers iCloud Drive and File Provider
+  folders too.
 - **No change to engram creation.** Choosing where a *new* engram goes is
   **#100**. It will reuse `FolderAccess.pick`, which is why pick returns a
   bookmark and not only a path.

@@ -74,6 +74,16 @@
     "description": "Button in the file-access explanation dialog that goes on to Android's own permission prompt."
   },
 
+  "folderPickerFailedTitle": "Couldn’t choose a folder",
+  "@folderPickerFailedTitle": {
+    "description": "Title of the dialog shown when the system's folder picker, or the request for file access, failed to open or answer."
+  },
+
+  "folderPickerFailedBody": "The system’s folder picker didn’t open or didn’t answer, so nothing was opened. Try again; if it keeps happening, restart BrainFrame.",
+  "@folderPickerFailedBody": {
+    "description": "Body of the dialog shown when the system's folder picker, or the request for file access, failed: nothing was adopted, and what to try."
+  },
+
   "folderNotLocalTitle": "This folder can’t be opened",
   "@folderNotLocalTitle": {
     "description": "Title of the dialog shown when the folder picked is not on the device's own storage (for example a cloud drive folder)."

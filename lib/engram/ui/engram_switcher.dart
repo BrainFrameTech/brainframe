@@ -1,4 +1,7 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../l10n/gen/app_localizations.dart';
 import '../built_in_engrams.dart';
@@ -114,6 +117,12 @@ class EngramSwitcher extends StatelessWidget {
                 } on FolderNotLocalException {
                   if (context.mounted) await _showNotLocal(context);
                   return;
+                } on PlatformException catch (error, stack) {
+                  if (context.mounted) await _showPickerFailed(context, error, stack);
+                  return;
+                } on MissingPluginException catch (error, stack) {
+                  if (context.mounted) await _showPickerFailed(context, error, stack);
+                  return;
                 }
                 if (engram != null) await scope.switchTo(engram);
               }
@@ -121,7 +130,17 @@ class EngramSwitcher extends StatelessWidget {
         onGrantAccess: (unavailable) async {
           Navigator.of(sheetContext).pop();
           if (!await _explainAccess(context)) return;
-          if (!await folders.requestBroadAccess()) return;
+          final bool granted;
+          try {
+            granted = await folders.requestBroadAccess();
+          } on PlatformException catch (error, stack) {
+            if (context.mounted) await _showPickerFailed(context, error, stack);
+            return;
+          } on MissingPluginException catch (error, stack) {
+            if (context.mounted) await _showPickerFailed(context, error, stack);
+            return;
+          }
+          if (!granted) return;
           // Granted: the row the user tapped is the engram they meant to
           // open, so open it if it now resolves. A folder that is also gone
           // stays listed, now as missing, for the next time the sheet opens.
@@ -131,6 +150,38 @@ class EngramSwitcher extends StatelessWidget {
               .firstOrNull;
           if (engram != null) await scope.switchTo(engram);
         },
+      ),
+    );
+  }
+
+  /// Says that the system's picker, or its request for access, failed — the
+  /// channel answered with an error the flow has no case for, or nothing
+  /// answered at all. The error goes to the log; the platform's words never
+  /// reach the dialog.
+  Future<void> _showPickerFailed(
+    BuildContext context,
+    Object error,
+    StackTrace stack,
+  ) {
+    developer.log(
+      'The folder picker failed.',
+      name: 'brainframe.engram.switcher',
+      level: 900,
+      error: error,
+      stackTrace: stack,
+    );
+    final l10n = AppLocalizations.of(context);
+    return showAdaptiveDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text(l10n.folderPickerFailedTitle),
+        content: Text(l10n.folderPickerFailedBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.ok),
+          ),
+        ],
       ),
     );
   }

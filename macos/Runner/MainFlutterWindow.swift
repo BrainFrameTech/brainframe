@@ -124,12 +124,9 @@ final class FolderAccessChannel: NSObject {
         relativeTo: nil,
         bookmarkDataIsStale: &stale
       )
-      if accessed[url.path] == nil {
-        guard url.startAccessingSecurityScopedResource() else {
-          result(FlutterError(code: "bookmarkInvalid", message: "Access to \(url.path) was refused.", details: nil))
-          return
-        }
-        accessed[url.path] = url
+      guard startAccess(url) else {
+        result(FlutterError(code: "bookmarkInvalid", message: "Access to \(url.path) was refused.", details: nil))
+        return
       }
       var reply: [String: Any] = ["path": url.path]
       if stale,
@@ -144,5 +141,20 @@ final class FolderAccessChannel: NSObject {
     } catch {
       result(FlutterError(code: "bookmarkInvalid", message: error.localizedDescription, details: nil))
     }
+  }
+
+  /// Starts security-scoped access to `url` unless it is already held;
+  /// false if the folder cannot be reached.
+  ///
+  /// The system answers false for a URL that needs no scope at all — a folder
+  /// inside this app's own container. That is not a refusal, so a false is
+  /// taken at its word only if the folder cannot be read without it.
+  private func startAccess(_ url: URL) -> Bool {
+    if accessed[url.path] != nil { return true }
+    if url.startAccessingSecurityScopedResource() {
+      accessed[url.path] = url
+      return true
+    }
+    return FileManager.default.isReadableFile(atPath: url.path)
   }
 }

@@ -2309,6 +2309,9 @@ copy in **iCloud Drive** is wanted for step 7.
 7. iOS: adopt the **iCloud Drive** copy as in step 2; relaunch as in step 4.
 8. macOS only: on a build from **before** this change, adopt a folder; then
    run this build. Open the switcher.
+9. iOS only: in the Files app, make a plain folder with a note in it under
+   **On My iPhone › BrainFrame** (the app's own shared storage). **Open
+   folder…**, choose it, **Adopt**; relaunch as in step 4.
 
 **Expected:**
 
@@ -2335,10 +2338,24 @@ copy in **iCloud Drive** is wanted for step 7.
   can’t be found — open it again with Open folder…** — never a crash, and
   never an engram that opens empty. Opening the same folder with **Open
   folder…** keeps its identity and fixes the row.
+- Step 9: the folder is **adopted**, not refused — no *This folder can’t be
+  opened* — and it opens again after the relaunch. (A folder in the app's own
+  storage needs no security scope, and the system says so by refusing to
+  start one; that refusal must not be read as "no access".)
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| **N/A** — not sandboxed; a plain path stays reachable (F15) | ✓ — step 7 **N/A** (iCloud is covered by iOS); the sandbox is the reason this case exists here | **N/A** — as Win | **N/A** — access is a permission, not a bookmark (F39) | **N/A** — as Android | ✓ — step 8 **N/A** (iOS never adopted folders before this change) | **N/A** — no native folder dialog |
+| **N/A** — not sandboxed; a plain path stays reachable (F15) | ✓ — steps 7 and 9 **N/A** (iCloud is covered by iOS; the app's storage is not offered in the open panel); the sandbox is the reason this case exists here | **N/A** — as Win | **N/A** — access is a permission, not a bookmark (F39) | **N/A** — as Android | ✓ — step 8 **N/A** (iOS never adopted folders before this change) | **N/A** — no native folder dialog |
+
+- **Which folders are supported** (the design's Decision 7): on-device
+  folders are; iCloud Drive is expected to work but is unproven — step 7 is
+  its first evidence; folders served by **another app** (Dropbox, Google
+  Drive, OneDrive, via Files or the open panel) are **not** supported yet and
+  are not tested here — see *Not yet testable*. The picker still offers them.
+- **If the picker itself fails** — it never appears, or the app gets no
+  answer from it — a dialog **Couldn’t choose a folder** says so in words, and
+  nothing is adopted. It cannot be provoked on purpose; if it is ever seen,
+  that is a finding, and the device log holds the system's own error.
 
 - **A11y (VoiceOver):** the pickers are the system's own; check that focus
   returns to the switcher (or the opened engram) when they close, and that
@@ -2478,6 +2495,7 @@ cases for these until the code exists.
 | **Sync / multi-device** | No sync layer; engrams are local folders. The *local* half exists — saves become CRDT operations (F10 step 10), external edits are reconciled into history (F29), two instances over one folder can be driven as two devices on Linux (F36), and the monitor's `deliver` can carry one device's operations into the other's store by hand (F36 step 10, [docs/bfmon.md](bfmon.md)). What stays untestable is the transport itself: operations arriving while the app runs, and what it does at that moment. |
 | **Filesystem watcher (#70)** | External edits and new files are picked up at start, resume, and before open (F29), not live — the tree and the open note both follow the scan (F29 steps 8–11, F36 step 5), so what the watcher would add is only the *trigger*. An edit or a new file that lands while the window is focused waits for the next one. |
 | **"Open folder" on the Pi** | Every other platform adopts folders today (F15, F39, F40). The Pi has no native dialog; the reusable folder picker (F14) is earmarked as its in-app directory browser. |
+| **Other apps' cloud folders on iOS / macOS** (Dropbox, Google Drive, OneDrive via Files or the open panel) | The picker offers them, but the app reads and writes them without file coordination and does not recognize their placeholders, so writes may never upload and undownloaded files may list as unreadable notes ([design](design/sandboxed-folder-adoption.md), Decision 7). Not supported until the coordination and placeholder work is designed and built; iCloud Drive's first evidence is F40 step 7. |
 
 When any of these lands, move its row up into the matrix with concrete steps and
 per-platform verdicts, and delete it from this table.

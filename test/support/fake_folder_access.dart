@@ -24,6 +24,9 @@ class FakeFolderAccess extends FolderAccess {
   /// How many times [requestBroadAccess] was called.
   int requests = 0;
 
+  /// Thrown by [requestBroadAccess] instead of answering, when set.
+  Object? requestError;
+
   /// What [requestBroadAccess] leaves [broadAccess] as: true plays the user
   /// granting it, false turning it down.
   bool grants = true;
@@ -63,6 +66,7 @@ class FakeFolderAccess extends FolderAccess {
   @override
   Future<bool> requestBroadAccess() async {
     requests++;
+    if (requestError case final error?) throw error;
     return broadAccess = grants;
   }
 }

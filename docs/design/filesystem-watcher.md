@@ -1,8 +1,10 @@
 # The filesystem watcher
 
-- **Status:** accepted (2026-09-26) — reviewed in **#204**; the choices left
-  open for review are recorded under *Settled in review*; Decisions 5, 6 and
-  7 amended 2026-09-26, as the save path, the merge and the editor were built
+- **Status:** implemented (2026-09-26) — accepted in **#204**, built in
+  seven steps (*How it was built*); the choices left open for review are
+  recorded under *Settled in review*; Decisions 5, 6 and 7 amended
+  2026-09-26, as the save path, the merge and the editor were built; what
+  is left is under *What remains*
 - **Author:** Claude
 - **Date:** 2026-09-26
 - **Issue:** **#70** (parallel track; must land before sync, **#67**)
@@ -434,6 +436,24 @@ In dependency order; each is a separately reviewable step.
 Steps 1–4 are worth landing even if the watcher itself were never built: they
 close the save-overwrites-external-edit loss on today's triggers.
 
+## How it was built
+
+One pull request per step, in the order above.
+
+| Step | Pull request | What it found along the way |
+| --- | --- | --- |
+| 1. Hidden temp files and the sweep | **#206** | The visible `.tmp` name predated the scan's hidden-path rule; nothing chose it. |
+| 2. The three-way merge | **#208** | Inputs are normalized to LF first (Decision 6's amendment). The obvious memory guard, the 8190-byte backslash note, is cheap for *any* diff; the real hazard is a dispersed edit, and the tests use one. |
+| 3. The save path checks first | **#211** | `base` is optional, and the check is the reconciler's own, reached through a seam (Decision 5's amendments). |
+| 4. The editor merges | **#212** | A scan that reconciles under a dirty buffer left the file matching the history, so a file-only check saw nothing: the base is compared with the history instead. The field takes merged text at once, not on the next frame. |
+| 5. The scan's follow-up | **#213** | — |
+| 6. `EngramWatcher` and the dispatcher | **#215** | `dart:io` reports every deletion as a file, so the tree watcher drops watches under any deleted path. |
+| 7. Lifetime and the failure notice | **#217** | Seen working in the real desktop app on Linux. |
+| 8. Docs | folded into **#211** and **#217** | Each comment and test-plan case changed with the code that made it true, under the test plan's same-change rule. |
+
+Alongside it, not part of the plan: **#210** added the low-resource rule
+(`.claude/rules/low-resource.md`) that step 2's review prompted.
+
 ## Sync, #67
 
 The issue's constraint is that external edits and sync-delivered operations
@@ -470,6 +490,33 @@ In the same change as the implementation (not this design):
 - A new case covers the failure notice (Decision 9), driven on Linux by
   lowering `fs.inotify.max_user_watches`.
 - "Filesystem watcher (#70)" leaves *Not yet testable*.
+
+## What remains
+
+Found while building, and left open on purpose — each wants a device, a
+measurement, or a decision this design did not make.
+
+- **Plain-file notes and unsaved typing.** A text note over the size ceiling
+  is a `blobLww` plain file, and Decision 5 keeps its save last-writer-wins:
+  typing in one while it changes on disk records the external version's
+  *hash* as a claim and then replaces its *text*. A three-way merge would
+  work for these too — they are still text — but it is a change to Decision
+  5, and undecided.
+- **iOS has no watching — to be confirmed on a device** (Decision 2).
+  `engramWatcherFor` answers none there, so every iOS engram shows the
+  Housekeeping line (F41). If `dart:io` can in fact watch on iOS, that is
+  one line to change and a test plan cell to fix.
+- **Android shared storage may not report other apps' writes.** An engram
+  outside the app's storage (#214, F39) is watched with inotify, which on
+  some Android versions does not see changes made through the storage layer
+  by another app. If so, live updates there silently behave as if off —
+  edits still arrive on resume — without the Housekeeping line to say so.
+  F29 step 15 on a phone is the check.
+- **The batch timings are unmeasured.** 250 ms quiet and a 2 s cap are the
+  starting values (*Settled in review*); the Pi Zero 2 W is where they
+  should be measured.
+- **macOS and Windows are tested by injection only.** CI cannot run their
+  native watches; F29 steps 15–18 on each are their first real run.
 
 ## Adjacent, and deliberately not decided here
 

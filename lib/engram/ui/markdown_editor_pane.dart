@@ -31,9 +31,9 @@ enum _Mode { edit, preview }
 /// files through it. Toggling to Preview and losing editor focus both flush, so
 /// the reader always renders the current content and edits are never stranded.
 ///
-/// It also owns find-in-page for the open file: the header's magnifying glass
-/// and the menu bar's Edit ▸ Find (published through [AppCommands]) open the
-/// same [FindInPageBar]. Find searches the document *source*, so opening it
+/// It also owns find-in-page for the open file: the title bar's magnifying
+/// glass and the menu bar's Edit ▸ Find (both reaching it through
+/// [AppCommands]) open the same [FindInPageBar]. Find searches the document *source*, so opening it
 /// from Preview switches back to Edit — a rendered preview has no text offsets
 /// to highlight or scroll to.
 ///
@@ -173,9 +173,13 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
     // own channel because it belongs to the open document, which mounts and
     // unmounts independently of the browser publishing everything else.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _commands?.publishFind(_openFind);
+      if (mounted) _publishFind();
     });
   }
+
+  /// Publishes Find, and whether its bar is showing, for the menu bar and the
+  /// title bar's find button.
+  void _publishFind() => _commands?.publishFind(_openFind, open: _findOpen);
 
   @override
   void didUpdateWidget(MarkdownEditorPane oldWidget) {
@@ -517,6 +521,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       _findOpen = true;
       _search(_findQuery.text, keepActive: false);
     });
+    _publishFind();
     _findFocus.requestFocus();
     _findQuery.selection = TextSelection(
       baseOffset: 0,
@@ -535,6 +540,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       _matches = const <TextRange>[];
       _activeMatch = -1;
     });
+    _publishFind();
     if (landing != null) {
       _editor.selectRange(landing);
     } else {
@@ -664,11 +670,9 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
             path: widget.path,
             mode: _mode,
             status: _controller.status,
-            findOpen: _findOpen,
             onModeChanged: _setMode,
             onSaveNow: _saveNow,
             onOverLimit: _askAboutWall,
-            onFind: _openFind,
           ),
           if (_findOpen)
             FindInPageBar(
@@ -722,58 +726,60 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
   }
 }
 
-/// The pane header: the file-path breadcrumb, the find button, the save-status
-/// chip, and the Edit/Preview toggle.
+/// The pane header: the save-status chip and the Edit/Preview toggle on one
+/// row, and the file-path breadcrumb on its own line beneath them.
+///
+/// Stacked rather than side by side because a phone cannot fit all three on
+/// one line: sharing a row, the breadcrumb was squeezed to one character per
+/// line and the header grew tall enough to leave no room for the note above
+/// the soft keyboard. Find lives in the title bar, beside Help.
 class _Header extends StatelessWidget {
   const _Header({
     required this.path,
     required this.mode,
     required this.status,
-    required this.findOpen,
     required this.onModeChanged,
     required this.onSaveNow,
     required this.onOverLimit,
-    required this.onFind,
   });
 
   final String path;
   final _Mode mode;
   final SaveStatus status;
-  final bool findOpen;
   final ValueChanged<_Mode> onModeChanged;
   final VoidCallback onSaveNow;
 
   /// Opens the wall — the choices — when the buffer is over the limit.
   final VoidCallback onOverLimit;
-  final VoidCallback onFind;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(24, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: FilePathBreadcrumb(path: path)),
-          // Toggled rather than a plain button: with the bar open, the glass
-          // stays lit so it reads as the thing that opened it.
-          Semantics(
-            toggled: findOpen,
-            child: IconButton(
-              icon: const Icon(Icons.search),
-              isSelected: findOpen,
-              tooltip: l10n.findInPageTooltip,
-              onPressed: onFind,
-            ),
+          Row(
+            children: [
+              // Flexible, so a long status label gives way before the toggle
+              // does: the toggle is the control, the chip mostly a readout.
+              // End-aligned so the chip sits beside the toggle at any width.
+              Flexible(
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: _SaveStatusChip(
+                    status: status,
+                    onSaveNow: onSaveNow,
+                    onOverLimit: onOverLimit,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _ModeToggle(mode: mode, onChanged: onModeChanged),
+            ],
           ),
-          const SizedBox(width: 4),
-          _SaveStatusChip(
-            status: status,
-            onSaveNow: onSaveNow,
-            onOverLimit: onOverLimit,
-          ),
-          const SizedBox(width: 12),
-          _ModeToggle(mode: mode, onChanged: onModeChanged),
+          const SizedBox(height: 4),
+          FilePathBreadcrumb(path: path),
         ],
       ),
     );
@@ -862,9 +868,14 @@ class _SaveStatusChip extends StatelessWidget {
               children: [
                 Icon(icon, size: 16, color: color),
                 const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: theme.textTheme.labelMedium?.copyWith(color: color),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(color: color),
+                  ),
                 ),
               ],
             ),

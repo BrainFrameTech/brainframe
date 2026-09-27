@@ -214,6 +214,39 @@ void main() {
       expect(commands.find, isNull);
     });
 
+    test('it carries whether the bar is open, and notifies when that '
+        'changes', () {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      var notifications = 0;
+      commands.addListener(() => notifications++);
+      void find() {}
+
+      commands.publishFind(find);
+      expect(commands.findOpen, isFalse);
+      commands.publishFind(find, open: true);
+      expect(commands.findOpen, isTrue);
+      expect(notifications, 2, reason: 'the title bar relights its glass');
+
+      commands.publishFind(find, open: true);
+      expect(notifications, 2);
+
+      commands.withdrawFind(find);
+      expect(
+        commands.findOpen,
+        isFalse,
+        reason: 'no find, so nothing can be open',
+      );
+      expect(notifications, 3);
+    });
+
+    test('an open flag without a find reads as closed', () {
+      final commands = AppCommands();
+      addTearDown(commands.dispose);
+      commands.publishFind(null, open: true);
+      expect(commands.findOpen, isFalse);
+    });
+
     test('withdrawing after dispose is quietly accepted', () {
       final commands = AppCommands();
       void find() {}

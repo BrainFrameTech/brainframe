@@ -48,6 +48,7 @@ class AppCommands extends ChangeNotifier {
   VoidCallback? _about;
 
   VoidCallback? _find;
+  bool _findOpen = false;
 
   VoidCallback? get newNote => _newNote;
   VoidCallback? get newFolder => _newFolder;
@@ -59,6 +60,11 @@ class AppCommands extends ChangeNotifier {
   /// screen can be searched (no file open, a format with no text, or a viewer
   /// that has no find of its own).
   VoidCallback? get find => _find;
+
+  /// Whether the document pane's find bar is showing, so a find button outside
+  /// the pane (the title bar's) can stay lit while the bar it opened is up.
+  /// Always false while [find] is null.
+  bool get findOpen => _findOpen;
 
   /// Publishes the browser's commands, passing null for each one that is not
   /// available right now.
@@ -95,9 +101,14 @@ class AppCommands extends ChangeNotifier {
   /// document pane on screen, which mounts and unmounts independently of the
   /// browser that publishes everything else. [publish] therefore leaves it
   /// alone, and this leaves [publish]'s commands alone.
-  void publishFind(VoidCallback? find) {
-    final changed = (_find == null) != (find == null);
+  ///
+  /// [open] reports whether the publisher's find bar is currently showing; it
+  /// is ignored (and reads as false) when [find] is null.
+  void publishFind(VoidCallback? find, {bool open = false}) {
+    final isOpen = find != null && open;
+    final changed = (_find == null) != (find == null) || _findOpen != isOpen;
     _find = find;
+    _findOpen = isOpen;
     if (changed && !_disposed) notifyListeners();
   }
 

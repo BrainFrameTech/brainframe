@@ -46,6 +46,7 @@ import '../engram_paths.dart';
 import '../engram_store.dart';
 import '../metadata.dart';
 import '../note_reconciler.dart';
+import '../scan_folding.dart';
 import 'blob_document_io.dart';
 import 'catalog.dart';
 import 'drift.dart';
@@ -256,16 +257,43 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   }
 
   @override
-  Future<List<ScanNotice>> recentScans({int limit = 20}) async => [
-    for (final record in database.scans.recent(
-      limit: limit,
-      unacknowledgedOnly: true,
-    ))
-      record.notice,
-  ];
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async {
+    // A page at a time until the card after the last one wanted has begun —
+    // only then is the last one closed — or the history runs out. Each page
+    // continues from the last record read, so the whole pass is linear in
+    // the records it reads. Only the open card's paths and ids are held,
+    // however long its run.
+    //
+    // **The UI gets a turn between pages.** SQLite here is synchronous, on
+    // the UI isolate, and an undismissed run can be tens of thousands of
+    // records — measured at about a third of a second for 50,000 on a
+    // desktop, several times that on the Pi. A page is a fraction of a
+    // millisecond, so yielding after each keeps frames coming however long
+    // the history. The cursor makes that safe: a scan recorded meanwhile is
+    // newer than it and is not read twice.
+    const page = 100;
+    final folder = ScanFolder();
+    ScanRecord? last;
+    while (folder.closed.length < limit) {
+      if (_closed) return const [];
+      final records = database.scans.recent(
+        limit: page,
+        after: last,
+        unacknowledgedOnly: true,
+      );
+      for (final record in records) {
+        folder.add(record.scanned);
+      }
+      if (records.length < page) return folder.finish().take(limit).toList();
+      last = records.last;
+      await Future<void>.delayed(Duration.zero);
+    }
+    return folder.closed.take(limit).toList();
+  }
 
   @override
-  Future<void> dismissScan(int id) async => database.scans.acknowledge(id);
+  Future<void> dismissScans(List<int> ids) async =>
+      database.scans.acknowledgeEach(ids);
 
   @override
   Future<void> dismissScansThrough(int id) async =>
@@ -723,7 +751,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   // ------------------------------------------------------- one path, by hand
 
   @override
-  Future<bool> reconcile(String path) async {
+  Future<bool> reconcile(String path, {ScanTrigger? trigger}) async {
     // First, before the catalog is even consulted: a hidden path is outside
     // the scan's world whether or not a row claims it. A row at one can only
     // be a mistake, and reconciling it would keep the mistake alive.
@@ -733,13 +761,24 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       final started = DateTime.now();
       switch (await _reconcileRow(row)) {
         case _Drift.reconciled:
+          // A change made outside the app, found one note at a time rather
+          // than by a scan: recorded all the same (the filesystem watcher
+          // design, Decision 10), unless the app is asking after its own.
+          if (trigger != null) {
+            _recordScan(
+              DriftScanReport(reconciled: [path]),
+              trigger: trigger,
+              startedAt: started,
+              stampLastScan: false,
+            );
+          }
           return true;
         case _Drift.awaitingDecision:
           // Found before an open rather than by a scan: recorded as one so
           // Housekeeping has the same card either way.
           _recordScan(
             DriftScanReport(awaitingDecision: [path]),
-            trigger: ScanTrigger.manual,
+            trigger: trigger ?? ScanTrigger.manual,
             startedAt: started,
             stampLastScan: false,
           );
@@ -757,11 +796,24 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     // this engram — but it is per-open work that grows with that device
     // count, and a merged view cached per session (invalidated by a scan,
     // which re-reads anyway) is the fix if it ever shows up in a profile.
+    final started = DateTime.now();
     final arrival = await _bringIn(
       path,
       await _NewFile.read(engram, path, ceiling: noteSizeCeilingBytes),
       mergeIdentity(await map.map.readEveryDevicesRows()),
     );
+    // A file that appeared outside the app, found before it opened: the
+    // same news as the scan's "created", and recorded as it would be.
+    if (trigger != null && arrival != _Arrival.present) {
+      _recordScan(
+        arrival == _Arrival.minted
+            ? DriftScanReport(created: [path])
+            : DriftScanReport(adopted: [path]),
+        trigger: trigger,
+        startedAt: started,
+        stampLastScan: false,
+      );
+    }
     // Present means a scan got there first while this was waiting on the
     // lock — nothing changed on this call's account.
     return arrival != _Arrival.present;
@@ -769,6 +821,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
 
   @override
   Future<void> noteCreated(String path) async {
+    // The app's own file: no trigger, so nothing is recorded.
     await reconcile(path);
   }
 
@@ -821,7 +874,19 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   Future<void> reconcileBeforeSave(CatalogRow row) async {
     final current = database.catalog.byUlid(row.ulid);
     if (current == null || !_hasFile(current.state)) return;
+    final started = DateTime.now();
     final drift = await _reconcileHeld(current, announce: false);
+    if (drift == _Drift.reconciled) {
+      // The save found a change made outside the app and merged it: news,
+      // recorded like any other (the filesystem watcher design, Decision
+      // 10).
+      _recordScan(
+        DriftScanReport(reconciled: [current.path]),
+        trigger: ScanTrigger.note,
+        startedAt: started,
+        stampLastScan: false,
+      );
+    }
     if (drift == _Drift.awaitingDecision) {
       throw StateError(
         '${current.path} grew past the note size ceiling outside the app and '

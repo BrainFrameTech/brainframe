@@ -782,9 +782,11 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
     again, open it once, switch away, then `chmod 000` a subdirectory you
     create inside its `engrams/<ULID>/` store. **Clean up**; read the dialog;
     **OK**. Restore permissions and **Clean up** once more.
-16. **Dismiss all:** in the writable engram, edit one note outside the app
-    several times, 20–30 seconds apart, so the watcher records a card each
-    time (two or more). Open Housekeeping and tap **Dismiss all** beside the
+16. **Dismiss all:** get two cards that do not fold together. Quit the app,
+    edit a note outside it, and relaunch — an "at open" card; then, with the
+    app open, edit a note outside it — a "from the watcher" card. (Edits
+    made while the app is open fold into one card, F29 step 19, so they
+    alone give one.) Open Housekeeping and tap **Dismiss all** beside the
     **Recent scans** heading. Then relaunch and reopen Housekeeping.
 17. **A failed dismissal is said (desktop):** with two or more cards
     listed, hold a write lock on this engram's `metadata.db` (in
@@ -800,9 +802,14 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
   another device (none), deleted notes remembered, and when the last scan
   ran — every count a whole sentence with correct singular and plural. Under
   **Recent scans**, either "Nothing to show" or one card per scan that
-  changed something, newest first, each headed by its time and what started
-  it ("at open", "on resume"), a summary such as "32 created", and a
-  **Dismiss** button.
+  changed something, newest first, each headed by its date and time and
+  what started it ("Sep 28, 5:16 PM · at open"), with the year only when it
+  is not this year; below that a summary such as "32 created", and a
+  **Dismiss** button. Cards from different days read in order by their
+  dates — a later evening's card is never above an earlier one's. Changes
+  made outside the app while it was open fold into one card per run,
+  headed with a time range (F29 step 19). At the narrowest window the
+  header wraps inside its card rather than overflowing it.
 - Step 2: the ledger card says the engram has no note catalog; no Recent
   scans list; the forget list is unaffected.
 - Step 3: the newest scan card reads "1 created, 1 deleted" and carries a
@@ -1373,6 +1380,13 @@ engram and any second editor that can write to its folder.
 18. **A burst is one scan:** run
     `for i in $(seq 1 50); do echo "n $i" > "Burst$i.md"; done` in the
     engram folder, wait a few seconds, and open Settings › Housekeeping.
+19. **An editing session is one card (Decision 10 of the watcher design):**
+    dismiss every card in Housekeeping. With BrainFrame open, save **X** in
+    the other editor four or five times, a minute or so apart, adding a
+    line each time; then save a *different* note once. Open Settings ›
+    Housekeeping. Then wait more than five minutes, save **X** once more,
+    and reopen Housekeeping. Tap **Dismiss** on the newest card and reopen
+    Housekeeping.
 
 **Expected:**
 
@@ -1441,11 +1455,12 @@ engram and any second editor that can write to its folder.
 - Step 15: within about a second, and **without BrainFrame being clicked**,
   the new line appears at the top of **X** in BrainFrame. The caret stays
   in the middle of the last line — on the same word, not one line too high
-  — and the chip stays at `saved`: a reload is not an edit. Whether
-  Housekeeping gains a card depends on how the other editor saves: one that
-  writes the file in place is reconciled alone and leaves none; one that
-  writes a copy and renames it over — many do — changes the listing, so it
-  is a scan, and leaves one card "from the watcher". Both are right.
+  — and the chip stays at `saved`: a reload is not an edit. Housekeeping
+  gains a card "from the watcher" saying "1 note updated from disk",
+  **whichever way the other editor saves** — writing the file in place, or
+  writing a copy and renaming it over, as many do. Before Decision 10 the
+  first left no card and the second did; a defect looks like that
+  difference coming back.
 - Step 16: `appended live` appears at the end of **X** while you are still
   typing, **without the caret moving** and without any typed word going
   missing. After the save, the file on disk has both the words and
@@ -1457,10 +1472,19 @@ engram and any second editor that can write to its folder.
 - Step 18: all fifty notes appear in the tree, and Housekeeping's newest
   scan card is **one** card "from the watcher" counting them — not fifty.
   A burst of events is one batch, and one scan.
+- Step 19: the saves are **one** card, headed with a dated time range
+  ("Sep 28, 5:16 PM–5:24 PM · from the watcher"), reading "2 notes updated
+  from disk" — **X** counted once however many times it was saved, and the
+  other note with it. A run that crosses midnight names both dates. The
+  save after the five-minute wait is a **second**, newer card headed with
+  a single dated time. Dismiss on the newest card removes only that
+  card; the older one is still there on reopen. A defect looks like a card
+  per save, a count of saves rather than of notes, or a Dismiss that leaves
+  part of its card behind.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder. Steps 14–18 also need that app to write while BrainFrame stays in the foreground — split screen — or they are **N/A** | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android. Steps 15–18 **N/A** — iOS has no folder watching, and Housekeeping says so (F41); edits made in Files are picked up on the way back | ✓ for steps 3–6 and 14–18 with the files edited over SSH — the watcher is the only live trigger here; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
+| ✓ | ✓ | ✓ | ✓ if the engram folder is reachable by a second app (a files/editor app over shared storage); otherwise **N/A** — nothing else can write into the app's private folder. Steps 14–19 also need that app to write while BrainFrame stays in the foreground — split screen — or they are **N/A** | as Android | ✓ if the engram is in a Files-visible location; otherwise **N/A** — same reason as Android. Steps 15–19 **N/A** — iOS has no folder watching, and Housekeeping says so (F41); edits made in Files are picked up on the way back | ✓ for steps 3–6 and 14–19 with the files edited over SSH — the watcher is the only live trigger here; step 2 and 7 **N/A** — flutter-pi has no window focus, so there is no resume event; step 13 via a relaunch instead of a resume, for the same reason |
 
 - **No window of loss:** a keystroke made between a reload's trigger and the
   reload itself is merged with the external edit, not dropped (#70, step 4)

@@ -74,6 +74,9 @@ class _FakeReconciler implements NoteReconciler {
   /// Every path handed to [reconcile], in order.
   final List<String> reconciles = [];
 
+  /// The trigger each [reconcile] was asked under, in order.
+  final List<ScanTrigger?> triggers = [];
+
   /// Paths awaiting the user's decision in Housekeeping (step 20).
   final Set<String> awaiting = {};
 
@@ -88,8 +91,9 @@ class _FakeReconciler implements NoteReconciler {
   }) async => DriftScanReport.clean;
 
   @override
-  Future<bool> reconcile(String path) async {
+  Future<bool> reconcile(String path, {ScanTrigger? trigger}) async {
     reconciles.add(path);
+    triggers.add(trigger);
     if (gate != null) await gate!.future;
     final text = pending.remove(path);
     if (text == null) return false;
@@ -134,7 +138,7 @@ class _FakeReconciler implements NoteReconciler {
   Future<List<ScanNotice>> recentScans({int limit = 20}) async => const [];
 
   @override
-  Future<void> dismissScan(int id) async {}
+  Future<void> dismissScans(List<int> ids) async {}
 
   @override
   Future<void> dismissScansThrough(int id) async {}
@@ -469,6 +473,9 @@ void main() {
       await tester.pump();
 
       expect(reconciler.reconciles, ['a.md']);
+      // Asked as the note, so a change found is recorded as one made
+      // outside the app (the filesystem watcher design, Decision 10).
+      expect(reconciler.triggers, [ScanTrigger.note]);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
       reconciler.gate!.complete();

@@ -204,7 +204,7 @@ class _MarkdownEditorPaneState extends State<MarkdownEditorPane> {
       // history and not a file that got ahead of it. The controller's current
       // file is a different path (or this one, already open, which openFile
       // ignores), so there is no buffer over this note to flush first.
-      await widget.reconciler?.reconcile(path);
+      await widget.reconciler?.reconcile(path, trigger: ScanTrigger.note);
       // The reconciliation just ran may have found the note over the
       // ceiling, or it may have been waiting since an earlier scan; either
       // way it is read-only until the user decides, and the controller

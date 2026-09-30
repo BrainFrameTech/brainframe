@@ -273,7 +273,7 @@ class WatchDispatcher {
       if (_stopped) return;
       await _logFailure(
         'watcher reconcile of $path failed',
-        () => reconciler.reconcile(path),
+        () => reconciler.reconcile(path, trigger: ScanTrigger.watcher),
       );
     }
   }

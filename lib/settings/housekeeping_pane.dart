@@ -67,6 +67,7 @@ class HousekeepingPane extends StatefulWidget {
     this.changeCeiling,
     this.onCeilingChanged,
     this.onOpenNote,
+    this.now = DateTime.now,
   });
 
   /// Wires the pane to a repository: `HousekeepingPane.forRepository(repo)`,
@@ -91,6 +92,10 @@ class HousekeepingPane extends StatefulWidget {
          onCeilingChanged: onCeilingChanged,
          onOpenNote: onOpenNote,
        );
+
+  /// The current time, which decides whether a scan card's date needs its
+  /// year. [DateTime.now] outside tests.
+  final DateTime Function() now;
 
   final ForgettableEngramsLoader load;
   final EngramForgetter forget;
@@ -230,11 +235,12 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
     }
   }
 
+  /// Dismisses one card: every record it stands for, when it is folded.
   Future<void> _dismiss(ScanNotice scan) async {
-    final id = scan.id;
+    final ids = scan.ids;
     final notes = widget.notes;
-    if (id == null || notes == null) return;
-    await _dismissing(() => notes.dismissScan(id));
+    if (ids.isEmpty || notes == null) return;
+    await _dismissing(() => notes.dismissScans(ids));
   }
 
   /// Dismisses every scan up to [newest], the top card: what the user saw,
@@ -396,6 +402,7 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                         ? null
                         : _raiseCeiling,
                     onOpenNote: widget.onOpenNote,
+                    today: widget.now(),
                   ),
                   const SizedBox(height: 28),
                 ],
@@ -485,9 +492,13 @@ class _LedgerSection extends StatelessWidget {
     required this.onConvert,
     required this.onRaiseCeiling,
     required this.onOpenNote,
+    required this.today,
   });
 
   final Engram engram;
+
+  /// Now, for whether a card's date needs its year.
+  final DateTime today;
   final NoteReconciler? notes;
   final ValueListenable<EngramWatchUnavailable?>? liveUpdates;
   final Future<NoteLedger>? ledger;
@@ -682,6 +693,7 @@ class _LedgerSection extends StatelessWidget {
                             ? null
                             : () => onDismiss(scan),
                         onOpenNote: onOpenNote,
+                        today: today,
                       ),
                     ),
                 ],
@@ -702,7 +714,12 @@ class _ScanCard extends StatelessWidget {
     required this.ceilingBytes,
     required this.onDismiss,
     required this.onOpenNote,
+    required this.today,
   });
+
+  /// Now, for whether the card's date needs its year: the list spans a
+  /// year of scans, and a lost history or a failure is kept for longer.
+  final DateTime today;
 
   /// Opens a note the card names, or null when there is no editor to open
   /// it in.
@@ -763,9 +780,29 @@ class _ScanCard extends StatelessWidget {
       if (report.failed.isNotEmpty)
         l10n.housekeepingScanFailed(report.failed.length),
     ];
-    final time = MaterialLocalizations.of(
-      context,
-    ).formatTimeOfDay(TimeOfDay.fromDateTime(scan.at));
+    final material = MaterialLocalizations.of(context);
+    String clock(DateTime at) =>
+        material.formatTimeOfDay(TimeOfDay.fromDateTime(at));
+    // Every card is dated, so the list reads in order across days; the
+    // year only when it is not this one.
+    String date(DateTime at) => at.year == today.year
+        ? material.formatShortMonthDay(at)
+        : material.formatShortDate(at);
+    String stamp(DateTime at) => l10n.housekeepingScanWhen(date(at), clock(at));
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+    // A folded card spans its run: one date for a run inside a day, both
+    // for one that crosses midnight, and a run inside one minute reads as
+    // that minute, since a range from a time to itself says nothing more.
+    final since = scan.since;
+    final time = since == null || stamp(since) == stamp(scan.at)
+        ? stamp(scan.at)
+        : sameDay(since, scan.at)
+        ? l10n.housekeepingScanWhen(
+            date(scan.at),
+            l10n.housekeepingScanTimeRange(clock(since), clock(scan.at)),
+          )
+        : l10n.housekeepingScanTimeRange(stamp(since), stamp(scan.at));
     final when = '$time · ${l10n.housekeepingScanTrigger(scan.trigger.name)}';
     return _Card(
       child: Column(
@@ -774,16 +811,26 @@ class _ScanCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                when,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontFamily: 'monospace',
-                  color: scheme.onSurfaceVariant,
+              // When above what, not beside it: a dated range with its
+              // trigger runs long, and side by side on a phone the two
+              // could not both fit. Stacked, each wraps on its own.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      when,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _Line(parts.join(', ')),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(child: _Line(parts.join(', '))),
               if (onDismiss != null) ...[
                 const SizedBox(width: 12),
                 Semantics(

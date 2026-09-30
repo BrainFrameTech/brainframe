@@ -288,6 +288,12 @@ enum ScanTrigger {
   /// was open, focused or not.
   watcher,
 
+  /// One note, checked just before it opened or just before a save wrote it
+  /// (the filesystem watcher design, Decision 10). Folds into the watcher's
+  /// card: both are the same news — a note changed outside the app while
+  /// the engram was open.
+  note,
+
   /// Anything else — a test, a future button.
   manual;
 
@@ -338,34 +344,65 @@ class PendingNote {
   String toString() => 'PendingNote($path, $sizeBytes bytes)';
 }
 
-/// One scan that changed something or failed, kept for the session so the
-/// Housekeeping panel can show what the log otherwise swallows — above all a
-/// deletion and a creation in one scan, which is a rename past recognition
-/// and a history that stayed with the tombstone.
+/// One card in Housekeeping's Recent scans: a recorded scan, or a run of
+/// them folded together.
+///
+/// A scan that changed something or failed is kept so the panel can show
+/// what the log otherwise swallows — above all a deletion and a creation in
+/// one scan, which is a rename past recognition and a history that stayed
+/// with the tombstone.
+///
+/// **Folded** (the filesystem watcher design, Decision 10): back-to-back
+/// routine changes found while the engram was open — the watcher's, and a
+/// note's own check before it opened or saved — are one card, [report]
+/// being their union with each path once. [folded] holds the other records'
+/// ids, [since] when the oldest finished.
 class ScanNotice {
   const ScanNotice({
     required this.at,
     required this.report,
     this.id,
     this.trigger = ScanTrigger.manual,
+    this.folded = const <int>[],
+    this.since,
   });
 
-  /// When the scan finished, local time.
+  /// When the scan finished — the newest one's, for a folded card — local
+  /// time.
   final DateTime at;
 
   final DriftScanReport report;
 
-  /// The record's id in the scan history, which [NoteReconciler.dismissScan]
-  /// takes, or null for a notice that was never recorded.
+  /// The record's id in the scan history — the newest one's, for a folded
+  /// card — or null for a notice that was never recorded.
   final int? id;
 
-  /// What started the scan.
+  /// What started the scan. A folded card says the watcher whenever the
+  /// watcher contributed.
   final ScanTrigger trigger;
+
+  /// The ids of the older records folded into this card, newest first;
+  /// empty for a card that stands alone.
+  final List<int> folded;
+
+  /// When the oldest folded record finished, local time; null for a card
+  /// that stands alone.
+  final DateTime? since;
+
+  /// Every record this card stands for, newest first, which
+  /// [NoteReconciler.dismissScans] takes.
+  List<int> get ids => [?id, ...folded];
 
   /// Whether this scan tombstoned and created in one pass: the case Decision
   /// 7 requires to be surfaced rather than silent.
+  ///
+  /// Never true of a folded card: a scan that lost history is never folded,
+  /// and a deletion and a creation from two different scans in the run are
+  /// two ordinary changes, not a rename past recognition.
   bool get lostHistory =>
-      report.tombstoned.isNotEmpty && report.created.isNotEmpty;
+      folded.isEmpty &&
+      report.tombstoned.isNotEmpty &&
+      report.created.isNotEmpty;
 }
 
 /// Reconciles the folder into the catalog: files that changed outside the app
@@ -423,11 +460,15 @@ abstract class NoteReconciler {
   /// newest first, from this device's scan history — across sessions and
   /// launches, so a notice that a note's history stayed with a tombstone is
   /// still there the next time Settings is opened.
+  ///
+  /// Back-to-back routine changes found while the engram was open are folded
+  /// into one card (the filesystem watcher design, Decision 10), and [limit]
+  /// counts cards, not records.
   Future<List<ScanNotice>> recentScans({int limit = 20});
 
-  /// Dismisses the recorded scan [id]: it leaves [recentScans] and stays in
-  /// the history.
-  Future<void> dismissScan(int id);
+  /// Dismisses the recorded scans [ids] — every record one card stands for,
+  /// [ScanNotice.ids]: they leave [recentScans] and stay in the history.
+  Future<void> dismissScans(List<int> ids);
 
   /// Dismisses every recorded scan up to and including [id] — the newest
   /// one the user was shown — including those past [recentScans]' limit.
@@ -491,7 +532,13 @@ abstract class NoteReconciler {
   /// or deletion, the scan's question, since it needs the whole folder to
   /// tell which), a blob, or a note whose history has not arrived. Throws if
   /// the work itself fails.
-  Future<bool> reconcile(String path);
+  ///
+  /// [trigger] is who is asking, and a change found is recorded in the scan
+  /// history under it: it happened outside the app, and Housekeeping lists
+  /// every such change (the filesystem watcher design, Decision 10). Null
+  /// is the app asking about its own change — a note it just created —
+  /// which is not news, and is not recorded.
+  Future<bool> reconcile(String path, {ScanTrigger? trigger});
 
   /// The app created the file at [path]. Brings it into the catalog the way
   /// [reconcile] would, and writes the identity-map row if it minted.

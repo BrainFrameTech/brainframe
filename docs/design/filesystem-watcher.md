@@ -3,7 +3,8 @@
 - **Status:** implemented (2026-09-26) — accepted in **#204**, built in
   seven steps (*How it was built*); the choices left open for review are
   recorded under *Settled in review*; Decisions 5, 6 and 7 amended
-  2026-09-26, as the save path, the merge and the editor were built; what
+  2026-09-26, as the save path, the merge and the editor were built;
+  Decision 10 added 2026-09-29, replacing Decision 3's recording rule; what
   is left is under *What remains*
 - **Author:** Claude
 - **Date:** 2026-09-26
@@ -142,14 +143,15 @@ at their call sites, so tuning them is a one-line change. Then, per batch:
    `scan(trigger: ScanTrigger.watcher)`. A move is a delete plus a create to
    every primitive above, and only the scan can pair them.
 
-**Housekeeping records what it records today, and no more.** A full scan from
-the watcher is recorded like a resume scan, with its trigger ("from the
-watcher"). A targeted `reconcile(path)` is not recorded, exactly as the
-before-open reconcile is not: a content change folded into history is the
-ordinary case, not a finding. Without this rule a side-by-side editor saving
-every few seconds would write a Housekeeping card per save. The tree and the
-open note learn of changes the way they already do — `scanReports` and
-`reconciled` — so neither needs to know a watcher exists.
+**What Housekeeping records is Decision 10's rule, which replaced this one.**
+As first written, a full scan from the watcher was recorded and a targeted
+`reconcile(path)` was not, so that a side-by-side editor saving every few
+seconds would not write a card per save. In use that split turned out to
+follow the other editor's save strategy rather than what happened: an editor
+that saves by writing a temporary file and renaming it over the note produces
+a create and a delete, which take the scan path, and every save became a
+card. The tree and the open note learn of changes the way they already do —
+`scanReports` and `reconciled` — so neither needs to know a watcher exists.
 
 **A scan requested during a scan runs again afterwards.** Today a second
 `scan()` joins the one in flight and receives its report, which is right for
@@ -397,7 +399,82 @@ re-established (a Windows overflow, a directory recreated) is restarted, and a
 scan follows, without a notice.
 
 The line is new UI and therefore new strings, `Semantics` and a test-plan
-case; it is the only user-visible surface this design adds.
+case. With Decision 10's folded cards, it is one of the two user-visible
+surfaces this design adds.
+
+### Decision 10 — every change from outside is recorded, and a run is one card
+
+*Added 2026-09-29, replacing Decision 3's recording rule.*
+
+**A card means something happened that BrainFrame did not know about.** Every
+change made outside the app is recorded in the scan history, however it was
+found: a full scan, the watcher's `reconcile(path)`, the check before a note
+opens, and the check a save makes before it writes (Decision 5). The app's own
+changes are not — `noteCreated` asks without a trigger, and a trigger is what
+turns a found change into a record. A change found one note at a time does
+not move the ledger's "last scan", which a single note is not.
+
+Two reasons outweigh the noise Decision 3 was guarding against:
+
+- **It is the only record of where a change came from.** An external edit
+  becomes operations under this device's peer ID (*Adjacent, and deliberately
+  not decided here*), indistinguishable in the history from typing in the
+  app. The record is what keeps "this came from outside" — which sync (#67)
+  will make a question worth answering.
+- **"You saw it happen" is true only of the open note.** An edit to any other
+  note is folded in without anything on screen.
+
+**The noise is answered by folding, not by dropping.** Consecutive records of
+routine changes found while the engram was open are shown as one card: the
+watcher's (`ScanTrigger.watcher`) and a note's own checks
+(`ScanTrigger.note`) fold together, since both are the same news. Two records
+fold when no more than **5 minutes** (`scanFoldGap`, a named constant beside
+the rule) passes between one finishing and the next starting.
+
+**The 5 minutes is the quiet between two records, not the length of a
+card.** A run lasts as long as its changes keep coming less than five
+minutes apart, so a card can span far longer than five minutes. Saves at
+5:16, 5:19, 5:21 and 5:24 PM are one card spanning eight minutes, because no
+two neighbours are more than three minutes apart; a save at 5:31 PM starts a
+new card, because seven minutes passed without one. A gap rather than a
+fixed window is deliberate: a fixed window would cut one editing session
+into arbitrary pieces, and the thing worth folding is a session, however
+long it runs.
+
+The card spans its run ("Sep 28, 5:16 PM–5:24 PM · from the watcher"; every
+card carries its date, and names both when a run crosses midnight), counts
+each note once however often it changed, says "from the watcher" whenever
+the watcher contributed, and its Dismiss dismisses every record in it.
+
+**Routine is an allow-list, and anything else stands alone.** Notes updated,
+created, adopted, moved or deleted, in a folder listed in full, fold. A
+history lost to a rename past recognition, a failure, an unlisted folder, and
+everything the note size ceiling does each keep a card of their own and split
+a run around them, so an important finding is never hidden inside a routine
+group. So do scans at open, on resume and on request: those report what
+changed while nobody was looking, and are news of their own. A kind the report
+gains later stands alone until it is added to the list on purpose.
+
+**Folded when read, not when recorded.** Every record stays its own row, so
+no history is lost and the gap can be tuned without migrating anything.
+`recentScans` reads the history a page at a time and folds as it goes,
+holding only the open card's ids and paths — bounded by the notes in the
+engram, not by how long the run is — and its `limit` counts cards.
+
+Since a run has no length limit, neither does the read that folds it, and
+that read is SQLite on the UI isolate. Two rules keep it from ever stalling
+the app. Each page continues from the last record read — its `finished_utc`
+and `id` — rather than skipping a count of rows, which SQLite would step
+over one by one, making the whole read quadratic; and the page's events come
+in one query. And the read gives the UI a turn after every page. Measured on
+a desktop, one unbroken run of 50,000 records took 1,081 ms to fold with
+count-skipping and 324 ms with the cursor, the Pi being several times
+slower; with a turn after each page — a fraction of a millisecond each —
+that time is spread across frames rather than blocking one.
+
+**Cost.** A row per external save: about 48 bytes for the scan and 86 for its
+event, by the scan history's own measurement. A year of heavy side-by-side
+editing is low single-digit megabytes, next to an op-log many times that.
 
 ## What this asks of the implementation
 
@@ -545,7 +622,7 @@ Three choices were left open for review in **#204**, and were settled there:
 - **Decision 6's overlap order** — `theirs`, then `mine`, with duplicated
   text preferred to conflict markers — is the rule. It is revisited only if
   real use turns up a case that demands it.
-- **Decision 3's recording rule** stands as written: a targeted reconcile is
-  not recorded in Housekeeping, so F29 step 13's "Housekeeping counts it"
-  holds only for a change a full scan found. The test plan is to be written
-  to match.
+- **Decision 3's recording rule** was settled here as written — a targeted
+  reconcile not recorded — and later replaced by Decision 10, once real use
+  showed the split tracked the other editor's save strategy rather than what
+  happened.

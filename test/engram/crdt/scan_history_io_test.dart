@@ -172,6 +172,31 @@ void main() {
       expect(history.recent().map((r) => r.id), [b, a]);
       expect(history.byId(a)!.acknowledged, isTrue);
     });
+
+    test('acknowledgeThrough dismisses up to the id, and no further', () {
+      final a = record(DriftScanReport(created: const ['a.md']))!;
+      final b = record(
+        DriftScanReport(created: const ['b.md']),
+        at: t0.add(const Duration(minutes: 1)),
+      )!;
+      final c = record(
+        DriftScanReport(created: const ['c.md']),
+        at: t0.add(const Duration(minutes: 2)),
+      )!;
+      final earlier = t0.add(const Duration(hours: 1));
+      history.acknowledge(a, at: earlier);
+
+      history.acknowledgeThrough(b, at: t0.add(const Duration(hours: 2)));
+
+      expect(history.recent(unacknowledgedOnly: true).map((r) => r.id), [c]);
+      // Already dismissed keeps when it was, not when the rest were.
+      final ackA = history.database.select(
+        'SELECT acknowledged_utc FROM bf_scan WHERE id = ?',
+        [a],
+      ).first['acknowledged_utc'];
+      expect(ackA, earlier.toUtc().millisecondsSinceEpoch);
+      expect(history.byId(b)!.acknowledged, isTrue);
+    });
   });
 
   group('prune', () {

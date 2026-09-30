@@ -263,6 +263,22 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
     ]);
   }
 
+  /// Marks every scan not yet dismissed, up to and including [id], as
+  /// dismissed by the user, now.
+  ///
+  /// Bounded by [id], not "every row": the caller passes the newest scan it
+  /// showed, so a scan recorded after the list was read — a watcher scan
+  /// landing while the panel is open — is not hidden before anyone saw it.
+  /// Ids only grow, so every scan older than the one shown is below it.
+  /// A scan already dismissed keeps the time it was dismissed.
+  void acknowledgeThrough(int id, {DateTime? at}) {
+    database.execute(
+      'UPDATE bf_scan SET acknowledged_utc = ? '
+      'WHERE id <= ? AND acknowledged_utc IS NULL',
+      [(at ?? DateTime.now()).toUtc().millisecondsSinceEpoch, id],
+    );
+  }
+
   /// Drops scans older than [retention] that neither lost history nor failed.
   /// The ones that did are never pruned here: they are the ones the user
   /// needs to be able to find, and rare enough that "never" is bounded.

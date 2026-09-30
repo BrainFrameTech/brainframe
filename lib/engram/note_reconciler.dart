@@ -429,6 +429,11 @@ abstract class NoteReconciler {
   /// the history.
   Future<void> dismissScan(int id);
 
+  /// Dismisses every recorded scan up to and including [id] — the newest
+  /// one the user was shown — including those past [recentScans]' limit.
+  /// A scan recorded after [id] stays, so nothing is hidden unseen.
+  Future<void> dismissScansThrough(int id);
+
   /// Makes the text note at [path] a plain file — a `blobLww` note whose
   /// saves replace the file whole — dropping its history (the note size
   /// ceiling design, Decision 3).

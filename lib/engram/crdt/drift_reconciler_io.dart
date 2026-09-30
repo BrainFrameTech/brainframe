@@ -268,6 +268,10 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   Future<void> dismissScan(int id) async => database.scans.acknowledge(id);
 
   @override
+  Future<void> dismissScansThrough(int id) async =>
+      database.scans.acknowledgeThrough(id);
+
+  @override
   Future<void> convertToPlainFile(String path) async {
     final started = DateTime.now();
     final converted = await lock.run(() async {

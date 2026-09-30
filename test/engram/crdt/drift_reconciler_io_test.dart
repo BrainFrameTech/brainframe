@@ -2722,6 +2722,25 @@ void main() {
       expect(d.store.scans.count(), 5, reason: 'dismissed, not deleted');
     });
 
+    test('dismissing through a scan leaves the ones after it', () async {
+      final d = await device();
+      for (var i = 0; i < 5; i++) {
+        await engram.writeString('n$i.md', 'note $i\n');
+        await d.reconciler.scan();
+      }
+      // The newest two were shown, the list stopped there; then another
+      // scan landed while it was on screen.
+      final shown = await d.reconciler.recentScans(limit: 2);
+      await engram.writeString('late.md', 'late\n');
+      await d.reconciler.scan();
+
+      await d.reconciler.dismissScansThrough(shown.first.id!);
+
+      final left = await d.reconciler.recentScans();
+      expect(left.map((n) => n.report.created.single), ['late.md']);
+      expect(d.store.scans.count(), 6, reason: 'dismissed, not deleted');
+    });
+
     test(
       'a delete plus a create in one scan is marked as a history loss',
       () async {

@@ -133,6 +133,9 @@ class _FakeReconciler implements NoteReconciler {
   @override
   Future<void> dismissScan(int id) async {}
 
+  @override
+  Future<void> dismissScansThrough(int id) async {}
+
   /// Every path converted, in order.
   final List<String> converted = [];
 

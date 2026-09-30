@@ -782,6 +782,16 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
     again, open it once, switch away, then `chmod 000` a subdirectory you
     create inside its `engrams/<ULID>/` store. **Clean up**; read the dialog;
     **OK**. Restore permissions and **Clean up** once more.
+16. **Dismiss all:** in the writable engram, edit one note outside the app
+    several times, 20–30 seconds apart, so the watcher records a card each
+    time (two or more). Open Housekeeping and tap **Dismiss all** beside the
+    **Recent scans** heading. Then relaunch and reopen Housekeeping.
+17. **A failed dismissal is said (desktop):** with two or more cards
+    listed, hold a write lock on this engram's `metadata.db` (in
+    `engrams/<ULID>/`, see the inspection point below) from a terminal:
+    `sqlite3 metadata.db`, then `BEGIN EXCLUSIVE;`. Tap one card's
+    **Dismiss**, then **Dismiss all**. Type `ROLLBACK;` in the terminal and
+    tap **Dismiss all** again.
 
 **Expected:**
 
@@ -832,18 +842,30 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
   filesystem error and says the entry stays listed for another try. The row
   is still there — badged **MISSING**, because the folder's `.brainframe/`
   went before the store refused. The retry succeeds and the row goes.
+- Step 16: **Dismiss all** appears only when two or more cards are listed.
+  One tap empties the list to "Nothing to show", and the button goes with
+  the cards; the list is still empty after the relaunch. A scan the watcher
+  records *while* the pane is open is not dismissed with the rest — it
+  appears on the next visit.
+- Step 17: each tap shows a message beginning "Could not dismiss:" with the
+  database's own error ("database is locked"), and **every card stays
+  listed** — the list does not blank. After `ROLLBACK;` Dismiss all
+  succeeds.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path | same as Android | ✓ adopting the fixture through Open folder… (F40); steps 13–14 check the folder in the Files app; step 15 **N/A** — no way to make the store refuse a delete; the automated tests cover the failure path | ✓ pane renders, but with no folder adoption on the Pi (F15) there may be **no forgettable engrams** — verify the empty state |
+| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path; step 17 **N/A** — no terminal can lock the app's private database; the automated tests cover the failure path | same as Android | ✓ adopting the fixture through Open folder… (F40); steps 13–14 check the folder in the Files app; steps 15 and 17 **N/A** — no way to make the store refuse a delete or lock its database; the automated tests cover the failure path | ✓ pane renders, but with no folder adoption on the Pi (F15) there may be **no forgettable engrams** — verify the empty state |
 
 - **A11y:** the Forget and Clean up buttons are each labeled with the engram
-  name; the disabled Clean up reports as disabled; the confirm and failure
-  dialogs are adaptive. The ledger is plain text and reads in order.
+  name; Dismiss all is announced with how many scans it dismisses ("Dismiss
+  all 5 recent scans"); the disabled Clean up reports as disabled; the
+  confirm and failure dialogs are adaptive. The ledger is plain text and
+  reads in order.
 - **Declarative-trap probe:** after a confirmed forget or clean-up, the list
   actually re-loads (the row is gone), not just visually dimmed; after a
   failed clean-up it re-loads too (the row's badge reflects the partial
-  state); after a Dismiss, the list re-loads from the database. The ledger's
+  state); after a Dismiss or Dismiss all, the list re-loads from the
+  database — but not after a failed one, which leaves it as it was. The ledger's
   counts are taken when the pane opens — leave and reopen Settings to refresh
   them.
 - **Inspection point (steps 13–14):** every `engrams/<ULID>/` store holds a

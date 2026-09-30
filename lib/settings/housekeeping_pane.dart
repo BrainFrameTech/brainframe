@@ -232,8 +232,38 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
 
   Future<void> _dismiss(ScanNotice scan) async {
     final id = scan.id;
-    if (id == null) return;
-    await widget.notes?.dismissScan(id);
+    final notes = widget.notes;
+    if (id == null || notes == null) return;
+    await _dismissing(() => notes.dismissScan(id));
+  }
+
+  /// Dismisses every scan up to [newest], the top card: what the user saw,
+  /// and nothing a watcher scan added since.
+  Future<void> _dismissAll(ScanNotice newest) async {
+    final id = newest.id;
+    final notes = widget.notes;
+    if (id == null || notes == null) return;
+    await _dismissing(() => notes.dismissScansThrough(id));
+  }
+
+  /// Runs [dismiss] and re-reads the list. A failure is said, not swallowed:
+  /// a card that silently stays is indistinguishable from a button that
+  /// does nothing.
+  Future<void> _dismissing(Future<void> Function() dismiss) async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await dismiss();
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.housekeepingDismissFailed('$error'))),
+      );
+      // The list stays as it was: a dismissal is one statement, so a
+      // failed one changed nothing, and a re-read would likely meet what
+      // failed it — a locked database — and blank the list.
+      return;
+    }
     if (!mounted) return;
     // A block, not an arrow: an arrow would hand setState the Future the
     // assignment evaluates to, which it refuses.
@@ -359,6 +389,7 @@ class _HousekeepingPaneState extends State<HousekeepingPane> {
                     scans: _scans,
                     pending: _pending,
                     onDismiss: _dismiss,
+                    onDismissAll: _dismissAll,
                     onReconstruct: _reconstruct,
                     onConvert: _convert,
                     onRaiseCeiling: widget.changeCeiling == null
@@ -449,6 +480,7 @@ class _LedgerSection extends StatelessWidget {
     required this.scans,
     required this.pending,
     required this.onDismiss,
+    required this.onDismissAll,
     required this.onReconstruct,
     required this.onConvert,
     required this.onRaiseCeiling,
@@ -462,6 +494,9 @@ class _LedgerSection extends StatelessWidget {
   final Future<List<ScanNotice>>? scans;
   final Future<List<PendingNote>>? pending;
   final void Function(ScanNotice scan) onDismiss;
+
+  /// Dismisses every scan up to the one given, the newest shown.
+  final void Function(ScanNotice newest) onDismissAll;
   final void Function(PendingNote note) onReconstruct;
   final void Function(PendingNote note) onConvert;
 
@@ -593,22 +628,51 @@ class _LedgerSection extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          Text(
-            l10n.housekeepingScansTitle,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
           FutureBuilder<List<ScanNotice>>(
             future: scans,
             builder: (context, snapshot) {
               final recent = snapshot.data;
-              if (recent == null) return const SizedBox.shrink();
-              if (recent.isEmpty) {
-                return _Card(child: _Line(l10n.housekeepingScansEmpty));
-              }
+              // Offered from two recorded cards up: with one, it is that
+              // card's own Dismiss. Newest first, so the first recorded
+              // card bounds what is dismissed.
+              final recorded = [
+                for (final scan in recent ?? const <ScanNotice>[])
+                  if (scan.id != null) scan,
+              ];
+              final title = Text(
+                l10n.housekeepingScansTitle,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final scan in recent)
+                  if (recorded.length < 2)
+                    title
+                  else
+                    Row(
+                      children: [
+                        Expanded(child: title),
+                        Semantics(
+                          button: true,
+                          label: l10n.housekeepingDismissAllScans(
+                            recorded.length,
+                          ),
+                          child: ExcludeSemantics(
+                            child: TextButton(
+                              onPressed: () => onDismissAll(recorded.first),
+                              child: Text(l10n.housekeepingDismissAll),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 8),
+                  if (recent != null && recent.isEmpty)
+                    _Card(child: _Line(l10n.housekeepingScansEmpty)),
+                  for (final scan in recent ?? const <ScanNotice>[])
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _ScanCard(

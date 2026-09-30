@@ -420,6 +420,9 @@ class _CountingReconciler implements NoteReconciler {
   Future<void> dismissScan(int id) async {}
 
   @override
+  Future<void> dismissScansThrough(int id) async {}
+
+  @override
   Future<void> convertToPlainFile(String path) async {}
 
   @override

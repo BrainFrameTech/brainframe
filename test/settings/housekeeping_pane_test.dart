@@ -544,6 +544,132 @@ void main() {
       expect(find.textContaining('Nothing to show'), findsOneWidget);
     });
 
+    testWidgets('Dismiss all dismisses up to the newest scan shown', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        // Two cards from the same minute that read alike: the case that
+        // made one-at-a-time dismissal look broken.
+        scans: [
+          ScanNotice(
+            id: 9,
+            at: DateTime(2026, 9, 12, 14, 30, 40),
+            report: const DriftScanReport(reconciled: ['a.md']),
+          ),
+          ScanNotice(
+            id: 8,
+            at: DateTime(2026, 9, 12, 14, 30, 10),
+            report: const DriftScanReport(reconciled: ['a.md']),
+          ),
+          ScanNotice(
+            id: 3,
+            at: DateTime(2026, 9, 12, 9, 5),
+            report: const DriftScanReport(created: ['c.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+      expect(find.text('1 note updated from disk'), findsNWidgets(2));
+
+      final all = find.widgetWithText(TextButton, 'Dismiss all');
+      expect(
+        tester.getSemantics(all).label,
+        contains('Dismiss all 3 recent scans'),
+      );
+      await tester.tap(all);
+      await tester.pumpAndSettle();
+
+      expect(notes.dismissedThrough, [9]);
+      expect(notes.dismissed, isEmpty);
+      expect(find.text('1 note updated from disk'), findsNothing);
+      expect(find.text('1 created'), findsNothing);
+      expect(find.textContaining('Nothing to show'), findsOneWidget);
+      expect(find.text('Dismiss all'), findsNothing);
+    });
+
+    testWidgets('Dismiss all is not offered for a single scan', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            id: 7,
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(created: ['c.md']),
+          ),
+          // Never recorded, so there is nothing to dismiss it through.
+          ScanNotice(
+            at: DateTime(2026, 9, 12, 9, 5),
+            report: const DriftScanReport(created: ['d.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dismiss'), findsOneWidget);
+      expect(find.text('Dismiss all'), findsNothing);
+    });
+
+    testWidgets('a failed dismissal is said, and the cards stay', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            id: 7,
+            at: DateTime(2026, 9, 12, 14, 30),
+            report: const DriftScanReport(created: ['c.md']),
+          ),
+          ScanNotice(
+            id: 6,
+            at: DateTime(2026, 9, 12, 9, 5),
+            report: const DriftScanReport(created: ['d.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+      notes.dismissError = StateError('database is locked');
+      const said = 'Could not dismiss: Bad state: database is locked';
+
+      await tester.tap(find.widgetWithText(TextButton, 'Dismiss').first);
+      await tester.pumpAndSettle();
+      expect(find.text(said), findsOneWidget);
+      expect(find.text('1 created'), findsNWidgets(2));
+
+      ScaffoldMessenger.of(
+        tester.element(find.text('1 created').first),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Dismiss all'));
+      await tester.pumpAndSettle();
+      expect(find.text(said), findsOneWidget);
+      expect(find.text('1 created'), findsNWidgets(2));
+    });
+
     testWidgets('a notice that was never recorded has no Dismiss', (
       tester,
     ) async {
@@ -1143,6 +1269,13 @@ class _Notes implements NoteReconciler {
   /// Every ceiling handed to [setNoteSizeCeiling].
   final List<int> ceilingsSet = [];
   final List<int> dismissed = [];
+
+  /// Every id handed to [dismissScansThrough].
+  final List<int> dismissedThrough = [];
+
+  /// When set, every dismissal throws it and changes nothing, and a read
+  /// fails too — as both do while the database is locked.
+  Object? dismissError;
   final List<String> reconstructed = [];
   final List<String> converted = [];
 
@@ -1150,13 +1283,23 @@ class _Notes implements NoteReconciler {
   Future<NoteLedger> ledger() async => ledgerValue;
 
   @override
-  Future<List<ScanNotice>> recentScans({int limit = 20}) async =>
-      scans.take(limit).toList();
+  Future<List<ScanNotice>> recentScans({int limit = 20}) async {
+    if (dismissError case final error?) throw error;
+    return scans.take(limit).toList();
+  }
 
   @override
   Future<void> dismissScan(int id) async {
+    if (dismissError case final error?) throw error;
     dismissed.add(id);
     scans.removeWhere((scan) => scan.id == id);
+  }
+
+  @override
+  Future<void> dismissScansThrough(int id) async {
+    if (dismissError case final error?) throw error;
+    dismissedThrough.add(id);
+    scans.removeWhere((scan) => scan.id != null && scan.id! <= id);
   }
 
   @override

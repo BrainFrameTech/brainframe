@@ -1300,6 +1300,25 @@
     }
   },
 
+  "housekeepingDismissAll": "Dismiss all",
+  "@housekeepingDismissAll": {
+    "description": "Button beside the Recent scans heading: hides every scan listed, and any older ones past the list's end. The records themselves are kept."
+  },
+
+  "housekeepingDismissAllScans": "{count, plural, =1{Dismiss the 1 recent scan} other{Dismiss all {count} recent scans}}",
+  "@housekeepingDismissAllScans": {
+    "description": "Accessibility label of the Dismiss all button. count is how many scan cards are listed.",
+    "placeholders": {
+      "count": { "type": "int", "example": "7" }
+    }
+  },
+
+  "housekeepingDismissFailed": "Could not dismiss: {error}",
+  "@housekeepingDismissFailed": {
+    "description": "Transient message when dismissing one or more scans from Recent scans failed; the cards stay listed.",
+    "placeholders": { "error": { "type": "String", "example": "database is locked" } }
+  },
+
   "housekeepingScanUpdated": "{count, plural, =1{1 note updated from disk} other{{count} notes updated from disk}}",
   "@housekeepingScanUpdated": {
     "description": "Part of a scan summary: notes whose file had changed outside the app and were reconciled.",

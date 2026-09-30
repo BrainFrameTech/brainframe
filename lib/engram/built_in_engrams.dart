@@ -23,19 +23,19 @@ const String helpAssetPrefix = 'assets/engrams/help/';
 /// ids are fixed so "last opened" and cross-references key on them stably. The
 /// [bundle] is injectable for tests; it defaults to `rootBundle`.
 List<Engram> builtInEngrams({AssetBundle? bundle}) => [
-      Engram(
-        id: builtinTutorialId,
-        displayName: 'Tutorial',
-        readOnly: true,
-        store: AssetEngramStore(assetPrefix: tutorialAssetPrefix, bundle: bundle),
-      ),
-      Engram(
-        id: builtinHelpId,
-        displayName: 'Help',
-        readOnly: true,
-        store: AssetEngramStore(assetPrefix: helpAssetPrefix, bundle: bundle),
-      ),
-    ];
+  Engram(
+    id: builtinTutorialId,
+    displayName: 'Tutorial',
+    readOnly: true,
+    store: AssetEngramStore(assetPrefix: tutorialAssetPrefix, bundle: bundle),
+  ),
+  Engram(
+    id: builtinHelpId,
+    displayName: 'Help',
+    readOnly: true,
+    store: AssetEngramStore(assetPrefix: helpAssetPrefix, bundle: bundle),
+  ),
+];
 
 /// Whether [id] belongs to a built-in engram, which cannot be forgotten.
 bool isBuiltInEngramId(String id) =>
@@ -43,9 +43,9 @@ bool isBuiltInEngramId(String id) =>
 
 /// The bundled help engram on its own — reachable both as the peek overlay and
 /// as a full engram switch (Decision 8). [bundle] is injectable for tests.
-Engram builtInHelpEngram({AssetBundle? bundle}) =>
-    builtInEngrams(bundle: bundle)
-        .firstWhere((engram) => engram.id == builtinHelpId);
+Engram builtInHelpEngram({AssetBundle? bundle}) => builtInEngrams(
+  bundle: bundle,
+).firstWhere((engram) => engram.id == builtinHelpId);
 
 /// The display name to show for [engram], localized for the built-ins.
 ///

@@ -39,5 +39,6 @@ class _FakeManifest implements AssetManifest {
   List<String> listAssets() => _keys;
 
   @override
-  List<AssetMetadata> getAssetVariants(String key) => throw UnimplementedError();
+  List<AssetMetadata> getAssetVariants(String key) =>
+      throw UnimplementedError();
 }

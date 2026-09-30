@@ -78,8 +78,10 @@ List<FileTreeNode> _buildLevel(
     nodes.add(FileTreeNode.folder(name, _buildLevel(path, folders, files)));
   }
 
-  final filePaths = [for (final file in files) if (isDirectChild(file)) file]
-    ..sort((a, b) => _byName(a.split('/').last, b.split('/').last));
+  final filePaths = [
+    for (final file in files)
+      if (isDirectChild(file)) file,
+  ]..sort((a, b) => _byName(a.split('/').last, b.split('/').last));
   for (final path in filePaths) {
     nodes.add(FileTreeNode.file(path.split('/').last, path));
   }

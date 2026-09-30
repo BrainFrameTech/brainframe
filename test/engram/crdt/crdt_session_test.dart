@@ -338,51 +338,55 @@ void main() {
     );
   });
   group('watching (the filesystem watcher design, Decisions 8 and 9)', () {
-    test('an edit made outside, while watched, is taken in live', () async {
-      // The whole point, end to end, over this platform's real watcher: no
-      // scan, no resume, no open — the edit arrives by itself.
-      final engram = engramWith(readOnly: false);
-      final session = await CrdtSession.openFor(
-        engram,
-        resolveRoot: resolveRoot,
-      );
-      addTearDown(() => session?.close());
-      await session!.writer.write('a.md', 'one\n');
-      final reconciled = session.reconciler.reconciled.first;
-      await session.startWatching();
-      expect(session.watchStatus.value, isNull);
+    test(
+      'an edit made outside, while watched, is taken in live',
+      () async {
+        // The whole point, end to end, over this platform's real watcher: no
+        // scan, no resume, no open — the edit arrives by itself.
+        final engram = engramWith(readOnly: false);
+        final session = await CrdtSession.openFor(
+          engram,
+          resolveRoot: resolveRoot,
+        );
+        addTearDown(() => session?.close());
+        await session!.writer.write('a.md', 'one\n');
+        final reconciled = session.reconciler.reconciled.first;
+        await session.startWatching();
+        expect(session.watchStatus.value, isNull);
 
-      // Written in place, as many editors save: a modification of a note
-      // the catalog knows, reconciled alone.
-      File(
-        '${root.path}/engram/a.md',
-      ).writeAsStringSync('one\nfrom outside\n');
+        // Written in place, as many editors save: a modification of a note
+        // the catalog knows, reconciled alone.
+        File(
+          '${root.path}/engram/a.md',
+        ).writeAsStringSync('one\nfrom outside\n');
 
-      expect(
-        await reconciled.timeout(const Duration(seconds: 5)),
-        'a.md',
-      );
-    }, skip: FileSystemEntity.isWatchSupported ? false : 'no watching here');
+        expect(await reconciled.timeout(const Duration(seconds: 5)), 'a.md');
+      },
+      skip: FileSystemEntity.isWatchSupported ? false : 'no watching here',
+    );
 
-    test('a note created outside, while watched, is scanned in', () async {
-      // A listing change — the kind only a scan can make sense of.
-      Directory('${root.path}/engram').createSync();
-      final engram = engramWith(readOnly: false);
-      final session = await CrdtSession.openFor(
-        engram,
-        resolveRoot: resolveRoot,
-      );
-      addTearDown(() => session?.close());
-      final report = session!.reconciler.scanReports.first;
-      await session.startWatching();
+    test(
+      'a note created outside, while watched, is scanned in',
+      () async {
+        // A listing change — the kind only a scan can make sense of.
+        Directory('${root.path}/engram').createSync();
+        final engram = engramWith(readOnly: false);
+        final session = await CrdtSession.openFor(
+          engram,
+          resolveRoot: resolveRoot,
+        );
+        addTearDown(() => session?.close());
+        final report = session!.reconciler.scanReports.first;
+        await session.startWatching();
 
-      File('${root.path}/engram/new.md').writeAsStringSync('arrived\n');
+        File('${root.path}/engram/new.md').writeAsStringSync('arrived\n');
 
-      expect(
-        (await report.timeout(const Duration(seconds: 5))).created,
-        ['new.md'],
-      );
-    }, skip: FileSystemEntity.isWatchSupported ? false : 'no watching here');
+        expect((await report.timeout(const Duration(seconds: 5))).created, [
+          'new.md',
+        ]);
+      },
+      skip: FileSystemEntity.isWatchSupported ? false : 'no watching here',
+    );
 
     Future<CrdtSession> withWatcher(EngramWatcher? watcher) async {
       final session = await CrdtSession.openFor(
@@ -400,10 +404,7 @@ void main() {
       await session.startWatching();
       await session.startWatching();
 
-      expect(
-        session.watchStatus.value?.kind,
-        WatchUnavailableKind.unsupported,
-      );
+      expect(session.watchStatus.value?.kind, WatchUnavailableKind.unsupported);
     });
 
     test('a watcher that cannot start says why', () async {
@@ -481,4 +482,3 @@ class _FakeWatcher implements EngramWatcher {
   @override
   Future<void> stop() async => log.add('stop');
 }
-

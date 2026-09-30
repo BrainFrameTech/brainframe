@@ -12,12 +12,15 @@ void main() {
   group('AssetEngramStore over the bundled tutorial engram', () {
     final store = AssetEngramStore(assetPrefix: 'assets/engrams/tutorial/');
 
-    test('lists engram-relative paths, prefix stripped, including subdirs', () async {
-      expect(
-        await store.list(),
-        unorderedEquals(['welcome.md', 'notes/first-note.md']),
-      );
-    });
+    test(
+      'lists engram-relative paths, prefix stripped, including subdirs',
+      () async {
+        expect(
+          await store.list(),
+          unorderedEquals(['welcome.md', 'notes/first-note.md']),
+        );
+      },
+    );
 
     test('relative paths use forward slashes and no leading slash', () async {
       for (final path in await store.list()) {
@@ -27,7 +30,10 @@ void main() {
     });
 
     test('reads a top-level file', () async {
-      expect(await store.readString('welcome.md'), contains('Welcome to BrainFrame'));
+      expect(
+        await store.readString('welcome.md'),
+        contains('Welcome to BrainFrame'),
+      );
     });
 
     test('reads a nested file by its engram-relative path', () async {
@@ -54,12 +60,17 @@ void main() {
       );
     });
 
-    test('is read-only: delete, move, createDirectory throw UnsupportedError',
-        () {
-      expect(() => store.delete('welcome.md'), throwsUnsupportedError);
-      expect(() => store.move('welcome.md', 'moved.md'), throwsUnsupportedError);
-      expect(() => store.createDirectory('folder'), throwsUnsupportedError);
-    });
+    test(
+      'is read-only: delete, move, createDirectory throw UnsupportedError',
+      () {
+        expect(() => store.delete('welcome.md'), throwsUnsupportedError);
+        expect(
+          () => store.move('welcome.md', 'moved.md'),
+          throwsUnsupportedError,
+        );
+        expect(() => store.createDirectory('folder'), throwsUnsupportedError);
+      },
+    );
 
     test('is read-only: deleteDirectory throws UnsupportedError', () {
       expect(() => store.deleteDirectory('notes'), throwsUnsupportedError);
@@ -94,7 +105,9 @@ void main() {
 
   test('a missing trailing slash is normalized on', () async {
     final withSlash = AssetEngramStore(assetPrefix: 'assets/engrams/tutorial/');
-    final withoutSlash = AssetEngramStore(assetPrefix: 'assets/engrams/tutorial');
+    final withoutSlash = AssetEngramStore(
+      assetPrefix: 'assets/engrams/tutorial',
+    );
 
     expect(withoutSlash.assetPrefix, 'assets/engrams/tutorial/');
     // Both spellings list and read the same content.

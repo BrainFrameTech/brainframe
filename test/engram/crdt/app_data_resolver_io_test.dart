@@ -37,9 +37,11 @@ void main() {
       final resolve = appDataRootResolver(operatingSystem: 'windows');
 
       expect(await resolve(), '/fake/getApplicationCacheDirectory');
-      expect(calls, [
-        'getApplicationCacheDirectory',
-      ], reason: 'getApplicationSupportDirectory is RoamingAppData on Windows');
+      expect(
+        calls,
+        ['getApplicationCacheDirectory'],
+        reason: 'getApplicationSupportDirectory is RoamingAppData on Windows',
+      );
     });
 
     test('Linux resolves through the application-support call', () async {

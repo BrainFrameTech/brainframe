@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui' show Locale;
 
-import 'package:flutter/services.dart' show AssetBundle, AssetManifest, rootBundle;
+import 'package:flutter/services.dart'
+    show AssetBundle, AssetManifest, rootBundle;
 
 import 'engram_store.dart';
 
@@ -39,10 +40,9 @@ class AssetEngramStore extends EngramStore {
     required String assetPrefix,
     String locale = _baseLocale,
     AssetBundle? bundle,
-  })  : assetPrefix =
-            assetPrefix.endsWith('/') ? assetPrefix : '$assetPrefix/',
-        localeChain = _chainFor(locale),
-        _bundle = bundle ?? rootBundle;
+  }) : assetPrefix = assetPrefix.endsWith('/') ? assetPrefix : '$assetPrefix/',
+       localeChain = _chainFor(locale),
+       _bundle = bundle ?? rootBundle;
 
   /// The slash-terminated asset path this engram's `<locale>/` dirs live under.
   final String assetPrefix;
@@ -60,10 +60,10 @@ class AssetEngramStore extends EngramStore {
   /// This store bound to [locale] (same prefix and bundle). Returned by
   /// [contentForLocale] at the point a built-in engram is opened.
   AssetEngramStore forLocale(Locale locale) => AssetEngramStore(
-        assetPrefix: assetPrefix,
-        locale: _codeOf(locale),
-        bundle: _bundle,
-      );
+    assetPrefix: assetPrefix,
+    locale: _codeOf(locale),
+    bundle: _bundle,
+  );
 
   /// The base-locale directory that defines the canonical page set.
   String get _baseDir => '$assetPrefix$_baseLocale/';

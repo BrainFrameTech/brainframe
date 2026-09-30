@@ -519,36 +519,40 @@ void main() {
       expect(out.toString(), contains('delivering from'));
     }, skip: !Platform.isLinux);
 
-    test('a bfmon watching the receiver is tolerated, and named', () async {
-      // The third window: a watch holds the store read-only. Stood in for
-      // by a script under the monitor's name, which is what /proc reports.
-      final id = newUlid();
-      final folder = '${root.path}/e';
-      final a = await device('a', engramId: id, folder: folder);
-      await a.writer.write('n.md', 'x\n');
-      await a.publish();
-      final b = await device('b', engramId: id, folder: folder);
-      await b.reconciler.scan();
-      await b.release();
-      final asMonitor = File('${root.path}/bfmon')
-        ..writeAsStringSync(
-          '#!/bin/sh\nexec 3<"\$1"\nwhile :; do sleep 1 3<&-; done\n',
+    test(
+      'a bfmon watching the receiver is tolerated, and named',
+      () async {
+        // The third window: a watch holds the store read-only. Stood in for
+        // by a script under the monitor's name, which is what /proc reports.
+        final id = newUlid();
+        final folder = '${root.path}/e';
+        final a = await device('a', engramId: id, folder: folder);
+        await a.writer.write('n.md', 'x\n');
+        await a.publish();
+        final b = await device('b', engramId: id, folder: folder);
+        await b.reconciler.scan();
+        await b.release();
+        final asMonitor = File('${root.path}/bfmon')
+          ..writeAsStringSync(
+            '#!/bin/sh\nexec 3<"\$1"\nwhile :; do sleep 1 3<&-; done\n',
+          );
+        await Process.run('chmod', ['+x', asMonitor.path]);
+        final holder = await Process.start(asMonitor.path, [b.storePath]);
+        addTearDown(holder.kill);
+        await _untilHeld(b.storePath);
+        expect(holdersOf(b.storePath)!.single.isMonitor, isTrue);
+        final out = StringBuffer();
+
+        final outcomes = await send(a, b, out: out);
+
+        expect(outcomes, {DeliveryOutcome.delivered: 1});
+        expect(
+          out.toString(),
+          contains('(bfmon) is watching the receiving store'),
         );
-      await Process.run('chmod', ['+x', asMonitor.path]);
-      final holder = await Process.start(asMonitor.path, [b.storePath]);
-      addTearDown(holder.kill);
-      await _untilHeld(b.storePath);
-      expect(holdersOf(b.storePath)!.single.isMonitor, isTrue);
-      final out = StringBuffer();
-
-      final outcomes = await send(a, b, out: out);
-
-      expect(outcomes, {DeliveryOutcome.delivered: 1});
-      expect(
-        out.toString(),
-        contains('(bfmon) is watching the receiving store'),
-      );
-    }, skip: !Platform.isLinux);
+      },
+      skip: !Platform.isLinux,
+    );
   });
 }
 

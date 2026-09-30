@@ -1,0 +1,23 @@
+# Formatting gate: fails a PR whose Dart files are not in `dart format`'s
+# style. The pre-commit hook formats on commit; this catches a commit made
+# without hooks. The formatter's output depends on the SDK version, so this
+# runs the Flutter pinned in pubspec.yaml, and the local toolchain must match
+# it — a mismatch shows up as a PR that fails here while passing locally.
+name: format
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml # the one Flutter pin: environment.flutter
+      # The formatter reads each package's language version from its
+      # package_config.json, which pub get writes.
+      - run: flutter pub get
+      - name: Dart files are formatted
+        run: dart format --output=none --set-exit-if-changed bin lib test tool

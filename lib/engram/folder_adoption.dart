@@ -23,10 +23,11 @@ import 'fs/fs_store.dart';
 /// location — told each file as it is looked at and asked between files
 /// whether to stop. Injected into [FolderPreviewing] so the dialog can be
 /// driven in a test without a folder.
-typedef FolderPreviewer = Future<FolderAdoptionPreview> Function({
-  FolderPreviewProgress? onProgress,
-  FolderPreviewCancelled? isCancelled,
-});
+typedef FolderPreviewer =
+    Future<FolderAdoptionPreview> Function({
+      FolderPreviewProgress? onProgress,
+      FolderPreviewCancelled? isCancelled,
+    });
 
 /// A folder being looked at before adoption is asked (#168): its name, how
 /// far the pass has come, the preview when it ends, and a way to stop it.
@@ -40,8 +41,7 @@ typedef FolderPreviewer = Future<FolderAdoptionPreview> Function({
 class FolderPreviewing {
   FolderPreviewing({required this.name, required FolderPreviewer run}) {
     _preview = run(
-      onProgress: (done, total) =>
-          _progress.value = (done: done, total: total),
+      onProgress: (done, total) => _progress.value = (done: done, total: total),
       isCancelled: () => _cancelled,
     );
   }
@@ -49,9 +49,7 @@ class FolderPreviewing {
   /// The folder's own name, known before anything else is.
   final String name;
 
-  final ValueNotifier<({int done, int total})?> _progress = ValueNotifier(
-    null,
-  );
+  final ValueNotifier<({int done, int total})?> _progress = ValueNotifier(null);
   late final Future<FolderAdoptionPreview> _preview;
   bool _cancelled = false;
 

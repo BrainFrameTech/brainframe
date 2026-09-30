@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  Widget app(Widget body) =>
-      MaterialApp(home: Scaffold(body: Center(child: body)));
+  Widget app(Widget body) => MaterialApp(
+    home: Scaffold(body: Center(child: body)),
+  );
 
   testWidgets('nothing focused means nothing to act on', (tester) async {
     final commands = TextEditingCommands();
@@ -88,7 +89,10 @@ void main() {
         Column(
           children: [
             TextField(controller: controller),
-            Focus(focusNode: elsewhere, child: const SizedBox.square(dimension: 20)),
+            Focus(
+              focusNode: elsewhere,
+              child: const SizedBox.square(dimension: 20),
+            ),
           ],
         ),
       ),

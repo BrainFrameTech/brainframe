@@ -16,15 +16,16 @@ void main() {
   // No filesystem container in a plain widget test: the resolver throws, so
   // discovery degrades to the built-ins and startup opens the tutorial.
   BrainFrameApp app() => BrainFrameApp(
-        repository: EngramRepository(
-          preferences: SharedPreferencesAsync(),
-          containerPathResolver: () async =>
-              throw UnsupportedError('no filesystem in widget tests'),
-        ),
-      );
+    repository: EngramRepository(
+      preferences: SharedPreferencesAsync(),
+      containerPathResolver: () async =>
+          throw UnsupportedError('no filesystem in widget tests'),
+    ),
+  );
 
-  testWidgets('opens into the tutorial engram browser on first run',
-      (tester) async {
+  testWidgets('opens into the tutorial engram browser on first run', (
+    tester,
+  ) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle(); // resolve the startup engram + list its files
 
@@ -41,44 +42,51 @@ void main() {
     );
   });
 
-  testWidgets('resolveInitialEngram override wins over the repository default',
-      (tester) async {
-    // Mirrors how `main` supplies the --engram override: a resolver passed to
-    // BrainFrameApp is used instead of the repository's last-opened/tutorial
-    // logic. Here it opens the Help built-in, so the browser shows Help, not
-    // the Tutorial the default would pick.
-    await tester.pumpWidget(BrainFrameApp(
-      repository: EngramRepository(
-        preferences: SharedPreferencesAsync(),
-        containerPathResolver: () async =>
-            throw UnsupportedError('no filesystem in widget tests'),
-      ),
-      resolveInitialEngram: () async => builtInHelpEngram(),
-    ));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'resolveInitialEngram override wins over the repository default',
+    (tester) async {
+      // Mirrors how `main` supplies the --engram override: a resolver passed to
+      // BrainFrameApp is used instead of the repository's last-opened/tutorial
+      // logic. Here it opens the Help built-in, so the browser shows Help, not
+      // the Tutorial the default would pick.
+      await tester.pumpWidget(
+        BrainFrameApp(
+          repository: EngramRepository(
+            preferences: SharedPreferencesAsync(),
+            containerPathResolver: () async =>
+                throw UnsupportedError('no filesystem in widget tests'),
+          ),
+          resolveInitialEngram: () async => builtInHelpEngram(),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Help'), findsOneWidget);
-    expect(find.text('Tutorial'), findsNothing);
-  });
+      expect(find.text('Help'), findsOneWidget);
+      expect(find.text('Tutorial'), findsNothing);
+    },
+  );
 
-  testWidgets('openSession override is what the startup gate opens with',
-      (tester) async {
+  testWidgets('openSession override is what the startup gate opens with', (
+    tester,
+  ) async {
     // Mirrors how `main` supplies --trace-scan: a session opener handed to
     // BrainFrameApp reaches the gate, which asks it for every engram it
     // opens. The built-ins are read-only, so the real opener would answer
     // null too; what is asserted is that the override is the one asked.
     final asked = <String>[];
-    await tester.pumpWidget(BrainFrameApp(
-      repository: EngramRepository(
-        preferences: SharedPreferencesAsync(),
-        containerPathResolver: () async =>
-            throw UnsupportedError('no filesystem in widget tests'),
+    await tester.pumpWidget(
+      BrainFrameApp(
+        repository: EngramRepository(
+          preferences: SharedPreferencesAsync(),
+          containerPathResolver: () async =>
+              throw UnsupportedError('no filesystem in widget tests'),
+        ),
+        openSession: (engram) async {
+          asked.add(engram.displayName);
+          return null;
+        },
       ),
-      openSession: (engram) async {
-        asked.add(engram.displayName);
-        return null;
-      },
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(asked, ['Tutorial']);

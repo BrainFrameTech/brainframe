@@ -79,9 +79,8 @@ class EngramScope extends StatefulWidget {
   }
 
   /// The active-engram state, or null if there is no [EngramScope] ancestor.
-  static EngramScopeData? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<_EngramScopeMarker>()
-      ?.data;
+  static EngramScopeData? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_EngramScopeMarker>()?.data;
 
   @override
   State<EngramScope> createState() => _EngramScopeState();
@@ -133,13 +132,13 @@ class _EngramScopeState extends State<EngramScope> {
 
   @override
   Widget build(BuildContext context) => _EngramScopeMarker(
-        data: EngramScopeData(
-          engram: _engram,
-          switchTo: _switchTo,
-          updateActive: _updateActive,
-        ),
-        child: widget.child,
-      );
+    data: EngramScopeData(
+      engram: _engram,
+      switchTo: _switchTo,
+      updateActive: _updateActive,
+    ),
+    child: widget.child,
+  );
 }
 
 class _EngramScopeMarker extends InheritedWidget {

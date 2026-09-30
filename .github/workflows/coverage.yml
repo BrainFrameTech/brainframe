@@ -6,17 +6,16 @@ on: pull_request
 permissions:
   contents: read
   pull-requests: write # required to post the coverage comment
-env:
-  FLUTTER_VERSION: 3.44.4 # keep in sync with the local toolchain / l10n.yml, release.yml
 jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
+        id: flutter
         with:
           channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version-file: pubspec.yaml # the one Flutter pin: environment.flutter
       - run: flutter pub get
       # The lockfile must be exactly what the pinned Flutter resolves. The SDK
       # pins some packages (meta, test_api, clock, …) to exact versions, so a
@@ -25,6 +24,8 @@ jobs:
       # rather than failing, so without this the mismatch reaches main unseen
       # and every contributor on the pinned SDK gets a dirty tree.
       - name: Check pubspec.lock matches the pinned Flutter
+        env:
+          FLUTTER_VERSION: ${{ steps.flutter.outputs.VERSION }}
         run: |
           if ! git diff --exit-code pubspec.lock; then
             echo "::error file=pubspec.lock::pubspec.lock was not produced by" \

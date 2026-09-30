@@ -27,8 +27,10 @@ void main() {
   group('createFileSystemEngram', () {
     test('writes only the marker + engram.json, nothing else', () async {
       final loc = locFor('Personal');
-      final engram =
-          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final engram = await createFileSystemEngram(
+        location: loc,
+        displayName: 'Personal',
+      );
 
       expect(engram.displayName, 'Personal');
       expect(engram.readOnly, isFalse);
@@ -39,9 +41,11 @@ void main() {
       // engram-relative expectation platform-independent (Windows uses '\').
       final entries = Directory(loc.path)
           .listSync(recursive: true)
-          .map((e) => e.path
-              .substring(loc.path.length + 1)
-              .replaceAll(Platform.pathSeparator, '/'))
+          .map(
+            (e) => e.path
+                .substring(loc.path.length + 1)
+                .replaceAll(Platform.pathSeparator, '/'),
+          )
           .toSet();
       expect(entries, {'.brainframe', '.brainframe/engram.json'});
 
@@ -100,8 +104,16 @@ void main() {
     test('round-trips arbitrary binary bytes without corruption', () async {
       final store = FileSystemEngramStore(locFor('e'));
       // A PNG signature plus bytes that are not valid UTF-8.
-      final bytes =
-          Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE, 0x10]);
+      final bytes = Uint8List.fromList([
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x00,
+        0xFF,
+        0xFE,
+        0x10,
+      ]);
       await store.writeBytes('assets/diagram.png', bytes);
       expect(await store.readBytes('assets/diagram.png'), bytes);
     });
@@ -258,12 +270,14 @@ void main() {
       expect(() => store.move('a.md', '../b.md'), throwsArgumentError);
     });
 
-    test('createDirectory makes an empty directory (not listed as content)',
-        () async {
-      await store.createDirectory('folder');
-      expect(Directory('${loc.path}/folder').existsSync(), isTrue);
-      expect(await store.list(), isEmpty);
-    });
+    test(
+      'createDirectory makes an empty directory (not listed as content)',
+      () async {
+        await store.createDirectory('folder');
+        expect(Directory('${loc.path}/folder').existsSync(), isTrue);
+        expect(await store.list(), isEmpty);
+      },
+    );
 
     test('createDirectory creates missing parents and is idempotent', () async {
       await store.createDirectory('a/b/c');
@@ -275,16 +289,18 @@ void main() {
       expect(() => store.createDirectory('.brainframe'), throwsArgumentError);
     });
 
-    test('listDirectories reports every directory, including empty ones',
-        () async {
-      await store.writeString('notes/a.md', 'A');
-      await store.writeString('notes/sub/b.md', 'B');
-      await store.createDirectory('empty');
-      expect(
-        await store.listDirectories(),
-        unorderedEquals(['notes', 'notes/sub', 'empty']),
-      );
-    });
+    test(
+      'listDirectories reports every directory, including empty ones',
+      () async {
+        await store.writeString('notes/a.md', 'A');
+        await store.writeString('notes/sub/b.md', 'B');
+        await store.createDirectory('empty');
+        expect(
+          await store.listDirectories(),
+          unorderedEquals(['notes', 'notes/sub', 'empty']),
+        );
+      },
+    );
 
     test('listDirectories excludes the app-owned marker directory', () async {
       // createFileSystemEngram writes the .brainframe marker directory.
@@ -295,10 +311,15 @@ void main() {
       expect(dirs, isNot(contains('.brainframe')));
     });
 
-    test('listDirectories is empty for a directory that does not exist yet', () {
-      expect(FileSystemEngramStore(locFor('missing')).listDirectories(),
-          completion(isEmpty));
-    });
+    test(
+      'listDirectories is empty for a directory that does not exist yet',
+      () {
+        expect(
+          FileSystemEngramStore(locFor('missing')).listDirectories(),
+          completion(isEmpty),
+        );
+      },
+    );
 
     test('deleteDirectory removes an empty directory', () async {
       await store.createDirectory('gone');
@@ -325,32 +346,32 @@ void main() {
       final loc = locFor('e');
       final store = FileSystemEngramStore(loc);
       await store.writeString('a.md', 'hello');
-      final onDisk = Directory(loc.path)
-          .listSync(recursive: true)
-          .whereType<File>()
-          .map((f) => f.path)
-          .toList();
+      final onDisk = Directory(
+        loc.path,
+      ).listSync(recursive: true).whereType<File>().map((f) => f.path).toList();
       expect(onDisk.any((p) => p.endsWith('.tmp')), isFalse);
       expect(onDisk.any((p) => p.endsWith(atomicWriteTempSuffix)), isFalse);
       expect(await store.list(), ['a.md']);
     });
 
-    test('a write that fails before rename leaves the original intact',
-        () async {
-      final loc = locFor('e');
-      final store = FileSystemEngramStore(loc);
-      await store.writeString('a.md', 'original');
+    test(
+      'a write that fails before rename leaves the original intact',
+      () async {
+        final loc = locFor('e');
+        final store = FileSystemEngramStore(loc);
+        await store.writeString('a.md', 'original');
 
-      // Block the temp write by occupying its sibling path with a directory,
-      // so writeAsBytes fails before the rename step can run.
-      Directory('${loc.path}/.a.md.bf-tmp').createSync();
+        // Block the temp write by occupying its sibling path with a directory,
+        // so writeAsBytes fails before the rename step can run.
+        Directory('${loc.path}/.a.md.bf-tmp').createSync();
 
-      await expectLater(
-        () => store.writeString('a.md', 'replacement'),
-        throwsA(isA<FileSystemException>()),
-      );
-      expect(await store.readString('a.md'), 'original');
-    });
+        await expectLater(
+          () => store.writeString('a.md', 'replacement'),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(await store.readString('a.md'), 'original');
+      },
+    );
 
     test('a write that fails at rename cleans up its temp file', () async {
       final loc = locFor('e');
@@ -535,8 +556,10 @@ void main() {
   group('openFileSystemEngram', () {
     test('reopens a created engram with the same identity', () async {
       final loc = locFor('Personal');
-      final created =
-          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final created = await createFileSystemEngram(
+        location: loc,
+        displayName: 'Personal',
+      );
       final opened = await openFileSystemEngram(loc);
       expect(opened.id, created.id);
       expect(opened.displayName, 'Personal');
@@ -616,63 +639,73 @@ void main() {
         );
       });
 
-      test('a created engram records the capability and reopens at it',
-          () async {
-        final loc = locFor('fresh');
-        final created = await createFileSystemEngram(
-          location: loc,
-          displayName: 'Fresh',
-        );
-        expect(created.noteSizeCeilingBytes, noteSizeCapabilityBytes);
-        final text =
-            await File('${loc.path}/.brainframe/engram.json').readAsString();
-        expect(text, contains('"noteSizeCeilingBytes": $noteSizeCapabilityBytes'));
-        expect(
-          (await openFileSystemEngram(loc)).noteSizeCeilingBytes,
-          noteSizeCapabilityBytes,
-        );
-      });
+      test(
+        'a created engram records the capability and reopens at it',
+        () async {
+          final loc = locFor('fresh');
+          final created = await createFileSystemEngram(
+            location: loc,
+            displayName: 'Fresh',
+          );
+          expect(created.noteSizeCeilingBytes, noteSizeCapabilityBytes);
+          final text = await File(
+            '${loc.path}/.brainframe/engram.json',
+          ).readAsString();
+          expect(
+            text,
+            contains('"noteSizeCeilingBytes": $noteSizeCapabilityBytes'),
+          );
+          expect(
+            (await openFileSystemEngram(loc)).noteSizeCeilingBytes,
+            noteSizeCapabilityBytes,
+          );
+        },
+      );
 
-      test('setNoteSizeCeilingBytes records the value and nothing else',
-          () async {
-        // Step 23: the one way the field changes. Written whole and atomic
-        // like a rename; identity, name, and creation stamp untouched.
-        final loc = locFor('job');
-        await legacyMarker(loc);
-        final store = FileSystemEngramStore(loc);
+      test(
+        'setNoteSizeCeilingBytes records the value and nothing else',
+        () async {
+          // Step 23: the one way the field changes. Written whole and atomic
+          // like a rename; identity, name, and creation stamp untouched.
+          final loc = locFor('job');
+          await legacyMarker(loc);
+          final store = FileSystemEngramStore(loc);
 
-        final updated = await store.setNoteSizeCeilingBytes(65536);
+          final updated = await store.setNoteSizeCeilingBytes(65536);
 
-        expect(updated.noteSizeCeilingBytes, 65536);
-        expect(updated.displayName, 'Legacy');
-        expect(updated.id, '01JAB2CD3EFGHJKMNPQRSTVWXY');
-        expect((await openFileSystemEngram(loc)).noteSizeCeilingBytes, 65536);
-        expect(
-          await File('${loc.path}/.brainframe/engram.json').readAsString(),
-          contains('"noteSizeCeilingBytes": 65536'),
-        );
-        expect(
-          () => store.setNoteSizeCeilingBytes(noteSizeCapabilityBytes + 1),
-          throwsArgumentError,
-          reason: 'never raised past what this device can open',
-        );
-      });
+          expect(updated.noteSizeCeilingBytes, 65536);
+          expect(updated.displayName, 'Legacy');
+          expect(updated.id, '01JAB2CD3EFGHJKMNPQRSTVWXY');
+          expect((await openFileSystemEngram(loc)).noteSizeCeilingBytes, 65536);
+          expect(
+            await File('${loc.path}/.brainframe/engram.json').readAsString(),
+            contains('"noteSizeCeilingBytes": 65536'),
+          );
+          expect(
+            () => store.setNoteSizeCeilingBytes(noteSizeCapabilityBytes + 1),
+            throwsArgumentError,
+            reason: 'never raised past what this device can open',
+          );
+        },
+      );
 
-      test('a rename preserves the marker\'s ceiling, recorded or not',
-          () async {
-        final loc = locFor('legacy');
-        final file = await legacyMarker(loc);
-        await FileSystemEngramStore(loc).setDisplayName('Renamed');
-        expect(await file.readAsString(), isNot(contains('noteSizeCeiling')));
+      test(
+        'a rename preserves the marker\'s ceiling, recorded or not',
+        () async {
+          final loc = locFor('legacy');
+          final file = await legacyMarker(loc);
+          await FileSystemEngramStore(loc).setDisplayName('Renamed');
+          expect(await file.readAsString(), isNot(contains('noteSizeCeiling')));
 
-        final small = locFor('small');
-        final smallFile = await legacyMarker(small, ceiling: 65536);
-        await FileSystemEngramStore(small).setDisplayName('Renamed');
-        expect(
-          await smallFile.readAsString(),
-          contains('"noteSizeCeilingBytes": 65536'),
-        );
-      });
+          final small = locFor('small');
+          final smallFile = await legacyMarker(small, ceiling: 65536);
+          await FileSystemEngramStore(small).setDisplayName('Renamed');
+          expect(
+            await smallFile.readAsString(),
+            contains('"noteSizeCeilingBytes": 65536'),
+          );
+        },
+      );
     });
   });
 
@@ -685,34 +718,39 @@ void main() {
       );
       expect(engram.displayName, 'Fresh');
       expect(engram.readOnly, isFalse);
-      expect(
-        File('${loc.path}/.brainframe/engram.json').existsSync(),
-        isTrue,
-      );
+      expect(File('${loc.path}/.brainframe/engram.json').existsSync(), isTrue);
     });
 
-    test('opens an existing engram and keeps its identity, ignoring displayName',
-        () async {
-      final loc = locFor('Existing');
-      final created =
-          await createFileSystemEngram(location: loc, displayName: 'Existing');
-      final opened =
-          await openOrCreateFileSystemEngram(loc, displayName: 'Ignored');
-      expect(opened.id, created.id);
-      expect(opened.displayName, 'Existing');
-    });
+    test(
+      'opens an existing engram and keeps its identity, ignoring displayName',
+      () async {
+        final loc = locFor('Existing');
+        final created = await createFileSystemEngram(
+          location: loc,
+          displayName: 'Existing',
+        );
+        final opened = await openOrCreateFileSystemEngram(
+          loc,
+          displayName: 'Ignored',
+        );
+        expect(opened.id, created.id);
+        expect(opened.displayName, 'Existing');
+      },
+    );
 
-    test('propagates a metadata error for a malformed existing marker',
-        () async {
-      final loc = locFor('broken');
-      final metaFile = File('${loc.path}/.brainframe/engram.json');
-      await metaFile.parent.create(recursive: true);
-      await metaFile.writeAsString('{ not json');
-      expect(
-        () => openOrCreateFileSystemEngram(loc, displayName: 'x'),
-        throwsA(isA<EngramMetadataException>()),
-      );
-    });
+    test(
+      'propagates a metadata error for a malformed existing marker',
+      () async {
+        final loc = locFor('broken');
+        final metaFile = File('${loc.path}/.brainframe/engram.json');
+        await metaFile.parent.create(recursive: true);
+        await metaFile.writeAsString('{ not json');
+        expect(
+          () => openOrCreateFileSystemEngram(loc, displayName: 'x'),
+          throwsA(isA<EngramMetadataException>()),
+        );
+      },
+    );
   });
 
   group('removeFileSystemEngramMarker', () {
@@ -864,8 +902,10 @@ void main() {
   group('marker metadata', () {
     test('readMetadata returns what is stored on disk', () async {
       final loc = locFor('Personal');
-      final engram =
-          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final engram = await createFileSystemEngram(
+        location: loc,
+        displayName: 'Personal',
+      );
       final store = engram.store as FileSystemEngramStore;
 
       final metadata = await store.readMetadata();
@@ -884,31 +924,38 @@ void main() {
       expect(await FileSystemEngramStore(loc).readMetadata(), isNull);
     });
 
-    test('readMetadata surfaces a malformed marker instead of hiding it',
-        () async {
-      final loc = locFor('Broken');
-      await createFileSystemEngram(location: loc, displayName: 'Broken');
-      await File('${loc.path}/.brainframe/engram.json')
-          .writeAsString('{ not json');
+    test(
+      'readMetadata surfaces a malformed marker instead of hiding it',
+      () async {
+        final loc = locFor('Broken');
+        await createFileSystemEngram(location: loc, displayName: 'Broken');
+        await File(
+          '${loc.path}/.brainframe/engram.json',
+        ).writeAsString('{ not json');
 
-      expect(
-        () => FileSystemEngramStore(loc).readMetadata(),
-        throwsA(isA<EngramMetadataException>()),
-      );
-    });
+        expect(
+          () => FileSystemEngramStore(loc).readMetadata(),
+          throwsA(isA<EngramMetadataException>()),
+        );
+      },
+    );
 
     test('locationDescription reports the engram root', () async {
       final loc = locFor('Personal');
-      final engram =
-          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final engram = await createFileSystemEngram(
+        location: loc,
+        displayName: 'Personal',
+      );
 
       expect(engram.store.locationDescription, loc.path);
     });
 
     test('setDisplayName rewrites the name and keeps the identity', () async {
       final loc = locFor('zettel');
-      final engram =
-          await createFileSystemEngram(location: loc, displayName: 'zettel');
+      final engram = await createFileSystemEngram(
+        location: loc,
+        displayName: 'zettel',
+      );
       final store = engram.store as FileSystemEngramStore;
       final before = (await store.readMetadata())!;
 
@@ -925,8 +972,10 @@ void main() {
 
     test('setDisplayName trims, and rejects a blank name', () async {
       final loc = locFor('Personal');
-      final engram =
-          await createFileSystemEngram(location: loc, displayName: 'Personal');
+      final engram = await createFileSystemEngram(
+        location: loc,
+        displayName: 'Personal',
+      );
       final store = engram.store as FileSystemEngramStore;
 
       expect((await store.setDisplayName('  Notes  ')).displayName, 'Notes');
@@ -937,19 +986,24 @@ void main() {
 
     test('setDisplayName leaves the folder itself untouched', () async {
       final loc = locFor('zettel');
-      final engram =
-          await createFileSystemEngram(location: loc, displayName: 'zettel');
-      await (engram.store as FileSystemEngramStore)
-          .setDisplayName('Field Notebook');
+      final engram = await createFileSystemEngram(
+        location: loc,
+        displayName: 'zettel',
+      );
+      await (engram.store as FileSystemEngramStore).setDisplayName(
+        'Field Notebook',
+      );
 
       // The directory keeps its own name, and no stray temp file survives the
       // atomic write.
       expect(Directory(loc.path).existsSync(), isTrue);
       final entries = Directory(loc.path)
           .listSync(recursive: true)
-          .map((e) => e.path
-              .substring(loc.path.length + 1)
-              .replaceAll(Platform.pathSeparator, '/'))
+          .map(
+            (e) => e.path
+                .substring(loc.path.length + 1)
+                .replaceAll(Platform.pathSeparator, '/'),
+          )
           .toSet();
       expect(entries, {'.brainframe', '.brainframe/engram.json'});
     });
@@ -1015,23 +1069,25 @@ void main() {
       expect(preview.name, 'Trail');
     });
 
-    test('a CRLF file larger than dart:io\'s chunk is counted from disk',
-        () async {
-      // #152, end to end: the only \r is in the last of several chunks of
-      // File.openRead, and the file is still counted; the streaming path
-      // agrees with what a whole read would have said.
-      final loc = locFor('Big');
-      await Directory(loc.path).create(recursive: true);
-      final bytes = Uint8List.fromList(List.filled(200 * 1024, 0x61))
-        ..[200 * 1024 - 1] = 0x0d;
-      await File('${loc.path}/log.txt').writeAsBytes(bytes);
-      await File('${loc.path}/lf.txt').writeAsBytes(bytes.sublist(0, 1000));
+    test(
+      'a CRLF file larger than dart:io\'s chunk is counted from disk',
+      () async {
+        // #152, end to end: the only \r is in the last of several chunks of
+        // File.openRead, and the file is still counted; the streaming path
+        // agrees with what a whole read would have said.
+        final loc = locFor('Big');
+        await Directory(loc.path).create(recursive: true);
+        final bytes = Uint8List.fromList(List.filled(200 * 1024, 0x61))
+          ..[200 * 1024 - 1] = 0x0d;
+        await File('${loc.path}/log.txt').writeAsBytes(bytes);
+        await File('${loc.path}/lf.txt').writeAsBytes(bytes.sublist(0, 1000));
 
-      final preview = await previewFolderAdoption(loc);
+        final preview = await previewFolderAdoption(loc);
 
-      expect(preview.fileCount, 2);
-      expect(preview.crlfCount, 1);
-    });
+        expect(preview.fileCount, 2);
+        expect(preview.crlfCount, 1);
+      },
+    );
 
     test('reports each file and stops when told to', () async {
       final loc = locFor('Walk');

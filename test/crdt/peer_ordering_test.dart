@@ -17,9 +17,21 @@ void main() {
   group('peerID fixture ordering (load-bearing)', () {
     test('peerA < peerB < peerC under crdt_lf PeerId comparison', () {
       // The dominant assumption behind every peerID tiebreak in the suite.
-      expect(peerA.compareTo(peerB), lessThan(0), reason: 'A must sort below B');
-      expect(peerB.compareTo(peerC), lessThan(0), reason: 'B must sort below C');
-      expect(peerA.compareTo(peerC), lessThan(0), reason: 'A must sort below C');
+      expect(
+        peerA.compareTo(peerB),
+        lessThan(0),
+        reason: 'A must sort below B',
+      );
+      expect(
+        peerB.compareTo(peerC),
+        lessThan(0),
+        reason: 'B must sort below C',
+      );
+      expect(
+        peerA.compareTo(peerC),
+        lessThan(0),
+        reason: 'A must sort below C',
+      );
 
       // Transitive spot check via a sort, mirroring how the library orders
       // concurrent operations of equal timestamp.
@@ -47,10 +59,7 @@ void main() {
     test('replicas share a documentId but keep distinct peerIDs', () {
       final replicas = replicaSet(orderedPeers);
       expect(replicas.map((r) => r.doc.documentId).toSet(), {kDocumentId});
-      expect(
-        replicas.map((r) => r.doc.peerId).toList(),
-        [peerA, peerB, peerC],
-      );
+      expect(replicas.map((r) => r.doc.peerId).toList(), [peerA, peerB, peerC]);
     });
 
     test('a shared base is imported symmetrically into every replica', () {

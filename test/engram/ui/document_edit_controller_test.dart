@@ -363,30 +363,32 @@ void main() {
       });
     });
 
-    test('a write that starts while reading is awaited, and the file re-read',
-        () {
-      fakeAsync((async) {
-        final store = _RecordingStore();
-        final c = _controller(store);
-        c.openFile('a.md', 'A');
-        var reads = 0;
+    test(
+      'a write that starts while reading is awaited, and the file re-read',
+      () {
+        fakeAsync((async) {
+          final store = _RecordingStore();
+          final c = _controller(store);
+          c.openFile('a.md', 'A');
+          var reads = 0;
 
-        c.mergeFromDisk(() async {
-          reads++;
-          if (reads == 1) {
-            c.edit('A typed');
-            c.flush();
-          }
-          return 'A typed';
+          c.mergeFromDisk(() async {
+            reads++;
+            if (reads == 1) {
+              c.edit('A typed');
+              c.flush();
+            }
+            return 'A typed';
+          });
+          async.flushMicrotasks();
+
+          expect(reads, 2);
+          expect(c.text, 'A typed');
+          expect(c.isDirty, isFalse);
+          c.dispose();
         });
-        async.flushMicrotasks();
-
-        expect(reads, 2);
-        expect(c.text, 'A typed');
-        expect(c.isDirty, isFalse);
-        c.dispose();
-      });
-    });
+      },
+    );
 
     test('a file that says what was last saved changes nothing', () {
       // A notification of our own save, or a line-ending rewrite of it.
@@ -612,42 +614,44 @@ void main() {
       });
     });
 
-    test('a withheld buffer is reported to the registry, and resolved through it',
-        () {
-      fakeAsync((async) {
-        final store = _RecordingStore();
-        final saves = PendingSaves();
-        final c = DocumentEditController(
-          writer: DirectNoteWriter(store),
-          observeLifecycle: false,
-          pendingSaves: saves,
-        )..sizeLimitBytes = 10;
-        c.openFile('a.md', 'short');
-        expect(saves.hasWithheld, isFalse);
+    test(
+      'a withheld buffer is reported to the registry, and resolved through it',
+      () {
+        fakeAsync((async) {
+          final store = _RecordingStore();
+          final saves = PendingSaves();
+          final c = DocumentEditController(
+            writer: DirectNoteWriter(store),
+            observeLifecycle: false,
+            pendingSaves: saves,
+          )..sizeLimitBytes = 10;
+          c.openFile('a.md', 'short');
+          expect(saves.hasWithheld, isFalse);
 
-        c.edit('this is well over ten bytes');
-        expect(c.isWithheld, isTrue);
-        expect(saves.hasWithheld, isTrue);
+          c.edit('this is well over ten bytes');
+          expect(c.isWithheld, isTrue);
+          expect(saves.hasWithheld, isTrue);
 
-        // No resolver yet: it cannot be settled, so it cannot be left.
-        var settled = false;
-        saves.resolveWithheld().then((value) => settled = value);
-        async.flushMicrotasks();
-        expect(settled, isFalse);
+          // No resolver yet: it cannot be settled, so it cannot be left.
+          var settled = false;
+          saves.resolveWithheld().then((value) => settled = value);
+          async.flushMicrotasks();
+          expect(settled, isFalse);
 
-        // The pane's resolver rolls back; the registry sees it settled.
-        c.resolveWithheld = () async {
-          c.rollBack();
-          return true;
-        };
-        saves.resolveWithheld().then((value) => settled = value);
-        async.flushMicrotasks();
-        expect(settled, isTrue);
-        expect(saves.hasWithheld, isFalse);
-        c.dispose();
-        expect(saves.length, 0);
-      });
-    });
+          // The pane's resolver rolls back; the registry sees it settled.
+          c.resolveWithheld = () async {
+            c.rollBack();
+            return true;
+          };
+          saves.resolveWithheld().then((value) => settled = value);
+          async.flushMicrotasks();
+          expect(settled, isTrue);
+          expect(saves.hasWithheld, isFalse);
+          c.dispose();
+          expect(saves.length, 0);
+        });
+      },
+    );
 
     test('the limit is measured in bytes on disk, not characters', () {
       fakeAsync((async) {
@@ -673,25 +677,27 @@ void main() {
   });
 
   group('exit-time flush registration', () {
-    test('an unwritten buffer is flushed when the app is asked to exit',
-        () async {
-      final store = _RecordingStore();
-      final saves = PendingSaves();
-      final c = DocumentEditController(
-        writer: DirectNoteWriter(store),
-        observeLifecycle: false,
-        pendingSaves: saves,
-      );
-      await c.openFile('a.md', 'hi');
-      c.edit('hi there'); // dirty, with the debounce still pending
+    test(
+      'an unwritten buffer is flushed when the app is asked to exit',
+      () async {
+        final store = _RecordingStore();
+        final saves = PendingSaves();
+        final c = DocumentEditController(
+          writer: DirectNoteWriter(store),
+          observeLifecycle: false,
+          pendingSaves: saves,
+        );
+        await c.openFile('a.md', 'hi');
+        c.edit('hi there'); // dirty, with the debounce still pending
 
-      // Desktop exits without a lifecycle event; this is the hook that saves
-      // the last keystroke (see PendingSaves).
-      await saves.flushAll();
+        // Desktop exits without a lifecycle event; this is the hook that saves
+        // the last keystroke (see PendingSaves).
+        await saves.flushAll();
 
-      expect(store.writes, ['a.md::hi there']);
-      c.dispose();
-    });
+        expect(store.writes, ['a.md::hi there']);
+        c.dispose();
+      },
+    );
 
     test('a disposed controller leaves nothing registered', () async {
       final saves = PendingSaves();

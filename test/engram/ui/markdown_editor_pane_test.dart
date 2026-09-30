@@ -83,7 +83,9 @@ class _FakeReconciler implements NoteReconciler {
   final StreamController<String> _events = StreamController<String>.broadcast();
 
   @override
-  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({
+    ScanTrigger trigger = ScanTrigger.manual,
+  }) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async {
@@ -106,7 +108,8 @@ class _FakeReconciler implements NoteReconciler {
   Future<void> noteDeleted(String path) async {}
 
   @override
-  Stream<AdoptionProgress?> get adoption => const Stream<AdoptionProgress?>.empty();
+  Stream<AdoptionProgress?> get adoption =>
+      const Stream<AdoptionProgress?>.empty();
 
   @override
   AdoptionProgress? get currentAdoption => null;
@@ -181,7 +184,8 @@ class _FakeReconciler implements NoteReconciler {
   Stream<String> get reconciled => _events.stream;
 
   @override
-  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
+  Stream<DriftScanReport> get scanReports =>
+      const Stream<DriftScanReport>.empty();
 }
 
 /// Hosts the pane under an [AppCommandsScope], as the app does: its find
@@ -220,8 +224,9 @@ Future<void> _openFind(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('opens in Edit mode showing the file source and a clean status',
-      (tester) async {
+  testWidgets('opens in Edit mode showing the file source and a clean status', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# Hello'});
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -259,12 +264,16 @@ void main() {
       reason: 'the path sits beneath the chip and the toggle',
     );
     expect(find.text('Preview'), findsOneWidget);
-    expect(find.byTooltip('Find in page'), findsNothing,
-        reason: 'find lives in the title bar now');
+    expect(
+      find.byTooltip('Find in page'),
+      findsNothing,
+      reason: 'find lives in the title bar now',
+    );
   });
 
-  testWidgets('Preview renders the reader and hides the editor',
-      (tester) async {
+  testWidgets('Preview renders the reader and hides the editor', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# Heading'});
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -276,7 +285,9 @@ void main() {
     expect(find.byType(MarkdownSourceEditor), findsNothing);
   });
 
-  testWidgets('editing marks unsaved, and tapping the chip saves', (tester) async {
+  testWidgets('editing marks unsaved, and tapping the chip saves', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# A'});
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -294,8 +305,9 @@ void main() {
     expect(find.text('Saved'), findsOneWidget);
   });
 
-  testWidgets('edits survive an Edit → Preview → Edit round-trip',
-      (tester) async {
+  testWidgets('edits survive an Edit → Preview → Edit round-trip', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# A'});
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -315,7 +327,9 @@ void main() {
     expect(find.text('# A'), findsNothing);
   });
 
-  testWidgets('toggling to Preview flushes pending edits first', (tester) async {
+  testWidgets('toggling to Preview flushes pending edits first', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# A'});
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -358,8 +372,9 @@ void main() {
     expect(store.files['a.md'], '# blur');
   });
 
-  testWidgets('switching the open file flushes the previous one',
-      (tester) async {
+  testWidgets('switching the open file flushes the previous one', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# A', 'b.md': '# B'});
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -393,8 +408,9 @@ void main() {
     expect(find.text('Saved'), findsOneWidget);
   });
 
-  testWidgets('a failed save shows the error status and keeps edits',
-      (tester) async {
+  testWidgets('a failed save shows the error status and keeps edits', (
+    tester,
+  ) async {
     final store = _RwStore({'a.md': '# A'})..failWrites = true;
     await tester.pumpWidget(_host(store, 'a.md'));
     await tester.pumpAndSettle();
@@ -409,8 +425,9 @@ void main() {
     expect(store.writes, isEmpty);
   });
 
-  testWidgets('a read failure shows an error instead of the editor',
-      (tester) async {
+  testWidgets('a read failure shows an error instead of the editor', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(_ThrowingStore(), 'a.md'));
     await tester.pumpAndSettle();
 
@@ -546,7 +563,11 @@ void main() {
       await tester.pumpWidget(_host(store, 'big.md', reconciler: reconciler));
       await tester.pumpAndSettle();
 
-      expect(find.byType(MarkdownSourceEditor), findsOneWidget, reason: 'editable');
+      expect(
+        find.byType(MarkdownSourceEditor),
+        findsOneWidget,
+        reason: 'editable',
+      );
       expect(
         find.text('Plain file — edits are saved whole; no history or merging.'),
         findsOneWidget,
@@ -585,18 +606,25 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Bytes: 950 of 1,000 · Words: 1 · Lines: 1'), findsOneWidget);
+      expect(
+        find.text('Bytes: 950 of 1,000 · Words: 1 · Lines: 1'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Near the size limit'));
       await tester.pumpAndSettle();
 
       expect(find.text('Approaching the size limit'), findsOneWidget);
       expect(
-        find.textContaining('This note is 950 bytes; the limit for a note that '
-            'keeps its history is 1,000.'),
+        find.textContaining(
+          'This note is 950 bytes; the limit for a note that '
+          'keeps its history is 1,000.',
+        ),
         findsOneWidget,
       );
-      expect(find.textContaining('move some of the content into another note'),
-          findsOneWidget);
+      expect(
+        find.textContaining('move some of the content into another note'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
       expect(find.text('Approaching the size limit'), findsNothing);
@@ -645,9 +673,7 @@ void main() {
         expect(store.files['a.md'], 'short');
       });
 
-      testWidgets('roll back restores the last saved version', (
-        tester,
-      ) async {
+      testWidgets('roll back restores the last saved version', (tester) async {
         final store = _RwStore({'a.md': 'short'});
         final reconciler = _FakeReconciler(store);
         await tester.pumpWidget(walled(store, reconciler));
@@ -659,8 +685,15 @@ void main() {
 
         await tester.tap(find.text('Too large to save'));
         await tester.pumpAndSettle();
-        expect(find.text('Over the size limit'), findsWidgets, reason: 'the dialog');
-        expect(find.textContaining('This note is now 41 bytes'), findsOneWidget);
+        expect(
+          find.text('Over the size limit'),
+          findsWidgets,
+          reason: 'the dialog',
+        );
+        expect(
+          find.textContaining('This note is now 41 bytes'),
+          findsOneWidget,
+        );
         await tester.tap(find.text('Roll back'));
         await tester.pumpAndSettle();
 
@@ -691,7 +724,9 @@ void main() {
         expect(store.files['a.md'], 'a' * 41, reason: 'saved, whole');
         expect(find.text('Saved'), findsOneWidget);
         expect(
-          find.text('Plain file — edits are saved whole; no history or merging.'),
+          find.text(
+            'Plain file — edits are saved whole; no history or merging.',
+          ),
           findsOneWidget,
         );
         expect(find.text('Over the size limit'), findsNothing);
@@ -718,8 +753,9 @@ void main() {
         expect(store.writes, isEmpty);
       });
 
-      testWidgets('a paste that would cross the line is refused at the paste',
-          (tester) async {
+      testWidgets('a paste that would cross the line is refused at the paste', (
+        tester,
+      ) async {
         // More than one character at once, crossing: taken back out of the
         // field before it is the buffer, and the dialog asks.
         final store = _RwStore({'a.md': 'short'});
@@ -730,8 +766,10 @@ void main() {
         await tester.enterText(find.byType(TextField), 'short${'p' * 50}');
         await tester.pumpAndSettle();
 
-        expect(find.textContaining('The pasted text would make this note 55 bytes'),
-            findsOneWidget);
+        expect(
+          find.textContaining('The pasted text would make this note 55 bytes'),
+          findsOneWidget,
+        );
         final editable = tester.widget<EditableText>(find.byType(EditableText));
         expect(editable.controller.text, 'short', reason: 'already taken out');
         await tester.tap(find.text('Undo the paste'));
@@ -788,7 +826,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(await saves.resolveWithheld(), isTrue, reason: 'nothing withheld');
+        expect(
+          await saves.resolveWithheld(),
+          isTrue,
+          reason: 'nothing withheld',
+        );
         await tester.enterText(find.byType(TextField), 'a' * 40);
         await tester.pump();
         await tester.enterText(find.byType(TextField), 'a' * 41);
@@ -798,7 +840,12 @@ void main() {
         bool? settled;
         saves.resolveWithheld().then((v) => settled = v);
         await tester.pumpAndSettle();
-        expect(find.text('This note is now 41 bytes; the limit for a note that keeps its history is 40. It cannot be saved as it is.\n\nRoll back to the last saved version to keep its history and its merging with other devices. Or convert it to a plain file: it keeps this text, drops its history, and from now on each save replaces the file whole — whatever the most recent writer saves is what other devices get.'), findsOneWidget);
+        expect(
+          find.text(
+            'This note is now 41 bytes; the limit for a note that keeps its history is 40. It cannot be saved as it is.\n\nRoll back to the last saved version to keep its history and its merging with other devices. Or convert it to a plain file: it keeps this text, drops its history, and from now on each save replaces the file whole — whatever the most recent writer saves is what other devices get.',
+          ),
+          findsOneWidget,
+        );
         await tester.tap(find.text('Cancel'));
         await tester.pumpAndSettle();
         expect(settled, isFalse);
@@ -857,49 +904,55 @@ void main() {
         expect(find.text('Too large to save'), findsNothing);
       });
 
-      testWidgets('the external door offers reconstruct and convert on the bar',
-          (tester) async {
-        final store = _RwStore({'a.md': 'a' * 60});
-        final reconciler = _FakeReconciler(store)..awaiting.add('a.md');
-        await tester.pumpWidget(walled(store, reconciler));
-        await tester.pumpAndSettle();
+      testWidgets(
+        'the external door offers reconstruct and convert on the bar',
+        (tester) async {
+          final store = _RwStore({'a.md': 'a' * 60});
+          final reconciler = _FakeReconciler(store)..awaiting.add('a.md');
+          await tester.pumpWidget(walled(store, reconciler));
+          await tester.pumpAndSettle();
 
-        expect(find.byType(MarkdownSourceEditor), findsNothing);
-        expect(find.text('Over the size limit'), findsOneWidget);
-        expect(find.textContaining('Bytes: 60 of 40'), findsOneWidget);
-        await tester.tap(find.text('Over the size limit'));
-        await tester.pumpAndSettle();
+          expect(find.byType(MarkdownSourceEditor), findsNothing);
+          expect(find.text('Over the size limit'), findsOneWidget);
+          expect(find.textContaining('Bytes: 60 of 40'), findsOneWidget);
+          await tester.tap(find.text('Over the size limit'));
+          await tester.pumpAndSettle();
 
-        expect(
-          find.textContaining('grew to 60 bytes outside BrainFrame'),
-          findsOneWidget,
-        );
-        expect(find.textContaining('“a (oversized).md”'), findsOneWidget);
-        await tester.tap(find.text('Reconstruct'));
-        await tester.pumpAndSettle();
-        expect(reconciler.reconstructed, ['a.md']);
-      });
+          expect(
+            find.textContaining('grew to 60 bytes outside BrainFrame'),
+            findsOneWidget,
+          );
+          expect(find.textContaining('“a (oversized).md”'), findsOneWidget);
+          await tester.tap(find.text('Reconstruct'));
+          await tester.pumpAndSettle();
+          expect(reconciler.reconstructed, ['a.md']);
+        },
+      );
 
-      testWidgets('converting at the external door reopens it as a plain file',
-          (tester) async {
-        final store = _RwStore({'a.md': 'a' * 60});
-        final reconciler = _FakeReconciler(store)..awaiting.add('a.md');
-        await tester.pumpWidget(walled(store, reconciler));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Over the size limit'));
-        await tester.pumpAndSettle();
+      testWidgets(
+        'converting at the external door reopens it as a plain file',
+        (tester) async {
+          final store = _RwStore({'a.md': 'a' * 60});
+          final reconciler = _FakeReconciler(store)..awaiting.add('a.md');
+          await tester.pumpWidget(walled(store, reconciler));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Over the size limit'));
+          await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Convert to a plain file'));
-        await tester.pumpAndSettle();
+          await tester.tap(find.text('Convert to a plain file'));
+          await tester.pumpAndSettle();
 
-        expect(reconciler.converted, ['a.md']);
-        expect(find.byType(MarkdownSourceEditor), findsOneWidget);
-        expect(
-          find.text('Plain file — edits are saved whole; no history or merging.'),
-          findsOneWidget,
-        );
-        expect(find.textContaining('read-only'), findsNothing);
-      });
+          expect(reconciler.converted, ['a.md']);
+          expect(find.byType(MarkdownSourceEditor), findsOneWidget);
+          expect(
+            find.text(
+              'Plain file — edits are saved whole; no history or merging.',
+            ),
+            findsOneWidget,
+          );
+          expect(find.textContaining('read-only'), findsNothing);
+        },
+      );
     });
 
     testWidgets('a note awaiting a decision opens read-only, with a banner', (
@@ -918,16 +971,18 @@ void main() {
       expect(find.text('Saved'), findsNothing, reason: 'nothing to save');
       expect(find.text('Edit'), findsNothing);
       expect(
-        find.textContaining('read-only until you decide what to do with it: '
-            'use “Over the size limit” below, or Settings › Housekeeping'),
+        find.textContaining(
+          'read-only until you decide what to do with it: '
+          'use “Over the size limit” below, or Settings › Housekeeping',
+        ),
         findsOneWidget,
       );
-      expect(reconciler.reconciles, ['big.md'], reason: 'still reconciled first');
+      expect(reconciler.reconciles, [
+        'big.md',
+      ], reason: 'still reconciled first');
     });
 
-    testWidgets('a reconstructed note becomes editable again', (
-      tester,
-    ) async {
+    testWidgets('a reconstructed note becomes editable again', (tester) async {
       final store = _RwStore({'big.md': '# Big\n\nmuch text'});
       final reconciler = _FakeReconciler(store)..awaiting.add('big.md');
       await tester.pumpWidget(_host(store, 'big.md', reconciler: reconciler));
@@ -1051,16 +1106,24 @@ void main() {
       await tester.enterText(queryField(), 'one');
       await tester.pump();
 
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down),
+      );
       await tester.pump();
       expect(find.text('2 of 3'), findsOneWidget);
 
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.keyboard_arrow_up));
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.keyboard_arrow_up));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_up),
+      );
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_up),
+      );
       await tester.pump();
       expect(find.text('3 of 3'), findsOneWidget, reason: 'wraps backwards');
 
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down),
+      );
       await tester.pump();
       expect(find.text('1 of 3'), findsOneWidget, reason: 'wraps forwards');
     });
@@ -1074,7 +1137,9 @@ void main() {
       await openFind(tester);
       await tester.enterText(queryField(), 'one');
       await tester.pump();
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down),
+      );
       await tester.pump();
 
       await tester.tap(find.byTooltip('Close find'));

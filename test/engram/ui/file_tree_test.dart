@@ -5,34 +5,45 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/localized_app.dart';
 
-Widget _host(Widget child) =>
-    localizedApp(home: Scaffold(body: SizedBox(width: 280, child: child)));
+Widget _host(Widget child) => localizedApp(
+  home: Scaffold(body: SizedBox(width: 280, child: child)),
+);
 
 void main() {
-  testWidgets('renders folders and files; folders start expanded',
-      (tester) async {
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['welcome.md', 'notes/first.md']),
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+  testWidgets('renders folders and files; folders start expanded', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['welcome.md', 'notes/first.md']),
+          selectedPath: null,
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
 
     expect(find.text('welcome.md'), findsOneWidget);
     expect(find.text('notes'), findsOneWidget);
     expect(find.text('first.md'), findsOneWidget); // visible: expanded default
   });
 
-  testWidgets('folder and file rows carry localized semantics labels',
-      (tester) async {
+  testWidgets('folder and file rows carry localized semantics labels', (
+    tester,
+  ) async {
     // Exercises the placeholder-bearing AppLocalizations getters
     // (fileTreeFolder/fileTreeFile) end to end: the English ARB interpolates
     // the node name into the accessibility label a screen reader announces.
     final handle = tester.ensureSemantics();
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['welcome.md', 'notes/first.md']),
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['welcome.md', 'notes/first.md']),
+          selectedPath: null,
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
 
     // RegExp (substring) match: the row merges the localized label with the
     // child filename text, so the effective label contains, not equals, it.
@@ -42,11 +53,15 @@ void main() {
   });
 
   testWidgets('tapping a folder collapses and expands it', (tester) async {
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['notes/first.md']),
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['notes/first.md']),
+          selectedPath: null,
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
 
     expect(find.text('first.md'), findsOneWidget);
     await tester.tap(find.text('notes'));
@@ -60,23 +75,32 @@ void main() {
 
   testWidgets('tapping a file reports its full path', (tester) async {
     String? tapped;
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['notes/first.md']),
-      selectedPath: null,
-      onSelectFile: (path) => tapped = path,
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['notes/first.md']),
+          selectedPath: null,
+          onSelectFile: (path) => tapped = path,
+        ),
+      ),
+    );
 
     await tester.tap(find.text('first.md'));
     expect(tapped, 'notes/first.md');
   });
 
-  testWidgets('the selected file is marked selected for assistive tech',
-      (tester) async {
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['welcome.md']),
-      selectedPath: 'welcome.md',
-      onSelectFile: (_) {},
-    )));
+  testWidgets('the selected file is marked selected for assistive tech', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['welcome.md']),
+          selectedPath: 'welcome.md',
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
 
     final row = tester
         .widgetList<Semantics>(find.byType(Semantics))
@@ -85,15 +109,20 @@ void main() {
     expect(row.properties.button, isTrue);
   });
 
-  testWidgets('a long file name is not clipped and can scroll horizontally',
-      (tester) async {
+  testWidgets('a long file name is not clipped and can scroll horizontally', (
+    tester,
+  ) async {
     const longName =
         'a-very-long-file-name-that-overflows-the-narrow-sidebar.md';
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree([longName]),
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree([longName]),
+          selectedPath: null,
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
 
     // The full name is laid out (no ellipsis truncation).
     final text = tester.widget<Text>(find.text(longName));
@@ -102,63 +131,82 @@ void main() {
     // Its row extends past the 280px sidebar, so the horizontal scroll view is
     // actually scrollable rather than clamping the name to the visible width.
     final horizontal = tester.widget<SingleChildScrollView>(
-      find.byWidgetPredicate((w) =>
-          w is SingleChildScrollView && w.scrollDirection == Axis.horizontal),
+      find.byWidgetPredicate(
+        (w) =>
+            w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+      ),
     );
     final controller = horizontal.controller!;
     expect(controller.position.maxScrollExtent, greaterThan(0));
   });
 
-  testWidgets('large engrams are virtualized: only visible rows are built',
-      (tester) async {
+  testWidgets('large engrams are virtualized: only visible rows are built', (
+    tester,
+  ) async {
     // A thousand files in a ~600px-tall viewport: a lazy list builds only the
     // handful on screen, not all thousand. Guards against a regression back to
     // an eager Column (which laid every row out on every frame).
     final files = [for (var i = 0; i < 1000; i++) 'note-$i.md'];
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(files),
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(files),
+          selectedPath: null,
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
 
     // Every file row carries a document glyph; only visible rows exist.
     final built = find.byIcon(Icons.description_outlined).evaluate().length;
     expect(built, greaterThan(0));
-    expect(built, lessThan(100),
-        reason: 'a virtualized list should build ~a screenful, not all 1000');
+    expect(
+      built,
+      lessThan(100),
+      reason: 'a virtualized list should build ~a screenful, not all 1000',
+    );
   });
 
   testWidgets('an empty engram shows a placeholder', (tester) async {
-    await tester.pumpWidget(_host(FileTree(
-      nodes: const [],
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(nodes: const [], selectedPath: null, onSelectFile: (_) {}),
+      ),
+    );
     expect(find.textContaining('no files'), findsOneWidget);
   });
 
   testWidgets('initialCollapsed seeds folders as collapsed', (tester) async {
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['notes/first.md']),
-      selectedPath: null,
-      onSelectFile: (_) {},
-      initialCollapsed: const {'notes'},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['notes/first.md']),
+          selectedPath: null,
+          onSelectFile: (_) {},
+          initialCollapsed: const {'notes'},
+        ),
+      ),
+    );
 
     // The folder is shown but seeded collapsed, so its child is hidden.
     expect(find.text('notes'), findsOneWidget);
     expect(find.text('first.md'), findsNothing);
   });
 
-  testWidgets('onCollapsedChanged reports the full set on each toggle',
-      (tester) async {
+  testWidgets('onCollapsedChanged reports the full set on each toggle', (
+    tester,
+  ) async {
     Set<String>? latest;
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['notes/first.md']),
-      selectedPath: null,
-      onSelectFile: (_) {},
-      onCollapsedChanged: (set) => latest = set,
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['notes/first.md']),
+          selectedPath: null,
+          onSelectFile: (_) {},
+          onCollapsedChanged: (set) => latest = set,
+        ),
+      ),
+    );
 
     await tester.tap(find.text('notes')); // collapse
     await tester.pumpAndSettle();
@@ -169,58 +217,80 @@ void main() {
     expect(latest, isEmpty);
   });
 
-  testWidgets('rows sit on a local Material so hover ink stays in the tree',
-      (tester) async {
+  testWidgets('rows sit on a local Material so hover ink stays in the tree', (
+    tester,
+  ) async {
     // Without a Material inside the tree, row hover/splash ink paints on the
     // far Scaffold material and a wide row bleeds its highlight across the
     // editor. This guards the transparency Material that clips it locally.
-    await tester.pumpWidget(_host(FileTree(
-      nodes: buildFileTree(['welcome.md']),
-      selectedPath: null,
-      onSelectFile: (_) {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        FileTree(
+          nodes: buildFileTree(['welcome.md']),
+          selectedPath: null,
+          onSelectFile: (_) {},
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
       find.descendant(
-          of: find.byType(FileTree), matching: find.byType(Material)),
+        of: find.byType(FileTree),
+        matching: find.byType(Material),
+      ),
       findsWidgets,
     );
   });
 
   group('row action column', () {
-    testWidgets('absent without onRowAction (read-only engram)', (tester) async {
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(['welcome.md']),
-        selectedPath: null,
-        onSelectFile: (_) {},
-      )));
+    testWidgets('absent without onRowAction (read-only engram)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(['welcome.md']),
+            selectedPath: null,
+            onSelectFile: (_) {},
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.more_vert), findsNothing);
     });
 
     testWidgets('one "⋯" button per visible row', (tester) async {
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(['a.md', 'notes/b.md']), // a.md, notes/, b.md
-        selectedPath: null,
-        onSelectFile: (_) {},
-        onRowAction: (_, _, _) {},
-      )));
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(['a.md', 'notes/b.md']), // a.md, notes/, b.md
+            selectedPath: null,
+            onSelectFile: (_) {},
+            onRowAction: (_, _, _) {},
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.more_vert), findsNWidgets(3));
     });
 
-    testWidgets('the action column follows the tree when it scrolls',
-        (tester) async {
+    testWidgets('the action column follows the tree when it scrolls', (
+      tester,
+    ) async {
       final files = [
         for (var i = 0; i < 50; i++) 'note-${i.toString().padLeft(2, '0')}.md',
       ];
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(files),
-        selectedPath: null,
-        onSelectFile: (_) {},
-        onRowAction: (_, _, _) {},
-      )));
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(files),
+            selectedPath: null,
+            onSelectFile: (_) {},
+            onRowAction: (_, _, _) {},
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Scrolling the tree drives the mirrored action column; it must track the
@@ -230,21 +300,26 @@ void main() {
       expect(find.byIcon(Icons.more_vert), findsWidgets);
     });
 
-    testWidgets('the "⋯" menu dispatches Rename with the row node and path',
-        (tester) async {
+    testWidgets('the "⋯" menu dispatches Rename with the row node and path', (
+      tester,
+    ) async {
       FileTreeNode? node;
       String? path;
       FileTreeRowAction? action;
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(['notes/first.md']),
-        selectedPath: null,
-        onSelectFile: (_) {},
-        onRowAction: (n, p, a) {
-          node = n;
-          path = p;
-          action = a;
-        },
-      )));
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(['notes/first.md']),
+            selectedPath: null,
+            onSelectFile: (_) {},
+            onRowAction: (n, p, a) {
+              node = n;
+              path = p;
+              action = a;
+            },
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Open the file row's menu (folder row's is the other one); tap Rename.
@@ -260,12 +335,16 @@ void main() {
 
     testWidgets('the "⋯" menu dispatches Delete', (tester) async {
       FileTreeRowAction? action;
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(['welcome.md']),
-        selectedPath: null,
-        onSelectFile: (_) {},
-        onRowAction: (_, _, a) => action = a,
-      )));
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(['welcome.md']),
+            selectedPath: null,
+            onSelectFile: (_) {},
+            onRowAction: (_, _, a) => action = a,
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.more_vert).first);
@@ -276,21 +355,26 @@ void main() {
       expect(action, FileTreeRowAction.delete);
     });
 
-    testWidgets('a folder row menu offers create-here and dispatches it',
-        (tester) async {
+    testWidgets('a folder row menu offers create-here and dispatches it', (
+      tester,
+    ) async {
       FileTreeNode? node;
       String? path;
       FileTreeRowAction? action;
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(['notes/a.md']), // notes (0), a.md (1)
-        selectedPath: null,
-        onSelectFile: (_) {},
-        onRowAction: (n, p, a) {
-          node = n;
-          path = p;
-          action = a;
-        },
-      )));
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(['notes/a.md']), // notes (0), a.md (1)
+            selectedPath: null,
+            onSelectFile: (_) {},
+            onRowAction: (n, p, a) {
+              node = n;
+              path = p;
+              action = a;
+            },
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.more_vert).first); // the notes folder
@@ -306,12 +390,16 @@ void main() {
     });
 
     testWidgets('a file row menu has no create-here items', (tester) async {
-      await tester.pumpWidget(_host(FileTree(
-        nodes: buildFileTree(['welcome.md']),
-        selectedPath: null,
-        onSelectFile: (_) {},
-        onRowAction: (_, _, _) {},
-      )));
+      await tester.pumpWidget(
+        _host(
+          FileTree(
+            nodes: buildFileTree(['welcome.md']),
+            selectedPath: null,
+            onSelectFile: (_) {},
+            onRowAction: (_, _, _) {},
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.more_vert).first); // the file row

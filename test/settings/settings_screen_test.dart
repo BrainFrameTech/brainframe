@@ -43,7 +43,8 @@ class _FakeStore extends EngramStore {
   @override
   Future<Map<String, Object?>?> readSettings() async => settings;
   @override
-  Future<void> writeSettings(Map<String, Object?> next) async => settings = next;
+  Future<void> writeSettings(Map<String, Object?> next) async =>
+      settings = next;
 }
 
 void main() {
@@ -65,16 +66,16 @@ void main() {
   });
 
   Widget host(Widget child) => AppSettings(
-        designOverride: DesignLanguage.material,
-        controller: controller,
-        child: SettingsScope(
-          store: controller.store,
-          child: RepositoryScope(
-            repository: repository,
-            child: localizedApp(home: child),
-          ),
-        ),
-      );
+    designOverride: DesignLanguage.material,
+    controller: controller,
+    child: SettingsScope(
+      store: controller.store,
+      child: RepositoryScope(
+        repository: repository,
+        child: localizedApp(home: child),
+      ),
+    ),
+  );
 
   void setSize(WidgetTester tester, double width) {
     tester.view.physicalSize = Size(width, 900);
@@ -83,23 +84,26 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('wide layout renders the core categories and Appearance controls',
-      (tester) async {
-    setSize(tester, 1000);
-    await tester.pumpWidget(host(const SettingsScreen()));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'wide layout renders the core categories and Appearance controls',
+    (tester) async {
+      setSize(tester, 1000);
+      await tester.pumpWidget(host(const SettingsScreen()));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Appearance'), findsWidgets);
-    expect(find.text('Housekeeping'), findsOneWidget);
-    expect(find.text('About'), findsOneWidget);
-    // Appearance detail: both theme rows + the reset section.
-    expect(find.text('Default theme'), findsOneWidget);
-    expect(find.text('This engram'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Reset'), findsOneWidget);
-  });
+      expect(find.text('Appearance'), findsWidgets);
+      expect(find.text('Housekeeping'), findsOneWidget);
+      expect(find.text('About'), findsOneWidget);
+      // Appearance detail: both theme rows + the reset section.
+      expect(find.text('Default theme'), findsOneWidget);
+      expect(find.text('This engram'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Reset'), findsOneWidget);
+    },
+  );
 
-  testWidgets('changing the default theme updates the controller',
-      (tester) async {
+  testWidgets('changing the default theme updates the controller', (
+    tester,
+  ) async {
     setSize(tester, 1000);
     await tester.pumpWidget(host(const SettingsScreen()));
     await tester.pumpAndSettle();
@@ -131,8 +135,9 @@ void main() {
     expect(find.textContaining('reset to their defaults'), findsOneWidget);
   });
 
-  testWidgets('selecting Housekeeping shows its custom detail pane',
-      (tester) async {
+  testWidgets('selecting Housekeeping shows its custom detail pane', (
+    tester,
+  ) async {
     setSize(tester, 1000);
     await tester.pumpWidget(host(const SettingsScreen()));
     await tester.pumpAndSettle();
@@ -235,59 +240,62 @@ void main() {
       );
     });
 
-    testWidgets('Housekeeping sees the engram\'s reconciler through the route',
-        (tester) async {
-      // Settings is a pushed route, a sibling of the session host; the
-      // reconciler reaches it only because openSettingsScreen captured and
-      // re-published it. Without that, the ledger would say there is no
-      // catalog for an engram that has one.
-      setSize(tester, 1000);
-      final engram = Engram(
-        id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
-        displayName: 'zettel',
-        readOnly: false,
-        store: _FakeStore(),
-      );
-      await tester.pumpWidget(
-        host(
-          EngramScope(
-            initialEngram: engram,
-            child: CrdtSessionScope.republish(
-              writer: null,
-              reconciler: _CountingReconciler(),
-              // And the watch's status, the same way (the filesystem watcher
-              // design, Decision 9).
-              watchStatus: ValueNotifier(
-                const EngramWatchUnavailable(
-                  'limit',
-                  kind: WatchUnavailableKind.watchLimit,
+    testWidgets(
+      'Housekeeping sees the engram\'s reconciler through the route',
+      (tester) async {
+        // Settings is a pushed route, a sibling of the session host; the
+        // reconciler reaches it only because openSettingsScreen captured and
+        // re-published it. Without that, the ledger would say there is no
+        // catalog for an engram that has one.
+        setSize(tester, 1000);
+        final engram = Engram(
+          id: '01JAB2CD3EFGHJKMNPQRSTVWXY',
+          displayName: 'zettel',
+          readOnly: false,
+          store: _FakeStore(),
+        );
+        await tester.pumpWidget(
+          host(
+            EngramScope(
+              initialEngram: engram,
+              child: CrdtSessionScope.republish(
+                writer: null,
+                reconciler: _CountingReconciler(),
+                // And the watch's status, the same way (the filesystem watcher
+                // design, Decision 9).
+                watchStatus: ValueNotifier(
+                  const EngramWatchUnavailable(
+                    'limit',
+                    kind: WatchUnavailableKind.watchLimit,
+                  ),
                 ),
-              ),
-              child: Builder(
-                builder: (context) => Scaffold(
-                  body: TextButton(
-                    onPressed: () => openSettingsScreen(context),
-                    child: const Text('open settings'),
+                child: Builder(
+                  builder: (context) => Scaffold(
+                    body: TextButton(
+                      onPressed: () => openSettingsScreen(context),
+                      child: const Text('open settings'),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.tap(find.text('open settings'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Housekeeping'));
-      await tester.pumpAndSettle();
+        );
+        await tester.tap(find.text('open settings'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Housekeeping'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Notes in “zettel”'), findsOneWidget);
-      expect(find.textContaining('7 notes were minted'), findsOneWidget);
-      expect(find.textContaining('has no note catalog'), findsNothing);
-      expect(find.textContaining('Live updates are off'), findsOneWidget);
-    });
+        expect(find.text('Notes in “zettel”'), findsOneWidget);
+        expect(find.textContaining('7 notes were minted'), findsOneWidget);
+        expect(find.textContaining('has no note catalog'), findsNothing);
+        expect(find.textContaining('Live updates are off'), findsOneWidget);
+      },
+    );
 
-    testWidgets('Open on a Housekeeping notice leaves Settings with the path',
-        (tester) async {
+    testWidgets('Open on a Housekeeping notice leaves Settings with the path', (
+      tester,
+    ) async {
       // Step 23: the route completes with the note's path, and whoever
       // pushed Settings — the browser — selects it.
       setSize(tester, 1000);
@@ -338,8 +346,9 @@ void main() {
       expect(find.text('open settings'), findsOneWidget, reason: 'popped');
     });
 
-    testWidgets('Open on a notice comes back to that note in the browser',
-        (tester) async {
+    testWidgets('Open on a notice comes back to that note in the browser', (
+      tester,
+    ) async {
       // Step 23, end to end: the gear opens Settings; Housekeeping's "Open"
       // pops it with the path; the browser selects the note.
       setSize(tester, 1000);
@@ -377,7 +386,11 @@ void main() {
       await tester.tap(find.text('notes/first-note.md'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Housekeeping'), findsNothing, reason: 'Settings popped');
+      expect(
+        find.text('Housekeeping'),
+        findsNothing,
+        reason: 'Settings popped',
+      );
       expect(find.text('notes/first-note.md'), findsOneWidget); // breadcrumb
     });
 
@@ -394,7 +407,6 @@ void main() {
       expect(find.text('Housekeeping'), findsOneWidget);
     });
   });
-
 }
 
 /// A reconciler with one number to show, so the route's republish can be
@@ -438,7 +450,9 @@ class _CountingReconciler implements NoteReconciler {
   Future<void> setNoteSizeCeiling(int bytes) async {}
 
   @override
-  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({
+    ScanTrigger trigger = ScanTrigger.manual,
+  }) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async => false;
@@ -456,7 +470,8 @@ class _CountingReconciler implements NoteReconciler {
   Stream<String> get reconciled => const Stream<String>.empty();
 
   @override
-  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
+  Stream<DriftScanReport> get scanReports =>
+      const Stream<DriftScanReport>.empty();
 
   @override
   Stream<AdoptionProgress?> get adoption =>

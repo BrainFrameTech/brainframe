@@ -71,10 +71,12 @@ void main() {
   });
 
   test('pseudo-locale has exactly the template keys (parity)', () {
-    final en = jsonDecode(File('lib/l10n/app_en.arb').readAsStringSync())
-        as Map<String, dynamic>;
-    final xa = jsonDecode(File('lib/l10n/app_en_XA.arb').readAsStringSync())
-        as Map<String, dynamic>;
+    final en =
+        jsonDecode(File('lib/l10n/app_en.arb').readAsStringSync())
+            as Map<String, dynamic>;
+    final xa =
+        jsonDecode(File('lib/l10n/app_en_XA.arb').readAsStringSync())
+            as Map<String, dynamic>;
     expect(_messageKeys(xa), equals(_messageKeys(en)));
   });
 
@@ -93,12 +95,15 @@ void main() {
   });
 
   testWidgets('renders pseudo-localized strings under en_XA', (tester) async {
-    await tester.pumpWidget(localizedApp(
-      locale: const Locale('en', 'XA'),
-      home: Builder(
-        builder: (context) => Text(AppLocalizations.of(context).switcherHeading),
+    await tester.pumpWidget(
+      localizedApp(
+        locale: const Locale('en', 'XA'),
+        home: Builder(
+          builder: (context) =>
+              Text(AppLocalizations.of(context).switcherHeading),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // The bracket marker proves the layer resolved to the pseudo-locale; the

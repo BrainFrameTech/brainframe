@@ -91,8 +91,10 @@ class _HelpOverlayState extends State<_HelpOverlay> {
           Expanded(
             child: Semantics(
               header: true,
-              child:
-                  Text(l10n.helpTitle, style: Theme.of(context).textTheme.titleMedium),
+              child: Text(
+                l10n.helpTitle,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
           ),
           // Let the user jump back to the help index from a sub-page.

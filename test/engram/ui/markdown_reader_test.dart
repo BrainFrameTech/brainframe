@@ -40,8 +40,10 @@ void main() {
     });
 
     test('handles ".." and "." segments', () {
-      expect(resolveIntraEngramLink('notes/first.md', '../welcome.md'),
-          'welcome.md');
+      expect(
+        resolveIntraEngramLink('notes/first.md', '../welcome.md'),
+        'welcome.md',
+      );
       expect(resolveIntraEngramLink('a/b/c.md', './d.md'), 'a/b/d.md');
     });
 
@@ -54,8 +56,10 @@ void main() {
       // real spaces. Decoding is what makes them match (regression: silently
       // failing links to files whose names contain spaces).
       expect(
-        resolveIntraEngramLink('book-notes/Atomic Habits/Atomic Habits MoC.md',
-            'Habit%20Building%20Tools.md'),
+        resolveIntraEngramLink(
+          'book-notes/Atomic Habits/Atomic Habits MoC.md',
+          'Habit%20Building%20Tools.md',
+        ),
         'book-notes/Atomic Habits/Habit Building Tools.md',
       );
       expect(
@@ -76,12 +80,14 @@ void main() {
   });
 
   testWidgets('renders the breadcrumb and the file content', (tester) async {
-    await tester.pumpWidget(_host(
-      MarkdownReader(
-        store: _MapStore({'notes/a.md': '# Hello world'}),
-        path: 'notes/a.md',
+    await tester.pumpWidget(
+      _host(
+        MarkdownReader(
+          store: _MapStore({'notes/a.md': '# Hello world'}),
+          path: 'notes/a.md',
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('notes/a.md'), findsOneWidget); // breadcrumb
@@ -91,21 +97,24 @@ void main() {
     );
   });
 
-  testWidgets('tapping a percent-encoded link navigates to the decoded path',
-      (tester) async {
+  testWidgets('tapping a percent-encoded link navigates to the decoded path', (
+    tester,
+  ) async {
     const current = 'reading list/Reading List MoC.md';
     const target = 'reading list/Wildflowers of the Midwest.md';
     String? navigated;
-    await tester.pumpWidget(_host(
-      MarkdownReader(
-        store: _MapStore({
-          current: '[Wildflowers](Wildflowers%20of%20the%20Midwest.md)',
-        }),
-        path: current,
-        availablePaths: const {current, target},
-        onNavigateToFile: (path) => navigated = path,
+    await tester.pumpWidget(
+      _host(
+        MarkdownReader(
+          store: _MapStore({
+            current: '[Wildflowers](Wildflowers%20of%20the%20Midwest.md)',
+          }),
+          path: current,
+          availablePaths: const {current, target},
+          onNavigateToFile: (path) => navigated = path,
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     await tester.tapOnText(find.textRange.ofSubstring('Wildflowers'));
@@ -114,11 +123,14 @@ void main() {
     expect(navigated, target);
   });
 
-  testWidgets('content is top-aligned within a tall pane, not centered',
-      (tester) async {
-    await tester.pumpWidget(_host(
-      MarkdownReader(store: _MapStore({'a.md': '# Short doc'}), path: 'a.md'),
-    ));
+  testWidgets('content is top-aligned within a tall pane, not centered', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        MarkdownReader(store: _MapStore({'a.md': '# Short doc'}), path: 'a.md'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // The breadcrumb sits near the top of the ~600px pane, not centered (~270).
@@ -127,9 +139,9 @@ void main() {
   });
 
   testWidgets('shows a message when the file cannot be read', (tester) async {
-    await tester.pumpWidget(_host(
-      MarkdownReader(store: _MapStore(const {}), path: 'missing.md'),
-    ));
+    await tester.pumpWidget(
+      _host(MarkdownReader(store: _MapStore(const {}), path: 'missing.md')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Could not open'), findsOneWidget);

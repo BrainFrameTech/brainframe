@@ -91,64 +91,66 @@ void main() {
     // populates its own table FIRST, the CRDT schema is injected into that same
     // live connection SECOND, and afterwards the file holds both — the original
     // rows untouched and the CRDT changes readable.
-    test('injects its schema into an existing database without disturbing it',
-        () {
-      final path = '${tempDir.path}/engram.db';
-      final db = sq.sqlite3.open(path);
-      addTearDown(db.close);
+    test(
+      'injects its schema into an existing database without disturbing it',
+      () {
+        final path = '${tempDir.path}/engram.db';
+        final db = sq.sqlite3.open(path);
+        addTearDown(db.close);
 
-      // 1. BrainFrame's own schema and data exist first.
-      db
-        ..execute(kNotesDdl)
-        ..execute(
-          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
-          ['inbox/today.md', 'Today'],
-        )
-        ..execute(
-          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
-          ['refs/crdt.md', 'CRDT notes'],
+        // 1. BrainFrame's own schema and data exist first.
+        db
+          ..execute(kNotesDdl)
+          ..execute('INSERT INTO bf_notes (path, title) VALUES (?, ?)', [
+            'inbox/today.md',
+            'Today',
+          ])
+          ..execute('INSERT INTO bf_notes (path, title) VALUES (?, ?)', [
+            'refs/crdt.md',
+            'CRDT notes',
+          ]);
+        expect(tableNames(db), {'bf_notes'});
+
+        // 2. The CRDT schema is injected into that SAME connection.
+        final crdt = CRDTSqlite.fromDatabase(db);
+
+        // Both schemas now co-exist — the consumer table was not dropped,
+        // renamed, or replaced.
+        expect(
+          tableNames(db),
+          {'bf_notes', 'changes', 'snapshots'},
+          reason: 'CRDT tables are added alongside the consumer table',
         );
-      expect(tableNames(db), {'bf_notes'});
 
-      // 2. The CRDT schema is injected into that SAME connection.
-      final crdt = CRDTSqlite.fromDatabase(db);
+        // 3. The consumer's rows survived injection byte for byte.
+        expect(readNotes(db), {
+          'inbox/today.md': 'Today',
+          'refs/crdt.md': 'CRDT notes',
+        });
 
-      // Both schemas now co-exist — the consumer table was not dropped,
-      // renamed, or replaced.
-      expect(
-        tableNames(db),
-        {'bf_notes', 'changes', 'snapshots'},
-        reason: 'CRDT tables are added alongside the consumer table',
-      );
+        // 4. CRDT data round-trips through the shared connection.
+        final author = Replica.named(peerA, label: 'author');
+        author.note.insert(0, 'shared database note');
+        crdt
+            .changeStorageForDocument(kDocumentId)
+            .saveChanges(author.exportChanges());
 
-      // 3. The consumer's rows survived injection byte for byte.
-      expect(readNotes(db), {
-        'inbox/today.md': 'Today',
-        'refs/crdt.md': 'CRDT notes',
-      });
+        final restored = Replica.named(peerB, label: 'restored');
+        restored.importChanges(
+          crdt.changeStorageForDocument(kDocumentId).getChanges(),
+        );
+        expect(restored.text, 'shared database note');
 
-      // 4. CRDT data round-trips through the shared connection.
-      final author = Replica.named(peerA, label: 'author');
-      author.note.insert(0, 'shared database note');
-      crdt
-          .changeStorageForDocument(kDocumentId)
-          .saveChanges(author.exportChanges());
-
-      final restored = Replica.named(peerB, label: 'restored');
-      restored.importChanges(
-        crdt.changeStorageForDocument(kDocumentId).getChanges(),
-      );
-      expect(restored.text, 'shared database note');
-
-      // 5. Writing CRDT data did not disturb the consumer table either, and
-      // the consumer can still write to its own table afterwards.
-      expect(readNotes(db).length, 2);
-      db.execute(
-        'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
-        ['inbox/later.md', 'Later'],
-      );
-      expect(readNotes(db).length, 3);
-    });
+        // 5. Writing CRDT data did not disturb the consumer table either, and
+        // the consumer can still write to its own table afterwards.
+        expect(readNotes(db).length, 2);
+        db.execute('INSERT INTO bf_notes (path, title) VALUES (?, ?)', [
+          'inbox/later.md',
+          'Later',
+        ]);
+        expect(readNotes(db).length, 3);
+      },
+    );
 
     // Durability across sessions: close the file, reopen it, and BOTH halves
     // are still there. This is the assertion that would fail if the CRDT
@@ -162,10 +164,10 @@ void main() {
       final first = sq.sqlite3.open(path);
       first
         ..execute(kNotesDdl)
-        ..execute(
-          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
-          ['inbox/today.md', 'Today'],
-        );
+        ..execute('INSERT INTO bf_notes (path, title) VALUES (?, ?)', [
+          'inbox/today.md',
+          'Today',
+        ]);
       final firstCrdt = CRDTSqlite.fromDatabase(first);
       final author = Replica.named(peerA, label: 'author');
       author.note.insert(0, 'durable across reopen');
@@ -178,22 +180,20 @@ void main() {
       final second = sq.sqlite3.open(path);
       addTearDown(second.close);
 
-      expect(
-        tableNames(second),
-        {'bf_notes', 'changes', 'snapshots'},
-        reason: 'both schemas persisted to the file',
-      );
+      expect(tableNames(second), {
+        'bf_notes',
+        'changes',
+        'snapshots',
+      }, reason: 'both schemas persisted to the file');
       expect(readNotes(second), {'inbox/today.md': 'Today'});
 
       // Re-injecting on every open is the real usage pattern (the app cannot
       // know whether this engram has been opened before), so it must be
       // idempotent — CREATE TABLE IF NOT EXISTS, never a destructive reset.
       final secondCrdt = CRDTSqlite.fromDatabase(second);
-      expect(
-        readNotes(second),
-        {'inbox/today.md': 'Today'},
-        reason: 're-injection must not clear consumer data',
-      );
+      expect(readNotes(second), {
+        'inbox/today.md': 'Today',
+      }, reason: 're-injection must not clear consumer data');
 
       final restored = Replica.named(peerB, label: 'restored');
       restored.importChanges(
@@ -214,23 +214,23 @@ void main() {
       addTearDown(db.close);
       db
         ..execute(kNotesDdl)
-        ..execute(
-          'INSERT INTO bf_notes (path, title) VALUES (?, ?)',
-          ['inbox/today.md', 'Today'],
-        );
+        ..execute('INSERT INTO bf_notes (path, title) VALUES (?, ?)', [
+          'inbox/today.md',
+          'Today',
+        ]);
 
       final crdt = CRDTSqlite.fromDatabase(db);
       final author = Replica.named(peerA, label: 'author');
       author.note.insert(0, 'doomed');
-      crdt.changeStorageForDocument('doc-one').saveChanges(
-            author.exportChanges(),
-          );
+      crdt
+          .changeStorageForDocument('doc-one')
+          .saveChanges(author.exportChanges());
 
       final other = Replica.named(peerB, label: 'other');
       other.note.insert(0, 'survivor');
-      crdt.changeStorageForDocument('doc-two').saveChanges(
-            other.exportChanges(),
-          );
+      crdt
+          .changeStorageForDocument('doc-two')
+          .saveChanges(other.exportChanges());
 
       crdt.deleteDocumentData('doc-one');
 
@@ -240,11 +240,9 @@ void main() {
         isFalse,
         reason: 'a sibling document is untouched',
       );
-      expect(
-        readNotes(db),
-        {'inbox/today.md': 'Today'},
-        reason: 'consumer tables are outside the CRDT delete scope',
-      );
+      expect(readNotes(db), {
+        'inbox/today.md': 'Today',
+      }, reason: 'consumer tables are outside the CRDT delete scope');
       expect(tableNames(db), {'bf_notes', 'changes', 'snapshots'});
     });
   });

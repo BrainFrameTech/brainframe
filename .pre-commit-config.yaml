@@ -11,6 +11,11 @@
 # If the linter changes a file, the commit stops so you can review and
 # re-stage — standard fix-hook behavior.
 #
+# Whenever Dart files are staged, `dart format` rewrites the tree to the
+# formatter's style first, as a fix hook: if it changed anything, the commit
+# stops so you can review and re-stage. The same check fails a PR in CI
+# (.github/workflows/format.yml), so a commit made without hooks is caught.
+#
 # Whenever Dart files are staged, `flutter analyze` runs against the project
 # and blocks the commit on any analyzer issue. It needs `flutter` on PATH and
 # `flutter pub get` to have run at least once (so .dart_tool exists).
@@ -30,6 +35,19 @@ repos:
         language: system
         entry: markdownlint-cli2 --fix
         files: \.(md|markdown)$
+        stages: [pre-commit]
+      - id: dart-format
+        name: dart format (auto-fix dart)
+        language: system
+        # Formats the whole tree rather than the staged files: it is well under
+        # a second, and pre-commit sets unstaged changes aside while hooks run,
+        # so only staged content is touched. Passing filenames would also break
+        # without_git_env.js's premise that it only ever runs fixed commands.
+        # The directories are named so ignored build output is left alone.
+        entry: node tool/without_git_env.js dart format bin lib test tool
+        files: \.dart$
+        pass_filenames: false
+        require_serial: true
         stages: [pre-commit]
       - id: flutter-analyze
         name: flutter analyze

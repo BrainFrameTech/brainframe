@@ -64,8 +64,11 @@ class EngramSwitcher extends StatelessWidget {
                 if (current.readOnly) ...[
                   Semantics(
                     label: l10n.switcherReadOnly,
-                    child: Icon(Icons.lock_outline,
-                        size: 15, color: theme.hintColor),
+                    child: Icon(
+                      Icons.lock_outline,
+                      size: 15,
+                      color: theme.hintColor,
+                    ),
                   ),
                   const SizedBox(width: 6),
                 ],
@@ -118,10 +121,14 @@ class EngramSwitcher extends StatelessWidget {
                   if (context.mounted) await _showNotLocal(context);
                   return;
                 } on PlatformException catch (error, stack) {
-                  if (context.mounted) await _showPickerFailed(context, error, stack);
+                  if (context.mounted) {
+                    await _showPickerFailed(context, error, stack);
+                  }
                   return;
                 } on MissingPluginException catch (error, stack) {
-                  if (context.mounted) await _showPickerFailed(context, error, stack);
+                  if (context.mounted) {
+                    await _showPickerFailed(context, error, stack);
+                  }
                   return;
                 }
                 if (engram != null) await scope.switchTo(engram);
@@ -228,7 +235,10 @@ class EngramSwitcher extends StatelessWidget {
     );
   }
 
-  Future<void> _createEngram(BuildContext context, EngramScopeData scope) async {
+  Future<void> _createEngram(
+    BuildContext context,
+    EngramScopeData scope,
+  ) async {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => const _NewEngramDialog(),
@@ -272,7 +282,9 @@ class _SwitcherSheet extends StatelessWidget {
           for (final engram in discovery.available)
             ListTile(
               leading: Icon(
-                engram.readOnly ? Icons.menu_book_outlined : Icons.book_outlined,
+                engram.readOnly
+                    ? Icons.menu_book_outlined
+                    : Icons.book_outlined,
               ),
               title: Text(localizedEngramName(engram, l10n)),
               trailing: engram.id == currentId ? const Icon(Icons.check) : null,

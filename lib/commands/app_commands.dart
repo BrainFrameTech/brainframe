@@ -158,7 +158,6 @@ class AppCommandsScope extends InheritedNotifier<AppCommands> {
 
   /// The commands without subscribing to changes, or null when there is no
   /// scope — the shape a publisher wants, since it only ever writes.
-  static AppCommands? maybeOf(BuildContext context) => context
-      .getInheritedWidgetOfExactType<AppCommandsScope>()
-      ?.notifier;
+  static AppCommands? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AppCommandsScope>()?.notifier;
 }

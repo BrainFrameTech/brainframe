@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 /// this in place of a bare `MaterialApp(home: ...)`. Pass [locale] to force a
 /// specific locale (e.g. the `en_XA` pseudo-locale) instead of the default.
 Widget localizedApp({required Widget home, Locale? locale}) => MaterialApp(
-      locale: locale,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: home,
-    );
+  locale: locale,
+  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  supportedLocales: AppLocalizations.supportedLocales,
+  home: home,
+);

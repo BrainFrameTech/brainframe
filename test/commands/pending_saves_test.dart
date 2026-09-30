@@ -40,17 +40,19 @@ void main() {
     expect(flushed, 0);
   });
 
-  test('a failing flush neither escapes nor strands the ones after it',
-      () async {
-    final saves = PendingSaves();
-    var reached = false;
-    saves.register('bad', () async => throw StateError('disk full'));
-    saves.register('good', () async => reached = true);
+  test(
+    'a failing flush neither escapes nor strands the ones after it',
+    () async {
+      final saves = PendingSaves();
+      var reached = false;
+      saves.register('bad', () async => throw StateError('disk full'));
+      saves.register('good', () async => reached = true);
 
-    await saves.flushAll();
+      await saves.flushAll();
 
-    expect(reached, isTrue, reason: 'the second flush must still run');
-  });
+      expect(reached, isTrue, reason: 'the second flush must still run');
+    },
+  );
 
   group('withheld work (the note size ceiling)', () {
     test('nothing withheld resolves at once, asking nobody', () async {
@@ -72,22 +74,24 @@ void main() {
       expect(asked, 0);
     });
 
-    test('a withheld registrant is asked, and its answer is the answer',
-        () async {
-      final saves = PendingSaves();
-      var answer = false;
-      saves.register(
-        'editor',
-        () async {},
-        isWithheld: () => true,
-        resolve: () async => answer,
-      );
+    test(
+      'a withheld registrant is asked, and its answer is the answer',
+      () async {
+        final saves = PendingSaves();
+        var answer = false;
+        saves.register(
+          'editor',
+          () async {},
+          isWithheld: () => true,
+          resolve: () async => answer,
+        );
 
-      expect(saves.hasWithheld, isTrue);
-      expect(await saves.resolveWithheld(), isFalse);
-      answer = true;
-      expect(await saves.resolveWithheld(), isTrue);
-    });
+        expect(saves.hasWithheld, isTrue);
+        expect(await saves.resolveWithheld(), isFalse);
+        answer = true;
+        expect(await saves.resolveWithheld(), isTrue);
+      },
+    );
 
     test('a refusal stops the asking: the caller is not leaving', () async {
       final saves = PendingSaves();

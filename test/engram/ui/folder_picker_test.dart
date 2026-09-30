@@ -21,43 +21,47 @@ void main() {
     result = null;
     resolved = false;
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-    await tester.pumpWidget(localizedApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => TextButton(
-            onPressed: () async {
-              result = await showFolderPicker(
-                context,
-                folders: folders,
-                includeRoot: includeRoot,
-              );
-              resolved = true;
-            },
-            child: const Text('open'),
+    await tester.pumpWidget(
+      localizedApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await showFolderPicker(
+                  context,
+                  folders: folders,
+                  includeRoot: includeRoot,
+                );
+                resolved = true;
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     debugDefaultTargetPlatformOverride = null; // theme already baked Material
     await tester.tap(find.text('open'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300)); // dialog transition
   }
 
-  testWidgets('lists the folders and root; Move is disabled until a selection',
-      (tester) async {
-    await openPicker(tester, folders: ['archive', 'notes', 'notes/sub']);
+  testWidgets(
+    'lists the folders and root; Move is disabled until a selection',
+    (tester) async {
+      await openPicker(tester, folders: ['archive', 'notes', 'notes/sub']);
 
-    expect(find.text('Top level'), findsOneWidget);
-    expect(find.text('archive'), findsOneWidget);
-    expect(find.text('notes'), findsOneWidget);
-    expect(find.text('sub'), findsOneWidget); // shown by last segment
+      expect(find.text('Top level'), findsOneWidget);
+      expect(find.text('archive'), findsOneWidget);
+      expect(find.text('notes'), findsOneWidget);
+      expect(find.text('sub'), findsOneWidget); // shown by last segment
 
-    final move = tester.widget<TextButton>(
-      find.widgetWithText(TextButton, 'Move'),
-    );
-    expect(move.onPressed, isNull); // nothing selected yet
-  });
+      final move = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, 'Move'),
+      );
+      expect(move.onPressed, isNull); // nothing selected yet
+    },
+  );
 
   testWidgets('returns the selected folder path', (tester) async {
     await openPicker(tester, folders: ['archive', 'notes']);
@@ -99,8 +103,9 @@ void main() {
     expect(find.text('notes'), findsOneWidget);
   });
 
-  testWidgets('shows an empty message when there is nowhere to move',
-      (tester) async {
+  testWidgets('shows an empty message when there is nowhere to move', (
+    tester,
+  ) async {
     await openPicker(tester, folders: const [], includeRoot: false);
 
     expect(find.text('No other folder to move to.'), findsOneWidget);

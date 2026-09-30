@@ -34,8 +34,7 @@ void main() {
     text.insert(0, 'one');
     first = doc.exportChanges();
     text.insert(3, 'two');
-    second =
-        doc.exportChanges().where((c) => !first.contains(c)).toList();
+    second = doc.exportChanges().where((c) => !first.contains(c)).toList();
     text.insert(6, 'three');
     third = doc
         .exportChanges()
@@ -73,8 +72,7 @@ void main() {
     expect(text.value, 'onetwothree');
   });
 
-  test('a complete batch applies regardless of the order it is offered in',
-      () {
+  test('a complete batch applies regardless of the order it is offered in', () {
     final doc = _doc(_peerC);
     final text = CRDTFugueTextHandler(doc, 'text');
 

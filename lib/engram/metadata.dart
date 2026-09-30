@@ -52,14 +52,13 @@ class EngramMetadata {
     required String id,
     required String displayName,
     DateTime? createdUtc,
-  }) =>
-      EngramMetadata(
-        schemaVersion: currentSchemaVersion,
-        id: id,
-        displayName: displayName,
-        createdUtc: (createdUtc ?? DateTime.now()).toUtc(),
-        recordedNoteSizeCeilingBytes: noteSizeCapabilityBytes,
-      );
+  }) => EngramMetadata(
+    schemaVersion: currentSchemaVersion,
+    id: id,
+    displayName: displayName,
+    createdUtc: (createdUtc ?? DateTime.now()).toUtc(),
+    recordedNoteSizeCeilingBytes: noteSizeCapabilityBytes,
+  );
 
   /// Parses [source], the raw text of an `engram.json` file.
   ///
@@ -70,7 +69,9 @@ class EngramMetadata {
     try {
       decoded = jsonDecode(source);
     } on FormatException catch (e) {
-      throw EngramMetadataException('engram.json is not valid JSON: ${e.message}');
+      throw EngramMetadataException(
+        'engram.json is not valid JSON: ${e.message}',
+      );
     }
     if (decoded is! Map<String, dynamic>) {
       throw const EngramMetadataException('engram.json must be a JSON object');
@@ -228,17 +229,18 @@ class EngramMetadata {
   /// The JSON object form, with [createdUtc] rendered as a UTC ISO-8601 string
   /// and the ceiling present only when it was recorded.
   Map<String, dynamic> toJson() => {
-        'schemaVersion': schemaVersion,
-        'id': id,
-        'displayName': displayName,
-        'createdUtc': createdUtc.toUtc().toIso8601String(),
-        if (recordedNoteSizeCeilingBytes != null)
-          _noteSizeCeilingKey: recordedNoteSizeCeilingBytes,
-      };
+    'schemaVersion': schemaVersion,
+    'id': id,
+    'displayName': displayName,
+    'createdUtc': createdUtc.toUtc().toIso8601String(),
+    if (recordedNoteSizeCeilingBytes != null)
+      _noteSizeCeilingKey: recordedNoteSizeCeilingBytes,
+  };
 
   /// Serializes to the pretty-printed, newline-terminated text written to
   /// `engram.json`. `decode(encode())` round-trips.
-  String encode() => '${const JsonEncoder.withIndent('  ').convert(toJson())}\n';
+  String encode() =>
+      '${const JsonEncoder.withIndent('  ').convert(toJson())}\n';
 
   @override
   bool operator ==(Object other) =>
@@ -251,12 +253,12 @@ class EngramMetadata {
 
   @override
   int get hashCode => Object.hash(
-        schemaVersion,
-        id,
-        displayName,
-        createdUtc,
-        recordedNoteSizeCeilingBytes,
-      );
+    schemaVersion,
+    id,
+    displayName,
+    createdUtc,
+    recordedNoteSizeCeilingBytes,
+  );
 
   @override
   String toString() =>

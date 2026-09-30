@@ -369,17 +369,21 @@ void main() {
       expect(log, ['watch stop', 'watch start', 'scan resume']);
     }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
-    testWidgets('on desktop, the background leaves it running', (tester) async {
-      // The editor beside BrainFrame is the case the watch exists for.
-      final log = <String>[];
-      final session = await host(tester, log: log);
-      await tester.pumpAndSettle();
+    testWidgets(
+      'on desktop, the background leaves it running',
+      (tester) async {
+        // The editor beside BrainFrame is the case the watch exists for.
+        final log = <String>[];
+        final session = await host(tester, log: log);
+        await tester.pumpAndSettle();
 
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      await tester.pumpAndSettle();
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pumpAndSettle();
 
-      expect(session.watching, ['start'], reason: 'never stopped');
-    }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+        expect(session.watching, ['start'], reason: 'never stopped');
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.linux),
+    );
 
     testWidgets('a session switched away from mid-start is not scanned', (
       tester,
@@ -671,6 +675,5 @@ class _RecordingReconciler implements NoteReconciler {
 
 class _NoopWriter implements NoteWriter {
   @override
-  Future<String> write(String path, String text, {String? base}) async =>
-      text;
+  Future<String> write(String path, String text, {String? base}) async => text;
 }

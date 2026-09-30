@@ -173,6 +173,82 @@ void main() {
       expect(history.byId(a)!.acknowledged, isTrue);
     });
 
+    test('after reads the history a page at a time', () {
+      final ids = [
+        for (var i = 0; i < 5; i++)
+          record(
+            DriftScanReport(created: ['n$i.md']),
+            at: t0.add(Duration(minutes: i)),
+          )!,
+      ];
+      final first = history.recent(limit: 2);
+      expect(first.map((r) => r.id), [ids[4], ids[3]]);
+      final second = history.recent(limit: 2, after: first.last);
+      expect(second.map((r) => r.id), [ids[2], ids[1]]);
+      expect(second.first.report.created, ['n2.md'], reason: 'events too');
+      expect(history.recent(limit: 2, after: second.last).map((r) => r.id), [
+        ids[0],
+      ]);
+    });
+
+    test('after is exact among scans that finished together', () {
+      // Two scans in the same millisecond: the id breaks the tie, so a page
+      // boundary between them neither repeats nor drops one.
+      final a = record(DriftScanReport(created: const ['a.md']))!;
+      final b = record(DriftScanReport(created: const ['b.md']))!;
+      final c = record(DriftScanReport(created: const ['c.md']))!;
+      final first = history.recent(limit: 2);
+      expect(first.map((r) => r.id), [c, b]);
+      expect(history.recent(limit: 2, after: first.last).map((r) => r.id), [a]);
+    });
+
+    test('after keeps its place when a scan lands between pages', () {
+      final ids = [
+        for (var i = 0; i < 4; i++)
+          record(
+            DriftScanReport(created: ['n$i.md']),
+            at: t0.add(Duration(minutes: i)),
+          )!,
+      ];
+      final first = history.recent(limit: 2);
+      record(
+        DriftScanReport(created: const ['late.md']),
+        at: t0.add(const Duration(hours: 1)),
+      );
+      expect(history.recent(limit: 2, after: first.last).map((r) => r.id), [
+        ids[1],
+        ids[0],
+      ]);
+    });
+
+    test('acknowledgeEach dismisses every id, past one statement\'s', () {
+      // A folded card can stand for thousands of records; SQLite caps the
+      // parameters one statement takes, so the ids go in chunks.
+      final ids = [
+        for (var i = 0; i < 1200; i++)
+          record(
+            DriftScanReport(reconciled: ['n$i.md']),
+            at: t0.add(Duration(seconds: i)),
+          )!,
+      ];
+      final keep = ids.removeLast();
+      final earlier = t0.add(const Duration(hours: 1));
+      history.acknowledge(ids.first, at: earlier);
+
+      history.acknowledgeEach(ids, at: t0.add(const Duration(hours: 2)));
+
+      expect(history.recent(unacknowledgedOnly: true).map((r) => r.id), [keep]);
+      final ackFirst = history.database.select(
+        'SELECT acknowledged_utc FROM bf_scan WHERE id = ?',
+        [ids.first],
+      ).first['acknowledged_utc'];
+      expect(
+        ackFirst,
+        earlier.toUtc().millisecondsSinceEpoch,
+        reason: 'already dismissed keeps its time',
+      );
+    });
+
     test('acknowledgeThrough dismisses up to the id, and no further', () {
       final a = record(DriftScanReport(created: const ['a.md']))!;
       final b = record(

@@ -34,6 +34,7 @@ library;
 import 'package:sqlite3/sqlite3.dart' as sq;
 
 import '../note_reconciler.dart';
+import '../scan_folding.dart';
 import 'catalog.dart';
 
 /// One recorded scan, read back: the report as it was, plus what the record
@@ -67,9 +68,15 @@ class ScanRecord {
   bool get lostHistory =>
       report.tombstoned.isNotEmpty && report.created.isNotEmpty;
 
-  /// The notice the panel shows, which is this record minus the id.
-  ScanNotice get notice =>
-      ScanNotice(at: finishedAt, report: report, id: id, trigger: trigger);
+  /// This record as [ScanFolder] takes it, which turns records into the
+  /// cards the panel shows.
+  ScannedRecord get scanned => (
+    id: id,
+    startedAt: startedAt,
+    finishedAt: finishedAt,
+    trigger: trigger,
+    report: report,
+  );
 }
 
 /// The two tables and their queries, over a connection someone else owns.
@@ -239,20 +246,44 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
 
   /// The most recent scans, newest first, at most [limit]; with
   /// [unacknowledgedOnly], the ones the user has not dismissed.
-  List<ScanRecord> recent({int limit = 20, bool unacknowledgedOnly = false}) {
-    final where = unacknowledgedOnly ? 'WHERE acknowledged_utc IS NULL ' : '';
+  ///
+  /// [after] continues from a record already read — the next page is the
+  /// records older than it. A position, not a count to skip: SQLite steps
+  /// over skipped rows one by one, so paging by count reads the history
+  /// again for every page, quadratic in its length, where this seeks
+  /// straight to the page through the index. It also stays right if a scan
+  /// is recorded between pages, since a new one is newer than [after].
+  ///
+  /// The page's events come back in one query, not one per record.
+  List<ScanRecord> recent({
+    int limit = 20,
+    ScanRecord? after,
+    bool unacknowledgedOnly = false,
+  }) {
+    final clauses = [
+      if (unacknowledgedOnly) 'acknowledged_utc IS NULL',
+      if (after != null) '(finished_utc < ? OR (finished_utc = ? AND id < ?))',
+    ];
+    final cursor = after == null
+        ? const <Object>[]
+        : [
+            after.finishedAt.millisecondsSinceEpoch,
+            after.finishedAt.millisecondsSinceEpoch,
+            after.id,
+          ];
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')} ';
     final rows = database.select(
       'SELECT * FROM bf_scan ${where}ORDER BY finished_utc DESC, id DESC '
       'LIMIT ?',
-      [limit],
+      [...cursor, limit],
     );
-    return [for (final row in rows) _recordFrom(row)];
+    return _recordsFrom(rows);
   }
 
   /// The one scan [id], or null.
   ScanRecord? byId(int id) {
     final rows = database.select('SELECT * FROM bf_scan WHERE id = ?', [id]);
-    return rows.isEmpty ? null : _recordFrom(rows.first);
+    return rows.isEmpty ? null : _recordsFrom(rows).single;
   }
 
   /// Marks [id] as dismissed by the user, now.
@@ -261,6 +292,31 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
       (at ?? DateTime.now()).toUtc().millisecondsSinceEpoch,
       id,
     ]);
+  }
+
+  /// Marks each of [ids] as dismissed by the user, now, in one transaction —
+  /// every record a folded card stands for, which can run to thousands.
+  /// Chunked, since SQLite caps the parameters in one statement.
+  void acknowledgeEach(Iterable<int> ids, {DateTime? at}) {
+    final when = (at ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
+    final all = ids.toList();
+    const chunk = 500;
+    database.execute('BEGIN');
+    try {
+      for (var i = 0; i < all.length; i += chunk) {
+        final part = all.sublist(i, (i + chunk).clamp(0, all.length));
+        final marks = List.filled(part.length, '?').join(', ');
+        database.execute(
+          'UPDATE bf_scan SET acknowledged_utc = ? '
+          'WHERE id IN ($marks) AND acknowledged_utc IS NULL',
+          [when, ...part],
+        );
+      }
+      database.execute('COMMIT');
+    } on Object {
+      database.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   /// Marks every scan not yet dismissed, up to and including [id], as
@@ -317,13 +373,29 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
   int count() =>
       database.select('SELECT COUNT(*) AS n FROM bf_scan').first['n'] as int;
 
-  ScanRecord _recordFrom(sq.Row row) {
+  /// Builds [rows] into records, with every row's events read in one
+  /// query. A page is at most a few hundred rows, well inside SQLite's cap
+  /// on the parameters one statement takes.
+  List<ScanRecord> _recordsFrom(List<sq.Row> rows) {
+    if (rows.isEmpty) return const [];
+    final ids = [for (final row in rows) row['id'] as int];
+    final marks = List.filled(ids.length, '?').join(', ');
+    final events = <int, List<sq.Row>>{};
+    for (final event in database.select(
+      'SELECT scan_id, kind, path, new_path, error FROM bf_scan_event '
+      'WHERE scan_id IN ($marks) ORDER BY rowid',
+      ids,
+    )) {
+      (events[event['scan_id'] as int] ??= []).add(event);
+    }
+    return [
+      for (final row in rows)
+        _recordFrom(row, events[row['id'] as int] ?? const []),
+    ];
+  }
+
+  ScanRecord _recordFrom(sq.Row row, List<sq.Row> events) {
     final id = row['id'] as int;
-    final events = database.select(
-      'SELECT kind, path, new_path, error FROM bf_scan_event '
-      'WHERE scan_id = ? ORDER BY rowid',
-      [id],
-    );
     final reconciled = <String>[];
     final created = <String>[];
     final oversized = <String>[];

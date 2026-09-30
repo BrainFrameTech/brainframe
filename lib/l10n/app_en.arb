@@ -1279,11 +1279,29 @@
     }
   },
 
-  "housekeepingScanTrigger": "{trigger, select, open{at open} resume{on resume} watcher{from the watcher} other{by request}}",
+  "housekeepingScanTrigger": "{trigger, select, open{at open} resume{on resume} watcher{from the watcher} note{when a note was opened or saved} other{by request}}",
   "@housekeepingScanTrigger": {
-    "description": "Part of a scan card's header: what started the scan. Follows the time.",
+    "description": "Part of a scan card's header: what started the scan. Follows the time. 'note' is a note checked for outside changes just before it opened or was saved.",
     "placeholders": {
       "trigger": { "type": "String", "example": "resume" }
+    }
+  },
+
+  "housekeepingScanWhen": "{date}, {time}",
+  "@housekeepingScanWhen": {
+    "description": "When a scan card's scan happened: a short date, then a time of day or a range of them. Both come already formatted for the locale.",
+    "placeholders": {
+      "date": { "type": "String", "example": "Sep 28" },
+      "time": { "type": "String", "example": "5:16 PM" }
+    }
+  },
+
+  "housekeepingScanTimeRange": "{from}–{to}",
+  "@housekeepingScanTimeRange": {
+    "description": "The time span of a scan card that folds several changes together, from the oldest to the newest: two times of day, or two dated times when the span crosses midnight.",
+    "placeholders": {
+      "from": { "type": "String", "example": "5:16 PM" },
+      "to": { "type": "String", "example": "5:24 PM" }
     }
   },
 

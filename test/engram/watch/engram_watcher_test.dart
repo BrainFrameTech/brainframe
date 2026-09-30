@@ -40,6 +40,9 @@ void main() {
         async.elapse(const Duration(milliseconds: 1));
         async.flushMicrotasks();
         expect(reconciler.log, ['reconcile a.md', 'reconcile b.md']);
+        // Asked as the watcher, so what it finds is recorded as its change
+        // (the filesystem watcher design, Decision 10).
+        expect(reconciler.triggers, [ScanTrigger.watcher, ScanTrigger.watcher]);
       });
     });
 
@@ -329,6 +332,9 @@ class _FakeWatcher implements EngramWatcher {
 /// Records what the dispatcher asks for; everything else is unused.
 class _RecordingReconciler implements NoteReconciler {
   final List<String> log = [];
+
+  /// The trigger each reconcile was asked under, in order.
+  final List<ScanTrigger?> triggers = [];
   Future<void>? gate;
   bool fail = false;
 
@@ -339,8 +345,9 @@ class _RecordingReconciler implements NoteReconciler {
   }
 
   @override
-  Future<bool> reconcile(String path) {
+  Future<bool> reconcile(String path, {ScanTrigger? trigger}) {
     log.add('reconcile $path');
+    triggers.add(trigger);
     return _answer(true);
   }
 

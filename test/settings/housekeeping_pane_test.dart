@@ -75,6 +75,9 @@ void main() {
         changeCeiling: changeCeiling,
         onCeilingChanged: onCeilingChanged,
         onOpenNote: onOpenNote,
+        // Pinned, so whether a card's date carries its year does not depend
+        // on the year the suite runs in.
+        now: () => DateTime(2026, 9, 29, 12),
       ),
     ),
   );
@@ -489,8 +492,8 @@ void main() {
 
       expect(find.text('2 notes updated from disk, 1 moved'), findsOneWidget);
       expect(find.text('1 created, 1 adopted'), findsOneWidget);
-      expect(find.text('2:30 PM · on resume'), findsOneWidget);
-      expect(find.text('9:05 AM · at open'), findsOneWidget);
+      expect(find.text('Sep 12, 2:30 PM · on resume'), findsOneWidget);
+      expect(find.text('Sep 12, 9:05 AM · at open'), findsOneWidget);
       // Newest first: 14:30's card is above 09:05's.
       final later = tester.getTopLeft(
         find.text('2 notes updated from disk, 1 moved'),
@@ -525,7 +528,7 @@ void main() {
       final dismiss = find.widgetWithText(TextButton, 'Dismiss');
       expect(
         tester.getSemantics(dismiss).label,
-        contains('Dismiss the scan from 2:30 PM'),
+        contains('Dismiss the scan from Sep 12, 2:30 PM'),
       );
       await tester.tap(dismiss);
       await tester.pumpAndSettle();
@@ -613,6 +616,175 @@ void main() {
 
       expect(find.text('Dismiss'), findsOneWidget);
       expect(find.text('Dismiss all'), findsNothing);
+    });
+
+    testWidgets('a folded card spans its run, and Dismiss takes all of it', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            id: 13,
+            folded: const [12, 11, 10],
+            since: DateTime(2026, 9, 28, 17, 16),
+            at: DateTime(2026, 9, 28, 17, 24),
+            trigger: ScanTrigger.watcher,
+            report: const DriftScanReport(reconciled: ['a.md', 'b.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Sep 28, 5:16 PM–5:24 PM · from the watcher'),
+        findsOneWidget,
+      );
+      expect(find.text('2 notes updated from disk'), findsOneWidget);
+      final dismiss = find.widgetWithText(TextButton, 'Dismiss');
+      expect(
+        tester.getSemantics(dismiss).label,
+        contains('Dismiss the scan from Sep 28, 5:16 PM–5:24 PM'),
+      );
+
+      await tester.tap(dismiss);
+      await tester.pumpAndSettle();
+      expect(notes.dismissed, [13, 12, 11, 10]);
+      expect(find.textContaining('Nothing to show'), findsOneWidget);
+    });
+
+    testWidgets('a run inside one minute shows that minute, not a range', (
+      tester,
+    ) async {
+      final notes = _Notes.named(
+        ledgerValue: const NoteLedger(
+          peers: 1,
+          minted: 0,
+          adopted: 0,
+          unclaimed: 0,
+          tombstoned: 0,
+        ),
+        scans: [
+          ScanNotice(
+            id: 2,
+            folded: const [1],
+            since: DateTime(2026, 9, 28, 17, 16, 5),
+            at: DateTime(2026, 9, 28, 17, 16, 50),
+            trigger: ScanTrigger.note,
+            report: const DriftScanReport(reconciled: ['a.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Sep 28, 5:16 PM · when a note was opened or saved'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('every card is dated; the year only when it is not this one', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final notes = _Notes.named(
+        ledgerValue: emptyLedger,
+        scans: [
+          // Newest first, across days: the order reads right only with
+          // the dates, since 9:19 PM sits above 9:38 PM.
+          ScanNotice(
+            id: 3,
+            at: DateTime(2026, 9, 29, 21, 19),
+            trigger: ScanTrigger.open,
+            report: const DriftScanReport(adopted: ['a.md']),
+          ),
+          ScanNotice(
+            id: 2,
+            at: DateTime(2026, 9, 28, 21, 38),
+            trigger: ScanTrigger.watcher,
+            report: const DriftScanReport(reconciled: ['b.md']),
+          ),
+          // Kept past a year: a scan that lost history is never pruned.
+          ScanNotice(
+            id: 1,
+            at: DateTime(2025, 3, 4, 8, 15),
+            trigger: ScanTrigger.resume,
+            report: const DriftScanReport(
+              tombstoned: ['c.md'],
+              created: ['d.md'],
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sep 29, 9:19 PM · at open'), findsOneWidget);
+      expect(find.text('Sep 28, 9:38 PM · from the watcher'), findsOneWidget);
+      expect(find.text('Mar 4, 2025, 8:15 AM · on resume'), findsOneWidget);
+    });
+
+    testWidgets('a run across midnight names both dates', (tester) async {
+      final notes = _Notes.named(
+        ledgerValue: emptyLedger,
+        scans: [
+          ScanNotice(
+            id: 2,
+            folded: const [1],
+            since: DateTime(2026, 9, 28, 23, 58),
+            at: DateTime(2026, 9, 29, 0, 2),
+            trigger: ScanTrigger.watcher,
+            report: const DriftScanReport(reconciled: ['a.md']),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Sep 28, 11:58 PM–Sep 29, 12:02 AM · from the watcher'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a long dated header fits a phone', (tester) async {
+      // The header stacks when above what: side by side, a dated range and
+      // its trigger overflowed a narrow card.
+      tester.view.physicalSize = const Size(360, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final notes = _Notes.named(
+        ledgerValue: emptyLedger,
+        scans: [
+          ScanNotice(
+            id: 2,
+            folded: const [1],
+            since: DateTime(2026, 9, 28, 23, 58),
+            at: DateTime(2026, 9, 29, 0, 2),
+            trigger: ScanTrigger.note,
+            report: const DriftScanReport(
+              reconciled: ['a.md', 'b.md'],
+              created: ['c.md'],
+              moved: {'d.md': 'e.md'},
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Dismiss'), findsOneWidget);
     });
 
     testWidgets('a failed dismissal is said, and the cards stay', (
@@ -1334,10 +1506,10 @@ class _Notes implements NoteReconciler {
   }
 
   @override
-  Future<void> dismissScan(int id) async {
+  Future<void> dismissScans(List<int> ids) async {
     if (dismissError case final error?) throw error;
-    dismissed.add(id);
-    scans.removeWhere((scan) => scan.id == id);
+    dismissed.addAll(ids);
+    scans.removeWhere((scan) => scan.ids.any(ids.contains));
   }
 
   @override
@@ -1375,7 +1547,7 @@ class _Notes implements NoteReconciler {
   }) async => DriftScanReport.clean;
 
   @override
-  Future<bool> reconcile(String path) async => false;
+  Future<bool> reconcile(String path, {ScanTrigger? trigger}) async => false;
 
   @override
   Future<void> noteCreated(String path) async {}

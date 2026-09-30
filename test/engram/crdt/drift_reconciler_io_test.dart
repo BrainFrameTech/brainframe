@@ -2695,6 +2695,151 @@ void main() {
       expect(notice.trigger, ScanTrigger.open);
     });
 
+    group(
+      'every change made outside the app (watcher design, Decision 10)',
+      () {
+        test('a note edited outside is recorded when a trigger asks', () async {
+          final d = await device();
+          await d.writer.write('a.md', 'one\n');
+          await engram.writeString('a.md', 'one\ntwo\n');
+
+          expect(
+            await d.reconciler.reconcile('a.md', trigger: ScanTrigger.watcher),
+            isTrue,
+          );
+
+          final card = (await d.reconciler.recentScans()).single;
+          expect(card.report.reconciled, ['a.md']);
+          expect(card.trigger, ScanTrigger.watcher);
+          expect(
+            d.store.readMeta(DriftReconciler.lastScanKey),
+            isNull,
+            reason: 'one note, not a scan: the ledger\'s last scan stays put',
+          );
+        });
+
+        test(
+          'the app\'s own change, and no change, are not recorded',
+          () async {
+            final d = await device();
+            await d.writer.write('a.md', 'one\n');
+            await engram.writeString('a.md', 'one\ntwo\n');
+            // No trigger: the app asking after its own change.
+            expect(await d.reconciler.reconcile('a.md'), isTrue);
+            // A trigger, but nothing drifted.
+            expect(
+              await d.reconciler.reconcile('a.md', trigger: ScanTrigger.note),
+              isFalse,
+            );
+            // A note the app itself created.
+            await engram.writeString('mine.md', 'mine\n');
+            await d.reconciler.noteCreated('mine.md');
+
+            expect(d.store.scans.count(), 0);
+          },
+        );
+
+        test(
+          'a file that appeared is recorded as created before it opens',
+          () async {
+            final d = await device();
+            await engram.writeString('new.md', 'hello\n');
+
+            expect(
+              await d.reconciler.reconcile('new.md', trigger: ScanTrigger.note),
+              isTrue,
+            );
+
+            final card = (await d.reconciler.recentScans()).single;
+            expect(card.report.created, ['new.md']);
+            expect(card.trigger, ScanTrigger.note);
+          },
+        );
+
+        test('a save that merges an outside edit records it', () async {
+          final d = await device();
+          await d.writer.write('a.md', 'one\ntwo\n');
+          await engram.writeString('a.md', 'one\ntwo\nthree\n');
+
+          await d.writer.write('a.md', 'ONE\ntwo\n', base: 'one\ntwo\n');
+
+          final card = (await d.reconciler.recentScans()).single;
+          expect(card.report.reconciled, ['a.md']);
+          expect(card.trigger, ScanTrigger.note);
+        });
+
+        test('back-to-back edits are one card, dismissed together', () async {
+          final d = await device();
+          await d.writer.write('a.md', 'one\n');
+          for (final text in ['one\ntwo\n', 'one\ntwo\n3\n', 'one\n2\n3\n']) {
+            await engram.writeString('a.md', text);
+            await d.reconciler.reconcile('a.md', trigger: ScanTrigger.watcher);
+          }
+
+          final card = (await d.reconciler.recentScans()).single;
+          expect(card.ids, hasLength(3));
+          expect(card.report.reconciled, ['a.md'], reason: 'one note, once');
+
+          await d.reconciler.dismissScans(card.ids);
+          expect(await d.reconciler.recentScans(), isEmpty);
+          expect(d.store.scans.count(), 3, reason: 'dismissed, not deleted');
+        });
+
+        test('the limit counts cards, and a run spans pages whole', () async {
+          // More records than one page read (100), all one run: the card must
+          // come back whole, and the cards on either side of it too.
+          final d = await device();
+          final base = DateTime.utc(2026, 9, 1, 12);
+          void record(int second, ScanTrigger trigger, String path) {
+            final at = base.add(Duration(seconds: second));
+            d.store.scans.record(
+              DriftScanReport(reconciled: [path]),
+              startedAt: at,
+              finishedAt: at,
+              trigger: trigger,
+              ulidOf: (_, _) => null,
+            );
+          }
+
+          record(0, ScanTrigger.resume, 'first.md');
+          for (var i = 0; i < 150; i++) {
+            record(1000 + i * 10, ScanTrigger.watcher, 'n${i % 7}.md');
+          }
+          record(5000, ScanTrigger.resume, 'last.md');
+
+          final two = await d.reconciler.recentScans(limit: 2);
+          expect(two, hasLength(2));
+          expect(two[0].report.reconciled, ['last.md']);
+          expect(two[1].ids, hasLength(150));
+          expect(two[1].report.reconciled, hasLength(7));
+
+          final all = await d.reconciler.recentScans();
+          expect(all.map((c) => c.ids.length), [1, 150, 1]);
+        });
+
+        test('a read that yields stops once the reconciler closes', () async {
+          // The read hands the UI a turn between pages; an engram switch in
+          // that turn closes the reconciler, and the read must not go on.
+          final d = await device();
+          final base = DateTime.utc(2026, 9, 1, 12);
+          for (var i = 0; i < 150; i++) {
+            final at = base.add(Duration(seconds: i * 10));
+            d.store.scans.record(
+              const DriftScanReport(reconciled: ['a.md']),
+              startedAt: at,
+              finishedAt: at,
+              trigger: ScanTrigger.watcher,
+              ulidOf: (_, _) => null,
+            );
+          }
+
+          final pending = d.reconciler.recentScans();
+          await d.reconciler.close();
+          expect(await pending, isEmpty);
+        });
+      },
+    );
+
     test('newest first, limited, and dismissed ones drop out', () async {
       final d = await device();
       for (var i = 0; i < 5; i++) {
@@ -2712,7 +2857,7 @@ void main() {
       ]);
       expect((await d.reconciler.recentScans(limit: 2)).length, 2);
 
-      await d.reconciler.dismissScan(all[1].id!);
+      await d.reconciler.dismissScans(all[1].ids);
 
       final left = await d.reconciler.recentScans();
       expect(left.map((n) => n.report.created.single), [

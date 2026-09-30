@@ -1826,7 +1826,7 @@ class _RecordingReconciler implements NoteReconciler {
   }) async => DriftScanReport.clean;
 
   @override
-  Future<bool> reconcile(String path) async => false;
+  Future<bool> reconcile(String path, {ScanTrigger? trigger}) async => false;
 
   @override
   Future<void> noteCreated(String path) async => log.add('created $path');
@@ -1867,7 +1867,7 @@ class _RecordingReconciler implements NoteReconciler {
   Future<List<ScanNotice>> recentScans({int limit = 20}) async => const [];
 
   @override
-  Future<void> dismissScan(int id) async {}
+  Future<void> dismissScans(List<int> ids) async {}
 
   @override
   Future<void> dismissScansThrough(int id) async {}

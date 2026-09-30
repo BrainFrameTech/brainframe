@@ -217,8 +217,9 @@ foreach ($f in @('.pre-commit-config.yaml', '.markdownlint-cli2.jsonc')) {
 }
 
 # ---- 7. wire the git hooks ----------------------------------------------
-# pre-commit stage: markdownlint + flutter analyze. pre-push stage: the
-# coverage gate (flutter test --coverage + coverde 90% threshold).
+# pre-commit stage: markdownlint, dart format, flutter analyze, the l10n gate.
+# pre-push stage: the coverage gate (flutter test --coverage + coverde 90%
+# threshold).
 # Resolve the real hooks dir: honor core.hooksPath if set, else the git-common
 # dir — `git rev-parse` gets this right inside a worktree, where .git is a file
 # rather than a directory and a literal ".git\hooks" path would not resolve.
@@ -250,6 +251,29 @@ if (Test-Cmd pre-commit) {
             Write-Fail 'pre-commit install failed.'
             Add-Problem
         }
+    }
+}
+
+# ---- 8. blame skips bulk reformats --------------------------------------
+# .git-blame-ignore-revs lists formatting-only commits. GitHub honors it on
+# its own; local `git blame` needs this per-clone setting. A warning rather
+# than a problem: blame without it is noisier, not wrong.
+$IgnoreRevs = (git config --get blame.ignoreRevsFile 2>$null)
+if ($IgnoreRevs -and $IgnoreRevs.Trim() -eq '.git-blame-ignore-revs') {
+    Write-Ok 'git blame skips the commits in .git-blame-ignore-revs'
+}
+elseif ($Check) {
+    Write-Warn 'git blame does not skip bulk reformats.'
+    Write-Hint 'git config blame.ignoreRevsFile .git-blame-ignore-revs'
+}
+else {
+    git config blame.ignoreRevsFile .git-blame-ignore-revs 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok 'git blame set to skip the commits in .git-blame-ignore-revs'
+    }
+    else {
+        Write-Warn 'could not set blame.ignoreRevsFile.'
+        Write-Hint 'git config blame.ignoreRevsFile .git-blame-ignore-revs'
     }
 }
 

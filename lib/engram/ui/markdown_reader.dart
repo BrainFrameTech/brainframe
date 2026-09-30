@@ -39,7 +39,9 @@ class MarkdownReader extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _centered(
-              context, AppLocalizations.of(context).readerOpenError(path));
+            context,
+            AppLocalizations.of(context).readerOpenError(path),
+          );
         }
         if (!snapshot.hasData) {
           return Center(

@@ -13,20 +13,22 @@ void main() {
   });
 
   EngramRepository repo() => EngramRepository(
-        preferences: SharedPreferencesAsync(),
-        containerPathResolver: () async => throw StateError('no container'),
-      );
+    preferences: SharedPreferencesAsync(),
+    containerPathResolver: () async => throw StateError('no container'),
+  );
 
-  Widget scoped(EngramRepository repository, void Function(EngramRepository) sink) =>
-      RepositoryScope(
-        repository: repository,
-        child: Builder(
-          builder: (context) {
-            sink(RepositoryScope.of(context));
-            return const SizedBox();
-          },
-        ),
-      );
+  Widget scoped(
+    EngramRepository repository,
+    void Function(EngramRepository) sink,
+  ) => RepositoryScope(
+    repository: repository,
+    child: Builder(
+      builder: (context) {
+        sink(RepositoryScope.of(context));
+        return const SizedBox();
+      },
+    ),
+  );
 
   testWidgets('of exposes the repository to descendants', (tester) async {
     final repository = repo();

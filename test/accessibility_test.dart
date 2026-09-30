@@ -6,7 +6,9 @@ import 'package:shared_preferences_platform_interface/in_memory_shared_preferenc
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 void main() {
-  testWidgets('Home screen meets core accessibility guidelines', (tester) async {
+  testWidgets('Home screen meets core accessibility guidelines', (
+    tester,
+  ) async {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     final handle = tester.ensureSemantics();
@@ -19,7 +21,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle(); // resolve the startup engram, then render home
+    await tester
+        .pumpAndSettle(); // resolve the startup engram, then render home
 
     // Interactive elements are large enough, carry labels, and text has
     // sufficient contrast against its background.

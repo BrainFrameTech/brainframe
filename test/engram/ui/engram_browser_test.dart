@@ -37,9 +37,9 @@ void main() {
   late Directory tempRoot;
 
   EngramRepository repo() => EngramRepository(
-        preferences: SharedPreferencesAsync(),
-        containerPathResolver: () async => '${tempRoot.path}/container',
-      );
+    preferences: SharedPreferencesAsync(),
+    containerPathResolver: () async => '${tempRoot.path}/container',
+  );
 
   Engram tutorial() =>
       builtInEngrams().firstWhere((e) => e.id == builtinTutorialId);
@@ -88,8 +88,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('wide layout shows no menu button; narrow shows one',
-      (tester) async {
+  testWidgets('wide layout shows no menu button; narrow shows one', (
+    tester,
+  ) async {
     setWidth(tester, 1000);
     await tester.pumpWidget(harness(repo()));
     await tester.pumpAndSettle();
@@ -101,30 +102,33 @@ void main() {
     expect(find.byTooltip('Open file browser'), findsOneWidget);
   });
 
-  testWidgets('the help action opens the peek overlay without switching engrams',
-      (tester) async {
-    setWidth(tester, 1000);
-    await tester.pumpWidget(harness(repo()));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'the help action opens the peek overlay without switching engrams',
+    (tester) async {
+      setWidth(tester, 1000);
+      await tester.pumpWidget(harness(repo()));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Help'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Help'));
+      await tester.pumpAndSettle();
 
-    // The help overlay is up, reading the help engram's index…
-    expect(find.text('index.md'), findsOneWidget);
-    expect(
-      find.textContaining('BrainFrame help', findRichText: true),
-      findsWidgets,
-    );
+      // The help overlay is up, reading the help engram's index…
+      expect(find.text('index.md'), findsOneWidget);
+      expect(
+        find.textContaining('BrainFrame help', findRichText: true),
+        findsWidgets,
+      );
 
-    await tester.tap(find.byTooltip('Close help'));
-    await tester.pumpAndSettle();
-    // …and the browser is still on the tutorial (footer unchanged).
-    expect(find.text('Tutorial'), findsOneWidget);
-  });
+      await tester.tap(find.byTooltip('Close help'));
+      await tester.pumpAndSettle();
+      // …and the browser is still on the tutorial (footer unchanged).
+      expect(find.text('Tutorial'), findsOneWidget);
+    },
+  );
 
-  testWidgets('on a phone, opening the drawer and picking a file reads it',
-      (tester) async {
+  testWidgets('on a phone, opening the drawer and picking a file reads it', (
+    tester,
+  ) async {
     setWidth(tester, 400);
     await tester.pumpWidget(harness(repo()));
     await tester.pumpAndSettle();
@@ -158,7 +162,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('notes/first-note.md'), findsOneWidget);
-    expect(find.byTooltip('Open file browser'), findsOneWidget, reason: 'closed');
+    expect(
+      find.byTooltip('Open file browser'),
+      findsOneWidget,
+      reason: 'closed',
+    );
   });
 
   testWidgets('selecting another file asks the registry first', (tester) async {
@@ -202,8 +210,9 @@ void main() {
     expect(find.text('notes/first-note.md'), findsOneWidget);
   });
 
-  testWidgets('wide layout renders the reader content top-aligned',
-      (tester) async {
+  testWidgets('wide layout renders the reader content top-aligned', (
+    tester,
+  ) async {
     // A tall window makes vertical centering obvious if it regresses.
     tester.view.physicalSize = const Size(1200, 1200);
     tester.view.devicePixelRatio = 1.0;
@@ -221,12 +230,16 @@ void main() {
       matching: find.text('welcome.md'),
     );
     expect(breadcrumb, findsOneWidget);
-    expect(tester.getTopLeft(breadcrumb).dy, lessThan(200),
-        reason: 'reader content should be top-aligned, not vertically centered');
+    expect(
+      tester.getTopLeft(breadcrumb).dy,
+      lessThan(200),
+      reason: 'reader content should be top-aligned, not vertically centered',
+    );
   });
 
-  testWidgets('hides dotfiles and dot-directories from the tree',
-      (tester) async {
+  testWidgets('hides dotfiles and dot-directories from the tree', (
+    tester,
+  ) async {
     setWidth(tester, 1000);
     final engram = Engram(
       id: 'dotty',
@@ -246,12 +259,13 @@ void main() {
   // The resize handle sits at the sidebar's right edge, so its left x-offset
   // equals the current sidebar width.
   Finder resizeHandle() => find.byWidgetPredicate(
-        (w) => w is Semantics && w.properties.label == 'Resize file browser',
-        description: 'sidebar resize handle',
-      );
+    (w) => w is Semantics && w.properties.label == 'Resize file browser',
+    description: 'sidebar resize handle',
+  );
 
-  testWidgets('the resize divider appears only in the side-by-side layout',
-      (tester) async {
+  testWidgets('the resize divider appears only in the side-by-side layout', (
+    tester,
+  ) async {
     setWidth(tester, 1000); // wide
     await tester.pumpWidget(harness(repo()));
     await tester.pumpAndSettle();
@@ -263,8 +277,9 @@ void main() {
     expect(resizeHandle(), findsNothing);
   });
 
-  testWidgets('dragging the divider resizes the sidebar and saves the width',
-      (tester) async {
+  testWidgets('dragging the divider resizes the sidebar and saves the width', (
+    tester,
+  ) async {
     setWidth(tester, 1000);
     await tester.pumpWidget(harness(repo()));
     await tester.pumpAndSettle();
@@ -295,38 +310,40 @@ void main() {
   });
 
   testWidgets(
-      'collapsing a folder persists to device state and restores on relaunch',
-      (tester) async {
-    setWidth(tester, 1000);
-    final engram = Engram(
-      id: 'dotty',
-      displayName: 'Dotty',
-      readOnly: false,
-      store: _DotStore(),
-    );
+    'collapsing a folder persists to device state and restores on relaunch',
+    (tester) async {
+      setWidth(tester, 1000);
+      final engram = Engram(
+        id: 'dotty',
+        displayName: 'Dotty',
+        readOnly: false,
+        store: _DotStore(),
+      );
 
-    await tester.pumpWidget(harnessFor(repo(), engram));
-    await tester.pumpAndSettle();
-    expect(find.text('first.md'), findsOneWidget); // starts expanded
+      await tester.pumpWidget(harnessFor(repo(), engram));
+      await tester.pumpAndSettle();
+      expect(find.text('first.md'), findsOneWidget); // starts expanded
 
-    await tester.tap(find.text('notes'));
-    await tester.pumpAndSettle();
-    expect(find.text('first.md'), findsNothing); // collapsed live
+      await tester.tap(find.text('notes'));
+      await tester.pumpAndSettle();
+      expect(find.text('first.md'), findsNothing); // collapsed live
 
-    // Saved to device-local preferences, keyed by engram id — not to the store.
-    final prefs = BrowserPreferences(SharedPreferencesAsync());
-    expect(await prefs.collapsedFolders('dotty'), {'notes'});
+      // Saved to device-local preferences, keyed by engram id — not to the store.
+      final prefs = BrowserPreferences(SharedPreferencesAsync());
+      expect(await prefs.collapsedFolders('dotty'), {'notes'});
 
-    // Tear the tree down, then rebuild fresh so state must come from prefs.
-    await tester.pumpWidget(const SizedBox());
-    await tester.pumpWidget(harnessFor(repo(), engram));
-    await tester.pumpAndSettle();
-    expect(find.text('notes'), findsOneWidget);
-    expect(find.text('first.md'), findsNothing); // restored collapsed
-  });
+      // Tear the tree down, then rebuild fresh so state must come from prefs.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(harnessFor(repo(), engram));
+      await tester.pumpAndSettle();
+      expect(find.text('notes'), findsOneWidget);
+      expect(find.text('first.md'), findsNothing); // restored collapsed
+    },
+  );
 
-  testWidgets('the resize handle is an operable slider for assistive tech',
-      (tester) async {
+  testWidgets('the resize handle is an operable slider for assistive tech', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     setWidth(tester, 1000);
     await tester.pumpWidget(harness(repo()));
@@ -369,7 +386,10 @@ void main() {
     // Focus the handle, then nudge it wider with the right arrow key. The
     // handle's FocusNode is reachable via Focus.of from a context beneath it.
     final gestureContext = tester.element(
-      find.descendant(of: resizeHandle(), matching: find.byType(GestureDetector)),
+      find.descendant(
+        of: resizeHandle(),
+        matching: find.byType(GestureDetector),
+      ),
     );
     final before = tester.getTopLeft(resizeHandle()).dx;
     Focus.of(gestureContext).requestFocus();
@@ -381,19 +401,24 @@ void main() {
   });
 
   group('editing gate', () {
-    testWidgets('a read-only engram shows the reader with no edit affordances',
-        (tester) async {
-      setWidth(tester, 1000);
-      await tester.pumpWidget(harness(repo())); // tutorial: read-only asset engram
-      await tester.pumpAndSettle();
+    testWidgets(
+      'a read-only engram shows the reader with no edit affordances',
+      (tester) async {
+        setWidth(tester, 1000);
+        await tester.pumpWidget(
+          harness(repo()),
+        ); // tutorial: read-only asset engram
+        await tester.pumpAndSettle();
 
-      expect(find.byType(MarkdownReader), findsOneWidget);
-      expect(find.byType(MarkdownEditorPane), findsNothing);
-      expect(find.text('Edit'), findsNothing);
-    });
+        expect(find.byType(MarkdownReader), findsOneWidget);
+        expect(find.byType(MarkdownEditorPane), findsNothing);
+        expect(find.text('Edit'), findsNothing);
+      },
+    );
 
-    testWidgets('a writable engram opens the editor and saves edits',
-        (tester) async {
+    testWidgets('a writable engram opens the editor and saves edits', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       final store = _RwStore({'welcome.md': '# Welcome'});
       final engram = Engram(
@@ -427,15 +452,12 @@ void main() {
   });
 
   group('last-opened note (per-engram tier)', () {
-    Engram engramFor(_RwStore store) => Engram(
-          id: 'w',
-          displayName: 'W',
-          readOnly: false,
-          store: store,
-        );
+    Engram engramFor(_RwStore store) =>
+        Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
 
-    testWidgets('restores the stored note on open, over the index default',
-        (tester) async {
+    testWidgets('restores the stored note on open, over the index default', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       final store = _RwStore({'index.md': '# Index', 'other.md': '# Other'})
         ..settings = {'lastOpenedNote': 'other.md'};
@@ -454,8 +476,9 @@ void main() {
       );
     });
 
-    testWidgets('persists the note into the engram when one is opened',
-        (tester) async {
+    testWidgets('persists the note into the engram when one is opened', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       final store = _RwStore({'index.md': '# Index', 'other.md': '# Other'});
 
@@ -468,8 +491,9 @@ void main() {
       expect(store.settings?['lastOpenedNote'], 'other.md');
     });
 
-    testWidgets('a stored note deleted while closed falls back gracefully',
-        (tester) async {
+    testWidgets('a stored note deleted while closed falls back gracefully', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       // Last session recorded 'gone.md', but it was deleted while BrainFrame
       // was closed, so it no longer appears in the engram's listing.
@@ -492,15 +516,12 @@ void main() {
   });
 
   group('re-list seam (EngramBrowserController)', () {
-    Engram engramFor(EngramStore store) => Engram(
-          id: 'w',
-          displayName: 'W',
-          readOnly: false,
-          store: store,
-        );
+    Engram engramFor(EngramStore store) =>
+        Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
 
-    testWidgets('refresh re-lists the engram and selects a new file',
-        (tester) async {
+    testWidgets('refresh re-lists the engram and selects a new file', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       final store = _RwStore({'welcome.md': '# Welcome'});
       final controller = EngramBrowserController();
@@ -517,13 +538,15 @@ void main() {
 
       // The new file is listed in the tree and is now the open selection.
       expect(find.text('new.md'), findsWidgets); // tree row
-      final pane =
-          tester.widget<MarkdownEditorPane>(find.byType(MarkdownEditorPane));
+      final pane = tester.widget<MarkdownEditorPane>(
+        find.byType(MarkdownEditorPane),
+      );
       expect(pane.path, 'notes/new.md');
     });
 
-    testWidgets('refresh after a delete falls back to a default selection',
-        (tester) async {
+    testWidgets('refresh after a delete falls back to a default selection', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       final store = _RwStore({'welcome.md': '# Welcome', 'note.md': '# Note'});
       final controller = EngramBrowserController();
@@ -573,7 +596,9 @@ void main() {
 
     // The dialog's field, distinct from the editor pane's own TextField.
     Finder dialogField() => find.descendant(
-        of: find.byType(Dialog), matching: find.byType(TextField));
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
 
     // Pump the browser over a writable [store]. The platform is forced Material
     // *before* pumping so the MaterialApp theme bakes it in and AlertDialog uses
@@ -600,8 +625,9 @@ void main() {
       expect(find.byTooltip('New note'), findsNothing);
     });
 
-    testWidgets('creates a note with a derived H1 and opens it in the editor',
-        (tester) async {
+    testWidgets('creates a note with a derived H1 and opens it in the editor', (
+      tester,
+    ) async {
       final store = _RwStore({}); // empty writable engram
       await pumpBrowser(tester, store);
 
@@ -611,8 +637,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(store.files['My Great Idea.md'], '# My Great Idea\n');
-      final pane =
-          tester.widget<MarkdownEditorPane>(find.byType(MarkdownEditorPane));
+      final pane = tester.widget<MarkdownEditorPane>(
+        find.byType(MarkdownEditorPane),
+      );
       expect(pane.path, 'My Great Idea.md');
     });
 
@@ -625,8 +652,10 @@ void main() {
       await tester.tap(find.text('Create'));
       await tester.pumpAndSettle();
 
-      expect(store.files['the-beginning-of-infinity.md'],
-          '# The Beginning Of Infinity\n');
+      expect(
+        store.files['the-beginning-of-infinity.md'],
+        '# The Beginning Of Infinity\n',
+      );
     });
 
     testWidgets('a blank name falls back to Untitled', (tester) async {
@@ -653,8 +682,9 @@ void main() {
       expect(store.files['Note 2.md'], '# Note 2\n');
     });
 
-    testWidgets('submitting from the keyboard creates the note',
-        (tester) async {
+    testWidgets('submitting from the keyboard creates the note', (
+      tester,
+    ) async {
       final store = _RwStore({});
       await pumpBrowser(tester, store);
 
@@ -686,7 +716,9 @@ void main() {
         Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
 
     Finder dialogField() => find.descendant(
-        of: find.byType(Dialog), matching: find.byType(TextField));
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
 
     Future<void> pumpBrowser(WidgetTester tester, EngramStore store) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
@@ -702,15 +734,18 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
 
-    testWidgets('a read-only engram shows no New folder action', (tester) async {
+    testWidgets('a read-only engram shows no New folder action', (
+      tester,
+    ) async {
       setWidth(tester, 1000);
       await tester.pumpWidget(harness(repo())); // tutorial: read-only
       await tester.pumpAndSettle();
       expect(find.byTooltip('New folder'), findsNothing);
     });
 
-    testWidgets('an empty folder from listDirectories shows in the tree',
-        (tester) async {
+    testWidgets('an empty folder from listDirectories shows in the tree', (
+      tester,
+    ) async {
       final store = _RwStore({'welcome.md': '# W'}, directories: {'ideas'});
       await pumpBrowser(tester, store);
 
@@ -718,8 +753,9 @@ void main() {
       expect(find.text('ideas'), findsOneWidget);
     });
 
-    testWidgets('creates an empty folder that appears in the tree',
-        (tester) async {
+    testWidgets('creates an empty folder that appears in the tree', (
+      tester,
+    ) async {
       final store = _RwStore({});
       await pumpBrowser(tester, store);
 
@@ -764,7 +800,9 @@ void main() {
         Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
 
     Finder dialogField() => find.descendant(
-        of: find.byType(Dialog), matching: find.byType(TextField));
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
 
     Future<void> pumpBrowser(WidgetTester tester, EngramStore store) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
@@ -791,8 +829,9 @@ void main() {
       expect(find.byIcon(Icons.more_vert), findsNothing);
     });
 
-    testWidgets('renames a file, keeping its extension and selection',
-        (tester) async {
+    testWidgets('renames a file, keeping its extension and selection', (
+      tester,
+    ) async {
       final store = _RwStore({'welcome.md': '# W'});
       await pumpBrowser(tester, store);
 
@@ -803,8 +842,9 @@ void main() {
 
       expect(store.files.containsKey('welcome.md'), isFalse);
       expect(store.files['intro.md'], '# W');
-      final pane =
-          tester.widget<MarkdownEditorPane>(find.byType(MarkdownEditorPane));
+      final pane = tester.widget<MarkdownEditorPane>(
+        find.byType(MarkdownEditorPane),
+      );
       expect(pane.path, 'intro.md'); // still selected under the new name
     });
 
@@ -827,13 +867,15 @@ void main() {
 
       expect(store.files.containsKey('notes/a.md'), isFalse);
       expect(store.files['ideas/a.md'], '# A');
-      final pane =
-          tester.widget<MarkdownEditorPane>(find.byType(MarkdownEditorPane));
+      final pane = tester.widget<MarkdownEditorPane>(
+        find.byType(MarkdownEditorPane),
+      );
       expect(pane.path, 'ideas/a.md'); // selection remapped into the new folder
     });
 
-    testWidgets('a folder rename avoids colliding with a sibling folder',
-        (tester) async {
+    testWidgets('a folder rename avoids colliding with a sibling folder', (
+      tester,
+    ) async {
       final store = _RwStore({}, directories: {'notes', 'ideas'});
       await pumpBrowser(tester, store);
 
@@ -846,7 +888,9 @@ void main() {
       expect(store.dirs, contains('ideas 2'));
     });
 
-    testWidgets('a file rename avoids colliding with a sibling', (tester) async {
+    testWidgets('a file rename avoids colliding with a sibling', (
+      tester,
+    ) async {
       final store = _RwStore({'welcome.md': '# W', 'intro.md': '# I'});
       await pumpBrowser(tester, store);
 
@@ -937,8 +981,9 @@ void main() {
       expect(store.dirs.contains('notes'), isFalse);
     });
 
-    testWidgets('deleting the open file falls back to another selection',
-        (tester) async {
+    testWidgets('deleting the open file falls back to another selection', (
+      tester,
+    ) async {
       final store = _RwStore({'welcome.md': '# W', 'other.md': '# O'});
       await pumpBrowser(tester, store);
 
@@ -971,7 +1016,9 @@ void main() {
         Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
 
     Finder dialogField() => find.descendant(
-        of: find.byType(Dialog), matching: find.byType(TextField));
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
 
     Future<void> pumpBrowser(WidgetTester tester, EngramStore store) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
@@ -984,15 +1031,18 @@ void main() {
     // Open the folder row's "⋯" menu and choose a create-here item, landing on
     // the name dialog.
     Future<void> chooseCreate(WidgetTester tester, String item) async {
-      await tester.tap(find.byIcon(Icons.more_vert).first); // the folder (row 0)
+      await tester.tap(
+        find.byIcon(Icons.more_vert).first,
+      ); // the folder (row 0)
       await tester.pumpAndSettle();
       await tester.tap(find.text(item)); // "New note" / "New folder" menu item
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300)); // dialog transition
     }
 
-    testWidgets('New note inside a folder creates and opens it there',
-        (tester) async {
+    testWidgets('New note inside a folder creates and opens it there', (
+      tester,
+    ) async {
       final store = _RwStore({'notes/a.md': '# A'}, directories: {'notes'});
       await pumpBrowser(tester, store);
 
@@ -1020,8 +1070,9 @@ void main() {
       expect(store.dirs, contains('notes/Sub'));
     });
 
-    testWidgets('a new note inside a folder avoids colliding with a sibling',
-        (tester) async {
+    testWidgets('a new note inside a folder avoids colliding with a sibling', (
+      tester,
+    ) async {
       final store = _RwStore(
         {'notes/Idea.md': '# Idea'},
         directories: {'notes'},
@@ -1062,8 +1113,12 @@ void main() {
 
     // Tap a destination inside the picker dialog (disambiguated from the tree).
     Future<void> pickAndConfirm(WidgetTester tester, String folderLabel) async {
-      await tester.tap(find.descendant(
-          of: find.byType(Dialog), matching: find.text(folderLabel)));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.text(folderLabel),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Move'));
       await tester.pumpAndSettle();
@@ -1115,8 +1170,9 @@ void main() {
       expect(store.files['archive/welcome.md'], '# Old'); // untouched
     });
 
-    testWidgets('a folder cannot be moved into itself or a descendant',
-        (tester) async {
+    testWidgets('a folder cannot be moved into itself or a descendant', (
+      tester,
+    ) async {
       final store = _RwStore(
         {'notes/sub/a.md': '# A'},
         directories: {'notes', 'notes/sub'},
@@ -1134,8 +1190,9 @@ void main() {
       expect(find.text('No other folder to move to.'), findsOneWidget);
     });
 
-    testWidgets('moving the open file keeps it selected at its new path',
-        (tester) async {
+    testWidgets('moving the open file keeps it selected at its new path', (
+      tester,
+    ) async {
       final store = _RwStore(
         {'welcome.md': '# W', 'zeta.md': '# Z', 'archive/x.md': '# X'},
         directories: {'archive'},
@@ -1192,15 +1249,12 @@ void main() {
 
     /// The file's row in the tree — its name also appears in the app bar when
     /// it is the open file.
-    Finder treeRow(String name) => find.descendant(
-      of: find.byType(FileTree),
-      matching: find.text(name),
-    );
+    Finder treeRow(String name) =>
+        find.descendant(of: find.byType(FileTree), matching: find.text(name));
 
     // 'a-root.md' sorts first, so it is the default selection and the folder
     // has to be opened deliberately.
-    _RwStore twoLevels() =>
-        _RwStore({'a-root.md': '# R', 'notes/b.md': '# B'});
+    _RwStore twoLevels() => _RwStore({'a-root.md': '# R', 'notes/b.md': '# B'});
 
     testWidgets('a new note lands in the open file\'s folder', (tester) async {
       final store = twoLevels();
@@ -1248,10 +1302,12 @@ void main() {
       await pumpBrowser(tester, store);
 
       await tester.tap(
-        find.descendant(
-          of: find.byType(FileTree),
-          matching: find.byIcon(Icons.more_vert),
-        ).at(0),
+        find
+            .descendant(
+              of: find.byType(FileTree),
+              matching: find.byIcon(Icons.more_vert),
+            )
+            .at(0),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('New note').last);
@@ -1272,7 +1328,9 @@ void main() {
         Engram(id: 'w', displayName: 'W', readOnly: false, store: store);
 
     Finder dialogField() => find.descendant(
-        of: find.byType(Dialog), matching: find.byType(TextField));
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
 
     Future<_RecordingReconciler> pumpBrowser(
       WidgetTester tester,
@@ -1339,9 +1397,7 @@ void main() {
       final reconciler = await pumpBrowser(tester, store);
       store.files['quiet.md'] = '# Unannounced';
 
-      reconciler.finishScan(
-        const DriftScanReport(reconciled: ['welcome.md']),
-      );
+      reconciler.finishScan(const DriftScanReport(reconciled: ['welcome.md']));
       await tester.pumpAndSettle();
       reconciler.finishScan(DriftScanReport.clean);
       await tester.pumpAndSettle();
@@ -1397,8 +1453,9 @@ void main() {
       expect(reconciler.log, contains('moved welcome.md -> intro.md'));
     });
 
-    testWidgets('a renamed folder reports every note inside it',
-        (tester) async {
+    testWidgets('a renamed folder reports every note inside it', (
+      tester,
+    ) async {
       final store = _RwStore(
         {'notes/a.md': '# A', 'notes/sub/b.md': '# B'},
         directories: {'notes', 'notes/sub'},
@@ -1430,8 +1487,9 @@ void main() {
       expect(reconciler.log, contains('deleted welcome.md'));
     });
 
-    testWidgets('a deleted folder reports every note inside it',
-        (tester) async {
+    testWidgets('a deleted folder reports every note inside it', (
+      tester,
+    ) async {
       final store = _RwStore(
         {'notes/a.md': '# A', 'notes/b.md': '# B', 'keep.md': '# K'},
         directories: {'notes'},
@@ -1448,8 +1506,9 @@ void main() {
       );
     });
 
-    testWidgets('the sidebar shows adoption progress while the scan adopts',
-        (tester) async {
+    testWidgets('the sidebar shows adoption progress while the scan adopts', (
+      tester,
+    ) async {
       final store = _RwStore({'welcome.md': '# W'});
       final reconciler = await pumpBrowser(tester, store);
       expect(find.byType(LinearProgressIndicator), findsNothing);
@@ -1473,13 +1532,20 @@ void main() {
       final reconciler = await pumpBrowser(tester, store);
 
       await rowAction(tester, 'Move', row: 2); // welcome.md
-      await tester.tap(find.descendant(
-          of: find.byType(Dialog), matching: find.text('archive')));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.text('archive'),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Move'));
       await tester.pumpAndSettle();
 
-      expect(reconciler.log, contains('moved welcome.md -> archive/welcome.md'));
+      expect(
+        reconciler.log,
+        contains('moved welcome.md -> archive/welcome.md'),
+      );
     });
   });
 
@@ -1523,8 +1589,9 @@ void main() {
       expect(button().isSelected, isFalse);
     });
 
-    testWidgets('is absent when nothing on screen can be searched',
-        (tester) async {
+    testWidgets('is absent when nothing on screen can be searched', (
+      tester,
+    ) async {
       final commands = AppCommands();
       addTearDown(commands.dispose);
       setWidth(tester, 1000);
@@ -1593,10 +1660,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.descendant(
-          of: find.byType(FileTree),
-          matching: find.text('a.md'),
-        ),
+        find.descendant(of: find.byType(FileTree), matching: find.text('a.md')),
       );
       await tester.pumpAndSettle();
 
@@ -1646,7 +1710,7 @@ void main() {
 /// [listDirectories] like the filesystem backend.
 class _RwStore extends EngramStore {
   _RwStore(this.files, {Set<String>? directories})
-      : dirs = directories ?? <String>{};
+    : dirs = directories ?? <String>{};
   final Map<String, String> files;
   final Set<String> dirs;
 
@@ -1692,7 +1756,8 @@ class _RwStore extends EngramStore {
   Future<Map<String, Object?>?> readSettings() async => settings;
 
   @override
-  Future<void> writeSettings(Map<String, Object?> next) async => settings = next;
+  Future<void> writeSettings(Map<String, Object?> next) async =>
+      settings = next;
 
   void _registerParents(String path) {
     final segments = path.split('/');
@@ -1706,11 +1771,11 @@ class _RwStore extends EngramStore {
 class _DotStore extends EngramStore {
   @override
   Future<List<String>> list() async => [
-        'welcome.md',
-        '.hidden.md',
-        '.git/config',
-        'notes/first.md',
-      ];
+    'welcome.md',
+    '.hidden.md',
+    '.git/config',
+    'notes/first.md',
+  ];
 
   @override
   Future<Uint8List> readBytes(String path) async =>
@@ -1749,15 +1814,16 @@ class _FakeSession implements CrdtSession {
 
 class _InertWriter implements NoteWriter {
   @override
-  Future<String> write(String path, String text, {String? base}) async =>
-      text;
+  Future<String> write(String path, String text, {String? base}) async => text;
 }
 
 class _RecordingReconciler implements NoteReconciler {
   final List<String> log = [];
 
   @override
-  Future<DriftScanReport> scan({ScanTrigger trigger = ScanTrigger.manual}) async => DriftScanReport.clean;
+  Future<DriftScanReport> scan({
+    ScanTrigger trigger = ScanTrigger.manual,
+  }) async => DriftScanReport.clean;
 
   @override
   Future<bool> reconcile(String path) async => false;

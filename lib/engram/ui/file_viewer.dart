@@ -13,7 +13,14 @@ import 'markdown_reader.dart';
 
 /// Image extensions Flutter decodes natively via [Image.memory] — no extra
 /// dependency. Lower-case, without the leading dot.
-const Set<String> imageExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'};
+const Set<String> imageExtensions = {
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+};
 
 /// Extensions rendered by [MarkdownReader]. Plain text (`.txt`) is included
 /// because Markdown is a superset of plain text — a `.txt` file is already
@@ -152,8 +159,10 @@ class _ImageFileViewerState extends State<ImageFileViewer> {
         final l10n = AppLocalizations.of(context);
         if (snapshot.hasError) {
           return Center(
-            child: Text(l10n.readerOpenError(widget.path),
-                textAlign: TextAlign.center),
+            child: Text(
+              l10n.readerOpenError(widget.path),
+              textAlign: TextAlign.center,
+            ),
           );
         }
         if (!snapshot.hasData) {
@@ -181,7 +190,8 @@ class _ImageFileViewerState extends State<ImageFileViewer> {
               Expanded(child: FilePathBreadcrumb(path: widget.path)),
               IconButton(
                 icon: Icon(
-                    _actualSize ? Icons.fullscreen_exit : Icons.fullscreen),
+                  _actualSize ? Icons.fullscreen_exit : Icons.fullscreen,
+                ),
                 tooltip: _actualSize
                     ? l10n.viewerImageFitToWindow
                     : l10n.viewerImageActualSize,
@@ -205,10 +215,8 @@ class _ImageFileViewerState extends State<ImageFileViewer> {
       // scroll views handle any overflow.
       fit: _actualSize ? null : BoxFit.contain,
       semanticLabel: l10n.viewerImageLabel(_fileName(widget.path)),
-      errorBuilder: (context, error, stack) => Text(
-        l10n.readerOpenError(widget.path),
-        textAlign: TextAlign.center,
-      ),
+      errorBuilder: (context, error, stack) =>
+          Text(l10n.readerOpenError(widget.path), textAlign: TextAlign.center),
     );
     if (!_actualSize) return Center(child: image);
 

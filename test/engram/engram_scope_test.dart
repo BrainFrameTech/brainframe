@@ -51,23 +51,28 @@ class _EngramProbe extends StatelessWidget {
 }
 
 void main() {
-  testWidgets('maybeOf returns null without a scope; of exposes the engram',
-      (tester) async {
+  testWidgets('maybeOf returns null without a scope; of exposes the engram', (
+    tester,
+  ) async {
     EngramScopeData? seen;
     late bool sawNullOutside;
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Builder(builder: (context) {
-          sawNullOutside = EngramScope.maybeOf(context) == null;
-          return EngramScope(
-            initialEngram: _engram('a', _RecordingStore()),
-            child: Builder(builder: (context) {
-              seen = EngramScope.of(context);
-              return const SizedBox.shrink();
-            }),
-          );
-        }),
+        home: Builder(
+          builder: (context) {
+            sawNullOutside = EngramScope.maybeOf(context) == null;
+            return EngramScope(
+              initialEngram: _engram('a', _RecordingStore()),
+              child: Builder(
+                builder: (context) {
+                  seen = EngramScope.of(context);
+                  return const SizedBox.shrink();
+                },
+              ),
+            );
+          },
+        ),
       ),
     );
 
@@ -76,8 +81,9 @@ void main() {
     expect(seen!.engram.id, 'a');
   });
 
-  testWidgets('switching swaps the active engram and releases the old store',
-      (tester) async {
+  testWidgets('switching swaps the active engram and releases the old store', (
+    tester,
+  ) async {
     final storeA = _RecordingStore();
     final storeB = _RecordingStore();
     final b = _engram('b', storeB);
@@ -153,7 +159,9 @@ void main() {
     expect(find.text('active: b'), findsOneWidget);
   });
 
-  testWidgets('switching to the already-active engram is a no-op', (tester) async {
+  testWidgets('switching to the already-active engram is a no-op', (
+    tester,
+  ) async {
     final store = _RecordingStore();
     final same = _engram('a', store);
 
@@ -173,8 +181,9 @@ void main() {
     expect(store.releaseCount, 0); // nothing was switched away from
   });
 
-  testWidgets('onSwitched fires with the new engram after a switch',
-      (tester) async {
+  testWidgets('onSwitched fires with the new engram after a switch', (
+    tester,
+  ) async {
     final switched = <String>[];
     final b = _engram('b', _RecordingStore());
 
@@ -194,8 +203,9 @@ void main() {
     expect(switched, ['b']);
   });
 
-  testWidgets('the active store is released when the scope is torn down',
-      (tester) async {
+  testWidgets('the active store is released when the scope is torn down', (
+    tester,
+  ) async {
     final store = _RecordingStore();
 
     await tester.pumpWidget(
@@ -215,8 +225,9 @@ void main() {
   });
 
   group('updateActive', () {
-    testWidgets('replaces the engram in place without releasing its store',
-        (tester) async {
+    testWidgets('replaces the engram in place without releasing its store', (
+      tester,
+    ) async {
       final store = _RecordingStore();
       final engram = _engram('a', store);
       late EngramScopeData scope;
@@ -309,8 +320,9 @@ void main() {
   });
 
   group('EngramScopeProxy', () {
-    testWidgets('a captured scope is readable inside a detached subtree',
-        (tester) async {
+    testWidgets('a captured scope is readable inside a detached subtree', (
+      tester,
+    ) async {
       // A pushed route is the scope's sibling, not its descendant, so without
       // the proxy `EngramScope.of` finds nothing there at all.
       final engram = _engram('a', _RecordingStore());
@@ -335,9 +347,8 @@ void main() {
           home: EngramScopeProxy(
             source: captured,
             child: Builder(
-              builder: (context) => Text(
-                'inside: ${EngramScope.of(context).engram.displayName}',
-              ),
+              builder: (context) =>
+                  Text('inside: ${EngramScope.of(context).engram.displayName}'),
             ),
           ),
         ),
@@ -346,8 +357,9 @@ void main() {
       expect(find.text('inside: a'), findsOneWidget);
     });
 
-    testWidgets('a rename through the proxy updates it and the real scope',
-        (tester) async {
+    testWidgets('a rename through the proxy updates it and the real scope', (
+      tester,
+    ) async {
       final engram = _engram('a', _RecordingStore());
       late EngramScopeData inner;
 
@@ -368,9 +380,7 @@ void main() {
                       child: Builder(
                         builder: (context) {
                           inner = EngramScope.of(context);
-                          return Text(
-                            'inside: ${inner.engram.displayName}',
-                          );
+                          return Text('inside: ${inner.engram.displayName}');
                         },
                       ),
                     ),
@@ -435,8 +445,9 @@ void main() {
       expect(find.text('below: a'), findsOneWidget);
     });
 
-    testWidgets('a switch through the proxy reaches the real scope',
-        (tester) async {
+    testWidgets('a switch through the proxy reaches the real scope', (
+      tester,
+    ) async {
       final engram = _engram('a', _RecordingStore());
       final other = _engram('b', _RecordingStore());
       late EngramScopeData inner;
@@ -474,7 +485,6 @@ void main() {
       expect(find.text('below: b'), findsOneWidget);
     });
   });
-
 }
 
 class _RootBuildCounter extends StatefulWidget {

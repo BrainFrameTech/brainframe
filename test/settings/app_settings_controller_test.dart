@@ -29,11 +29,15 @@ class _FakeStore extends EngramStore {
   @override
   Future<Map<String, Object?>?> readSettings() async => settings;
   @override
-  Future<void> writeSettings(Map<String, Object?> next) async => settings = next;
+  Future<void> writeSettings(Map<String, Object?> next) async =>
+      settings = next;
 }
 
-Engram _engram(String id, {required bool readOnly, required EngramStore store}) =>
-    Engram(id: id, displayName: id, readOnly: readOnly, store: store);
+Engram _engram(
+  String id, {
+  required bool readOnly,
+  required EngramStore store,
+}) => Engram(id: id, displayName: id, readOnly: readOnly, store: store);
 
 void main() {
   test('with no active engram, theme is the device default', () async {
@@ -95,18 +99,20 @@ void main() {
     expect(controller.engramThemeChoice, EngramThemeChoice.followDefault);
   });
 
-  test('resetWindowAndLayout clears the device window + sidebar settings',
-      () async {
-    final device = _MapBackend()
-      ..values['window.state'] = {'width': 900}
-      ..values['ui.sidebarWidth'] = 300.0;
-    final controller = AppSettingsController(device: device);
+  test(
+    'resetWindowAndLayout clears the device window + sidebar settings',
+    () async {
+      final device = _MapBackend()
+        ..values['window.state'] = {'width': 900}
+        ..values['ui.sidebarWidth'] = 300.0;
+      final controller = AppSettingsController(device: device);
 
-    await controller.resetWindowAndLayout();
+      await controller.resetWindowAndLayout();
 
-    expect(device.values['window.state'], isNull);
-    expect(device.values['ui.sidebarWidth'], isNull);
-  });
+      expect(device.values['window.state'], isNull);
+      expect(device.values['ui.sidebarWidth'], isNull);
+    },
+  );
 
   test('switching engrams reloads the override', () async {
     final controller = AppSettingsController(device: _MapBackend());

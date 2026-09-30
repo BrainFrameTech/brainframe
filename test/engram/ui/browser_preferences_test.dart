@@ -28,21 +28,23 @@ void main() {
 
     test('round-trips a set of folder paths', () async {
       await prefs.setCollapsedFolders('engram-a', {'notes', 'notes/drafts'});
-      expect(
-        await prefs.collapsedFolders('engram-a'),
-        {'notes', 'notes/drafts'},
-      );
+      expect(await prefs.collapsedFolders('engram-a'), {
+        'notes',
+        'notes/drafts',
+      });
     });
 
-    test('is keyed per engram — one engram does not leak into another',
-        () async {
-      await prefs.setCollapsedFolders('engram-a', {'notes'});
-      expect(await prefs.collapsedFolders('engram-b'), isEmpty);
+    test(
+      'is keyed per engram — one engram does not leak into another',
+      () async {
+        await prefs.setCollapsedFolders('engram-a', {'notes'});
+        expect(await prefs.collapsedFolders('engram-b'), isEmpty);
 
-      await prefs.setCollapsedFolders('engram-b', {'archive'});
-      expect(await prefs.collapsedFolders('engram-a'), {'notes'});
-      expect(await prefs.collapsedFolders('engram-b'), {'archive'});
-    });
+        await prefs.setCollapsedFolders('engram-b', {'archive'});
+        expect(await prefs.collapsedFolders('engram-a'), {'notes'});
+        expect(await prefs.collapsedFolders('engram-b'), {'archive'});
+      },
+    );
 
     test('an emptied set clears back to empty', () async {
       await prefs.setCollapsedFolders('engram-a', {'notes'});

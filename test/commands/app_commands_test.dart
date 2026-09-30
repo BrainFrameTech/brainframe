@@ -32,11 +32,7 @@ void main() {
     expect(notifications, 1);
 
     commands.publish(newFolder: () {});
-    expect(
-      notifications,
-      2,
-      reason: 'newNote went away and newFolder arrived',
-    );
+    expect(notifications, 2, reason: 'newNote went away and newFolder arrived');
   });
 
   test('withdraw clears every command', () {

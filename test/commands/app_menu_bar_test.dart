@@ -80,10 +80,8 @@ void main() {
     return commands;
   }
 
-  MenuItemButton itemNamed(WidgetTester tester, String label) =>
-      tester.widget<MenuItemButton>(
-        find.widgetWithText(MenuItemButton, label).first,
-      );
+  MenuItemButton itemNamed(WidgetTester tester, String label) => tester
+      .widget<MenuItemButton>(find.widgetWithText(MenuItemButton, label).first);
 
   group('which menu bar each platform gets', () {
     testWidgets('Linux and Windows get the in-app strip', (tester) async {
@@ -139,10 +137,7 @@ void main() {
       var folders = 0;
       await tester.pumpWidget(
         harness(
-          publishedCommands(
-            newNote: () => notes++,
-            newFolder: () => folders++,
-          ),
+          publishedCommands(newNote: () => notes++, newFolder: () => folders++),
           platform: TargetPlatform.linux,
         ),
       );
@@ -256,7 +251,10 @@ void main() {
 
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
-      controller.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
+      controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 5,
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Edit'));
@@ -287,7 +285,10 @@ void main() {
 
       await tester.tap(find.byType(TextField), kind: PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
-      controller.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
+      controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 5,
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Edit'), kind: PointerDeviceKind.mouse);
@@ -303,7 +304,9 @@ void main() {
       expect(clipboard['text'], 'hello');
     });
 
-    testWidgets('Select all selects the field and shows Ctrl+A', (tester) async {
+    testWidgets('Select all selects the field and shows Ctrl+A', (
+      tester,
+    ) async {
       final controller = TextEditingController(text: 'hello world');
       addTearDown(controller.dispose);
       await tester.pumpWidget(withField(publishedCommands(), controller));
@@ -361,7 +364,10 @@ void main() {
 
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
-      controller.selection = const TextSelection(baseOffset: 0, extentOffset: 6);
+      controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 6,
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Edit'));
@@ -433,7 +439,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
-      controller.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
+      controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 5,
+      );
       await tester.pumpAndSettle();
 
       // A file-tree row, say, taking focus.
@@ -610,7 +619,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      harness(publishedCommands(newNote: () {}), platform: TargetPlatform.linux),
+      harness(
+        publishedCommands(newNote: () {}),
+        platform: TargetPlatform.linux,
+      ),
     );
     await tester.pumpAndSettle();
 

@@ -16,8 +16,7 @@ class AppTheme {
   /// BrainFrame brand indigo, used as the Material seed and Cupertino primary.
   static const Color seed = Color(0xFF4A4FBF);
 
-  static ThemeData get light =>
-      _material(Brightness.light, contrastLevel: 0.0);
+  static ThemeData get light => _material(Brightness.light, contrastLevel: 0.0);
 
   static ThemeData get dark => _material(Brightness.dark, contrastLevel: 0.0);
 

@@ -26,21 +26,21 @@ Widget _gate({
   required Future<Engram> Function() resolve,
   Future<void> Function(Engram)? onSwitched,
   Widget child = const SizedBox.shrink(),
-}) =>
-    localizedApp(
-      home: EngramStartupGate(
-        resolveInitialEngram: resolve,
-        onSwitched: onSwitched,
-        // No database in a widget test: a null session is the pre-step-9
-        // behaviour, and what the gate installs is what is under test here.
-        openSession: (_) async => null,
-        child: child,
-      ),
-    );
+}) => localizedApp(
+  home: EngramStartupGate(
+    resolveInitialEngram: resolve,
+    onSwitched: onSwitched,
+    // No database in a widget test: a null session is the pre-step-9
+    // behaviour, and what the gate installs is what is under test here.
+    openSession: (_) async => null,
+    child: child,
+  ),
+);
 
 void main() {
-  testWidgets('shows a progress indicator while the engram resolves',
-      (tester) async {
+  testWidgets('shows a progress indicator while the engram resolves', (
+    tester,
+  ) async {
     final pending = Completer<Engram>();
     await tester.pumpWidget(_gate(resolve: () => pending.future));
 
@@ -52,15 +52,19 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('installs an EngramScope with the resolved engram', (tester) async {
+  testWidgets('installs an EngramScope with the resolved engram', (
+    tester,
+  ) async {
     String? active;
     await tester.pumpWidget(
       _gate(
         resolve: () async => _engram('tutorial'),
-        child: Builder(builder: (context) {
-          active = EngramScope.of(context).engram.id;
-          return const SizedBox.shrink();
-        }),
+        child: Builder(
+          builder: (context) {
+            active = EngramScope.of(context).engram.id;
+            return const SizedBox.shrink();
+          },
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -78,8 +82,9 @@ void main() {
     expect(find.text('Could not open your engrams.'), findsOneWidget);
   });
 
-  testWidgets('runs startup resolution only once across rebuilds',
-      (tester) async {
+  testWidgets('runs startup resolution only once across rebuilds', (
+    tester,
+  ) async {
     var calls = 0;
     Future<Engram> resolve() async {
       calls++;

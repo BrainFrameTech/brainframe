@@ -8,18 +8,19 @@ import '../../support/localized_app.dart';
 void main() {
   // A button that opens the help overlay over the bundled help engram.
   Widget host() => localizedApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showHelpOverlay(context, builtInHelpEngram()),
-              child: const Text('open help'),
-            ),
-          ),
+    home: Scaffold(
+      body: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => showHelpOverlay(context, builtInHelpEngram()),
+          child: const Text('open help'),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('opens showing the help header and index content',
-      (tester) async {
+  testWidgets('opens showing the help header and index content', (
+    tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.tap(find.text('open help'));
     await tester.pumpAndSettle();

@@ -135,7 +135,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(LinearProgressIndicator), findsNothing);
-    expect(find.byType(AdoptFolderDialog), findsOneWidget, reason: 'the same one');
+    expect(
+      find.byType(AdoptFolderDialog),
+      findsOneWidget,
+      reason: 'the same one',
+    );
 
     await tester.tap(find.text('Adopt'));
     await tester.pumpAndSettle();

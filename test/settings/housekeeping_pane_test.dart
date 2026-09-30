@@ -131,15 +131,9 @@ void main() {
     expect(find.text('MISSING'), findsOneWidget); // badge, uppercased
   });
 
-  testWidgets('lost access is badged No access, never Missing', (
-    tester,
-  ) async {
+  testWidgets('lost access is badged No access, never Missing', (tester) async {
     engrams = [
-      _engram(
-        'a',
-        available: false,
-        reason: UnreachableReason.accessNeeded,
-      ),
+      _engram('a', available: false, reason: UnreachableReason.accessNeeded),
     ];
 
     await tester.pumpWidget(host());
@@ -343,10 +337,7 @@ void main() {
 
     for (final (kind, why) in [
       (WatchUnavailableKind.unsupported, 'this device cannot watch folders'),
-      (
-        WatchUnavailableKind.watchLimit,
-        'limit on watched folders is reached',
-      ),
+      (WatchUnavailableKind.watchLimit, 'limit on watched folders is reached'),
       (WatchUnavailableKind.failed, 'watching the folder failed'),
     ]) {
       testWidgets('off because ${kind.name}: says so, why, and what still '
@@ -595,9 +586,7 @@ void main() {
       expect(find.text('Dismiss all'), findsNothing);
     });
 
-    testWidgets('Dismiss all is not offered for a single scan', (
-      tester,
-    ) async {
+    testWidgets('Dismiss all is not offered for a single scan', (tester) async {
       final notes = _Notes.named(
         ledgerValue: const NoteLedger(
           peers: 1,
@@ -755,7 +744,10 @@ void main() {
       await tester.pumpWidget(host(engram: field, notes: notes));
       await tester.pumpAndSettle();
 
-      expect(find.text('1 created, 2 too large to keep history'), findsOneWidget);
+      expect(
+        find.text('1 created, 2 too large to keep history'),
+        findsOneWidget,
+      );
       expect(
         find.textContaining(
           'Larger than 131,072 bytes on arrival, so tracked as plain files '
@@ -764,8 +756,10 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.textContaining('2 notes are plain files: they were larger than '
-            '131,072 bytes when they arrived'),
+        find.textContaining(
+          '2 notes are plain files: they were larger than '
+          '131,072 bytes when they arrived',
+        ),
         findsOneWidget,
       );
     });
@@ -805,19 +799,25 @@ void main() {
 
       expect(find.text('1 made a plain file'), findsOneWidget);
       expect(
-        find.text('Made a plain file at your request, history dropped: '
-            'journal/2025.md.'),
+        find.text(
+          'Made a plain file at your request, history dropped: '
+          'journal/2025.md.',
+        ),
         findsOneWidget,
       );
       expect(find.text('2 made plain files on another device'), findsOneWidget);
       expect(
-        find.text('shared/big.md: made a plain file on another device, so 12 '
-            'edits of its history on this device are no longer reachable.'),
+        find.text(
+          'shared/big.md: made a plain file on another device, so 12 '
+          'edits of its history on this device are no longer reachable.',
+        ),
         findsOneWidget,
       );
       expect(
-        find.text('shared/other.md: made a plain file on another device, so '
-            'it keeps no history here either.'),
+        find.text(
+          'shared/other.md: made a plain file on another device, so '
+          'it keeps no history here either.',
+        ),
         findsOneWidget,
       );
     });
@@ -835,19 +835,25 @@ void main() {
           unclaimed: 0,
           tombstoned: 0,
         ),
-        pending: [const PendingNote(path: 'journal/2025.md', sizeBytes: 140206)],
+        pending: [
+          const PendingNote(path: 'journal/2025.md', sizeBytes: 140206),
+        ],
       );
       await tester.pumpWidget(host(engram: field, notes: notes));
       await tester.pumpAndSettle();
 
       expect(find.text('Awaiting your decision'), findsOneWidget);
       expect(
-        find.text('journal/2025.md is now 140,206 bytes; the limit is 131,072.'),
+        find.text(
+          'journal/2025.md is now 140,206 bytes; the limit is 131,072.',
+        ),
         findsOneWidget,
       );
       expect(
-        find.textContaining('keeps this larger file beside it as '
-            '“2025 (oversized).md”'),
+        find.textContaining(
+          'keeps this larger file beside it as '
+          '“2025 (oversized).md”',
+        ),
         findsOneWidget,
       );
       final reconstruct = find.widgetWithText(FilledButton, 'Reconstruct');
@@ -855,7 +861,10 @@ void main() {
         tester.getSemantics(reconstruct).label,
         contains('Reconstruct journal/2025.md'),
       );
-      final convert = find.widgetWithText(TextButton, 'Convert to a plain file');
+      final convert = find.widgetWithText(
+        TextButton,
+        'Convert to a plain file',
+      );
       expect(
         tester.getSemantics(convert).label,
         contains('Convert journal/2025.md to a plain file'),
@@ -888,7 +897,9 @@ void main() {
       expect(notes.reconstructed, ['a.md']);
       expect(find.byType(FilledButton), findsOneWidget, reason: 're-read');
 
-      await tester.tap(find.widgetWithText(TextButton, 'Convert to a plain file'));
+      await tester.tap(
+        find.widgetWithText(TextButton, 'Convert to a plain file'),
+      );
       await tester.pumpAndSettle();
 
       expect(notes.converted, ['b.md']);
@@ -909,7 +920,9 @@ void main() {
         scans: [
           ScanNotice(
             at: DateTime(2026, 9, 12, 14, 30),
-            report: const DriftScanReport(awaitingDecision: ['journal/2025.md']),
+            report: const DriftScanReport(
+              awaitingDecision: ['journal/2025.md'],
+            ),
           ),
           ScanNotice(
             at: DateTime(2026, 9, 12, 9, 5),
@@ -925,13 +938,17 @@ void main() {
 
       expect(find.text('1 awaiting a decision'), findsOneWidget);
       expect(
-        find.textContaining('read-only until you decide, above: journal/2025.md.'),
+        find.textContaining(
+          'read-only until you decide, above: journal/2025.md.',
+        ),
         findsOneWidget,
       );
       expect(find.text('1 reconstructed'), findsOneWidget);
       expect(
-        find.text('journal/2025.md was restored to the last version BrainFrame '
-            'saved; the larger file is kept as journal/2025 (oversized).md.'),
+        find.text(
+          'journal/2025.md was restored to the last version BrainFrame '
+          'saved; the larger file is kept as journal/2025 (oversized).md.',
+        ),
         findsOneWidget,
       );
     });
@@ -949,12 +966,16 @@ void main() {
 
       expect(find.text('Note size limit'), findsOneWidget);
       expect(
-        find.textContaining('Text notes up to 131,072 bytes keep their edit '
-            'history on this engram'),
+        find.textContaining(
+          'Text notes up to 131,072 bytes keep their edit '
+          'history on this engram',
+        ),
         findsOneWidget,
       );
-      expect(find.textContaining('can open notes up to 131,072 bytes'),
-          findsOneWidget);
+      expect(
+        find.textContaining('can open notes up to 131,072 bytes'),
+        findsOneWidget,
+      );
       expect(find.textContaining('Raise to'), findsNothing);
       expect(find.byType(OutlinedButton), findsNothing);
     });
@@ -964,21 +985,21 @@ void main() {
     ) async {
       final notes = _Notes.named(ledgerValue: emptyLedger);
       await tester.pumpWidget(
-        host(
-          engram: at(65536),
-          notes: notes,
-          changeCeiling: (e, b) async => e,
-        ),
+        host(engram: at(65536), notes: notes, changeCeiling: (e, b) async => e),
       );
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('Text notes up to 65,536 bytes keep their edit '
-            'history on this engram'),
+        find.textContaining(
+          'Text notes up to 65,536 bytes keep their edit '
+          'history on this engram',
+        ),
         findsOneWidget,
       );
-      expect(find.textContaining('can open notes up to 131,072 bytes'),
-          findsOneWidget);
+      expect(
+        find.textContaining('can open notes up to 131,072 bytes'),
+        findsOneWidget,
+      );
       expect(find.text('Raise to 131,072'), findsOneWidget);
       expect(find.byType(OutlinedButton), findsOneWidget, reason: 'no other');
       expect(
@@ -1027,18 +1048,24 @@ void main() {
 
       expect(find.text('Raise the limit to 131,072 bytes?'), findsOneWidget);
       expect(
-        find.textContaining('1 note waiting for your decision will be '
-            'editable again. Every device that opens this engram will enforce '
-            'the new limit; a device running a BrainFrame that cannot open '
-            'notes this large will refuse to open the engram until it is '
-            'updated.'),
+        find.textContaining(
+          '1 note waiting for your decision will be '
+          'editable again. Every device that opens this engram will enforce '
+          'the new limit; a device running a BrainFrame that cannot open '
+          'notes this large will refuse to open the engram until it is '
+          'updated.',
+        ),
         findsOneWidget,
       );
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(written, isEmpty);
       expect(notes.ceilingsSet, isEmpty);
-      expect(find.text('Raise to 131,072'), findsOneWidget, reason: 'unchanged');
+      expect(
+        find.text('Raise to 131,072'),
+        findsOneWidget,
+        reason: 'unchanged',
+      );
 
       await tester.tap(find.text('Raise to 131,072'));
       await tester.pumpAndSettle();
@@ -1054,15 +1081,18 @@ void main() {
       );
       // The card follows: at the capability, nothing is offered.
       expect(
-        find.textContaining('Text notes up to 131,072 bytes keep their edit '
-            'history on this engram'),
+        find.textContaining(
+          'Text notes up to 131,072 bytes keep their edit '
+          'history on this engram',
+        ),
         findsOneWidget,
       );
       expect(find.text('Raise to 131,072'), findsNothing);
     });
 
-    testWidgets('with nothing waiting, the raise states only the consequence',
-        (tester) async {
+    testWidgets('with nothing waiting, the raise states only the consequence', (
+      tester,
+    ) async {
       final notes = _Notes.named(ledgerValue: emptyLedger);
       await tester.pumpWidget(
         host(
@@ -1078,9 +1108,11 @@ void main() {
 
       expect(find.text('Raise the limit to 131,072 bytes?'), findsOneWidget);
       expect(
-        find.text('Every device that opens this engram will enforce the new '
-            'limit. A device running a BrainFrame that cannot open notes this '
-            'large will refuse to open the engram until it is updated.'),
+        find.text(
+          'Every device that opens this engram will enforce the new '
+          'limit. A device running a BrainFrame that cannot open notes this '
+          'large will refuse to open the engram until it is updated.',
+        ),
         findsOneWidget,
       );
       expect(find.textContaining('waiting for your decision'), findsNothing);
@@ -1103,9 +1135,16 @@ void main() {
       await tester.tap(find.text('Raise the limit'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('The limit could not be changed:'), findsOneWidget);
+      expect(
+        find.textContaining('The limit could not be changed:'),
+        findsOneWidget,
+      );
       expect(notes.ceilingsSet, isEmpty);
-      expect(find.text('Raise to 131,072'), findsOneWidget, reason: 'unchanged');
+      expect(
+        find.text('Raise to 131,072'),
+        findsOneWidget,
+        reason: 'unchanged',
+      );
     });
 
     testWidgets('a notice\'s paths open the note, and a pending card\'s too', (
@@ -1139,7 +1178,11 @@ void main() {
       expect(find.text('big.md'), findsOneWidget);
       expect(find.text('fixed.md'), findsOneWidget);
       expect(find.text('fixed (oversized).md'), findsOneWidget);
-      expect(find.text('plain.md'), findsNothing, reason: 'created: not offered');
+      expect(
+        find.text('plain.md'),
+        findsNothing,
+        reason: 'created: not offered',
+      );
       expect(
         tester.getSemantics(find.text('big.md')).label,
         contains('Open big.md'),
@@ -1183,8 +1226,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('1 note is a plain file: it was larger than '
-            '65,536 bytes when it arrived'),
+        find.textContaining(
+          '1 note is a plain file: it was larger than '
+          '65,536 bytes when it arrived',
+        ),
         findsOneWidget,
       );
     });
@@ -1345,7 +1390,8 @@ class _Notes implements NoteReconciler {
   Stream<String> get reconciled => const Stream<String>.empty();
 
   @override
-  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
+  Stream<DriftScanReport> get scanReports =>
+      const Stream<DriftScanReport>.empty();
 
   @override
   Stream<AdoptionProgress?> get adoption =>

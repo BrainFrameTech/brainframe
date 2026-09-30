@@ -18,10 +18,8 @@ Future<String?> showFolderPicker(
 }) {
   return showDialog<String>(
     context: context,
-    builder: (_) => _FolderPickerDialog(
-      folders: folders,
-      includeRoot: includeRoot,
-    ),
+    builder: (_) =>
+        _FolderPickerDialog(folders: folders, includeRoot: includeRoot),
   );
 }
 
@@ -44,11 +42,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
     final entries = <_FolderEntry>[
       if (widget.includeRoot) _FolderEntry('', l10n.folderPickerRoot, 0),
       for (final folder in widget.folders)
-        _FolderEntry(
-          folder,
-          folder.split('/').last,
-          folder.split('/').length,
-        ),
+        _FolderEntry(folder, folder.split('/').last, folder.split('/').length),
     ];
 
     return AlertDialog.adaptive(
@@ -66,12 +60,16 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                       ListTile(
                         dense: true,
                         selected: entry.path == _selected,
-                        leading: Icon(entry.path == _selected
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_unchecked),
+                        leading: Icon(
+                          entry.path == _selected
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                        ),
                         title: Text(entry.label),
-                        contentPadding:
-                            EdgeInsets.only(left: 8.0 + entry.depth * 16, right: 8),
+                        contentPadding: EdgeInsets.only(
+                          left: 8.0 + entry.depth * 16,
+                          right: 8,
+                        ),
                         onTap: () => setState(() => _selected = entry.path),
                       ),
                   ],

@@ -30,9 +30,7 @@ import 'fs/folder_access.dart';
 
 class ChannelFolderAccess extends FolderAccess {
   /// [channel] replaces the app's own; tests pass one to mock.
-  const ChannelFolderAccess({
-    this._channel = const MethodChannel(channelName),
-  });
+  const ChannelFolderAccess({this._channel = const MethodChannel(channelName)});
 
   /// The channel's name, shared with the platform side.
   static const String channelName = 'tech.brainframe.app/folder_access';

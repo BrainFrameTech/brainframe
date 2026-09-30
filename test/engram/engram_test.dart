@@ -13,10 +13,10 @@ class _FakeStore extends EngramStore {
   final Map<String, Uint8List> files;
 
   _FakeStore(Map<String, String> initial)
-      : files = {
-          for (final entry in initial.entries)
-            entry.key: Uint8List.fromList(utf8.encode(entry.value)),
-        };
+    : files = {
+        for (final entry in initial.entries)
+          entry.key: Uint8List.fromList(utf8.encode(entry.value)),
+      };
 
   @override
   Future<List<String>> list() async => files.keys.toList();
@@ -30,21 +30,24 @@ class _FakeStore extends EngramStore {
 }
 
 void main() {
-  test('Engram carries identity and reaches content through its store', () async {
-    final store = _FakeStore({'notes/a.md': '# A'});
-    final engram = Engram(
-      id: '01J9Z00000000000000000000Z',
-      displayName: 'Personal',
-      readOnly: false,
-      store: store,
-    );
+  test(
+    'Engram carries identity and reaches content through its store',
+    () async {
+      final store = _FakeStore({'notes/a.md': '# A'});
+      final engram = Engram(
+        id: '01J9Z00000000000000000000Z',
+        displayName: 'Personal',
+        readOnly: false,
+        store: store,
+      );
 
-    expect(engram.id, '01J9Z00000000000000000000Z');
-    expect(engram.displayName, 'Personal');
-    expect(engram.readOnly, isFalse);
-    expect(await engram.store.list(), ['notes/a.md']);
-    expect(await engram.store.readString('notes/a.md'), '# A');
-  });
+      expect(engram.id, '01J9Z00000000000000000000Z');
+      expect(engram.displayName, 'Personal');
+      expect(engram.readOnly, isFalse);
+      expect(await engram.store.list(), ['notes/a.md']);
+      expect(await engram.store.readString('notes/a.md'), '# A');
+    },
+  );
 
   test('readOnly is a property of the engram, independent of the store', () {
     final store = _FakeStore(const {});

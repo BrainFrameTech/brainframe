@@ -40,10 +40,10 @@ Engram _engram(String id, String name, {bool readOnly = false}) =>
 /// engram_repository_test.
 class _FakeRepo extends EngramRepository {
   _FakeRepo({required this.discovery})
-      : super(
-          preferences: SharedPreferencesAsync(),
-          containerPathResolver: () async => throw UnsupportedError('no fs'),
-        );
+    : super(
+        preferences: SharedPreferencesAsync(),
+        containerPathResolver: () async => throw UnsupportedError('no fs'),
+      );
 
   /// What [discover] returns; a test replaces it to play a change on disk.
   EngramDiscovery discovery;
@@ -88,35 +88,40 @@ void main() {
     Engram initial, {
     Future<String?> Function()? folderPicker,
     FolderAccess? folderAccess,
-  }) =>
-      localizedApp(
-        home: EngramScope(
-          initialEngram: initial,
-          child: Scaffold(
-            body: Builder(builder: (context) {
-              final active = EngramScope.of(context).engram;
-              return Column(
-                children: [
-                  Text('active:${active.id}'),
-                  const Spacer(),
-                  EngramSwitcher(
-                    repository: repository,
-                    current: active,
-                    folderAccess: folderAccess ??
-                        (folderPicker == null
-                            ? null
-                            : PathFolderAccess(picker: folderPicker)),
-                  ),
-                ],
-              );
-            }),
-          ),
+  }) => localizedApp(
+    home: EngramScope(
+      initialEngram: initial,
+      child: Scaffold(
+        body: Builder(
+          builder: (context) {
+            final active = EngramScope.of(context).engram;
+            return Column(
+              children: [
+                Text('active:${active.id}'),
+                const Spacer(),
+                EngramSwitcher(
+                  repository: repository,
+                  current: active,
+                  folderAccess:
+                      folderAccess ??
+                      (folderPicker == null
+                          ? null
+                          : PathFolderAccess(picker: folderPicker)),
+                ),
+              ],
+            );
+          },
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('footer shows the engram name and a read-only lock',
-      (tester) async {
-    await tester.pumpWidget(harness(_FakeRepo(discovery: discovery()), tutorial));
+  testWidgets('footer shows the engram name and a read-only lock', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(_FakeRepo(discovery: discovery()), tutorial),
+    );
     expect(find.text('Tutorial'), findsOneWidget);
     expect(find.byIcon(Icons.lock_outline), findsOneWidget);
   });
@@ -127,9 +132,12 @@ void main() {
     expect(find.byIcon(Icons.lock_outline), findsNothing);
   });
 
-  testWidgets('opening the sheet lists engrams; selecting one switches',
-      (tester) async {
-    await tester.pumpWidget(harness(_FakeRepo(discovery: discovery()), tutorial));
+  testWidgets('opening the sheet lists engrams; selecting one switches', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(_FakeRepo(discovery: discovery()), tutorial),
+    );
 
     await tester.tap(find.text('Tutorial'));
     await tester.pumpAndSettle();
@@ -141,9 +149,12 @@ void main() {
     expect(find.text('active:$builtinHelpId'), findsOneWidget);
   });
 
-  testWidgets('New engram prompts for a name, creates, and switches',
-      (tester) async {
-    await tester.pumpWidget(harness(_FakeRepo(discovery: discovery()), tutorial));
+  testWidgets('New engram prompts for a name, creates, and switches', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(_FakeRepo(discovery: discovery()), tutorial),
+    );
 
     await tester.tap(find.text('Tutorial'));
     await tester.pumpAndSettle();
@@ -158,16 +169,19 @@ void main() {
     expect(find.text('Journal'), findsWidgets); // footer renamed
   });
 
-  testWidgets('an unavailable registry root is listed but disabled',
-      (tester) async {
+  testWidgets('an unavailable registry root is listed but disabled', (
+    tester,
+  ) async {
     final repo = _FakeRepo(
-      discovery: discovery(unavailable: [
-        const UnavailableEngram(
-          id: 'gone',
-          displayName: 'Archived',
-          location: EngramLocation('/missing'),
-        ),
-      ]),
+      discovery: discovery(
+        unavailable: [
+          const UnavailableEngram(
+            id: 'gone',
+            displayName: 'Archived',
+            location: EngramLocation('/missing'),
+          ),
+        ],
+      ),
     );
     await tester.pumpWidget(harness(repo, tutorial));
 
@@ -184,7 +198,9 @@ void main() {
 
   testWidgets('Open folder… appears only on desktop', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-    await tester.pumpWidget(harness(_FakeRepo(discovery: discovery()), tutorial));
+    await tester.pumpWidget(
+      harness(_FakeRepo(discovery: discovery()), tutorial),
+    );
     await tester.tap(find.text('Tutorial'));
     await tester.pumpAndSettle();
     expect(find.text('Open folder…'), findsOneWidget);
@@ -192,7 +208,9 @@ void main() {
     await tester.pumpAndSettle();
 
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    await tester.pumpWidget(harness(_FakeRepo(discovery: discovery()), tutorial));
+    await tester.pumpWidget(
+      harness(_FakeRepo(discovery: discovery()), tutorial),
+    );
     await tester.tap(find.text('Tutorial'));
     await tester.pumpAndSettle();
     expect(find.text('Open folder…'), findsNothing);
@@ -275,8 +293,9 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     });
 
-    testWidgets('a folder with no CRLF files says nothing about line endings',
-        (tester) async {
+    testWidgets('a folder with no CRLF files says nothing about line endings', (
+      tester,
+    ) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
       // Synchronous: real async I/O started in the test zone never completes.
       File('${folder.path}/one.md').writeAsStringSync('1\n');
@@ -334,20 +353,24 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('Open folder… follows the access, not the platform',
-        (tester) async {
-      await tester.pumpWidget(harness(
-        _FakeRepo(discovery: discovery()),
-        tutorial,
-        folderAccess: FakeFolderAccess(canPick: false),
-      ));
+    testWidgets('Open folder… follows the access, not the platform', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          _FakeRepo(discovery: discovery()),
+          tutorial,
+          folderAccess: FakeFolderAccess(canPick: false),
+        ),
+      );
       await tester.tap(find.text('Tutorial'));
       await tester.pumpAndSettle();
       expect(find.text('Open folder…'), findsNothing);
     });
 
-    testWidgets('without access, explains first; Cancel asks nothing more',
-        (tester) async {
+    testWidgets('without access, explains first; Cancel asks nothing more', (
+      tester,
+    ) async {
       final access = FakeFolderAccess(broadAccess: false);
       final repo = _FakeRepo(discovery: discovery());
       await tester.pumpWidget(harness(repo, tutorial, folderAccess: access));
@@ -362,14 +385,17 @@ void main() {
       expect(repo.adopted, isEmpty);
     });
 
-    testWidgets('Continue asks the platform, then opens the chooser',
-        (tester) async {
+    testWidgets('Continue asks the platform, then opens the chooser', (
+      tester,
+    ) async {
       final access = FakeFolderAccess(broadAccess: false); // picks nothing
-      await tester.pumpWidget(harness(
-        _FakeRepo(discovery: discovery()),
-        tutorial,
-        folderAccess: access,
-      ));
+      await tester.pumpWidget(
+        harness(
+          _FakeRepo(discovery: discovery()),
+          tutorial,
+          folderAccess: access,
+        ),
+      );
 
       await tapOpenFolder(tester);
       await tester.tap(find.widgetWithText(TextButton, 'Continue'));
@@ -379,14 +405,17 @@ void main() {
       expect(access.picks, 1);
     });
 
-    testWidgets('access turned down on the system screen: no chooser',
-        (tester) async {
+    testWidgets('access turned down on the system screen: no chooser', (
+      tester,
+    ) async {
       final access = FakeFolderAccess(broadAccess: false)..grants = false;
-      await tester.pumpWidget(harness(
-        _FakeRepo(discovery: discovery()),
-        tutorial,
-        folderAccess: access,
-      ));
+      await tester.pumpWidget(
+        harness(
+          _FakeRepo(discovery: discovery()),
+          tutorial,
+          folderAccess: access,
+        ),
+      );
 
       await tapOpenFolder(tester);
       await tester.tap(find.widgetWithText(TextButton, 'Continue'));
@@ -396,8 +425,9 @@ void main() {
       expect(access.picks, 0);
     });
 
-    testWidgets('a folder not on the device is refused, saying why',
-        (tester) async {
+    testWidgets('a folder not on the device is refused, saying why', (
+      tester,
+    ) async {
       final access = FakeFolderAccess()
         ..pickError = const FolderNotLocalException('content://drive/…');
       final repo = _FakeRepo(discovery: discovery());
@@ -406,22 +436,30 @@ void main() {
       await tapOpenFolder(tester);
 
       expect(find.text('This folder can’t be opened'), findsOneWidget);
-      expect(find.textContaining('can only open a folder it can reach'),
-          findsOneWidget);
-      expect(find.textContaining('content://'), findsNothing,
-          reason: 'the platform text is for the log');
+      expect(
+        find.textContaining('can only open a folder it can reach'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('content://'),
+        findsNothing,
+        reason: 'the platform text is for the log',
+      );
       await tester.tap(find.widgetWithText(TextButton, 'OK'));
       await tester.pumpAndSettle();
       expect(repo.adopted, isEmpty);
     });
 
     for (final (label, error) in [
-      ('an error the flow has no case for',
-          PlatformException(code: 'noPicker', message: 'native words')),
+      (
+        'an error the flow has no case for',
+        PlatformException(code: 'noPicker', message: 'native words'),
+      ),
       ('no platform side at all', MissingPluginException('native words')),
     ]) {
-      testWidgets('a picker that fails — $label — says so, in words',
-          (tester) async {
+      testWidgets('a picker that fails — $label — says so, in words', (
+        tester,
+      ) async {
         final access = FakeFolderAccess()..pickError = error;
         final repo = _FakeRepo(discovery: discovery());
         await tester.pumpWidget(harness(repo, tutorial, folderAccess: access));
@@ -429,8 +467,11 @@ void main() {
         await tapOpenFolder(tester);
 
         expect(find.text('Couldn’t choose a folder'), findsOneWidget);
-        expect(find.textContaining('native words'), findsNothing,
-            reason: 'the platform text is for the log');
+        expect(
+          find.textContaining('native words'),
+          findsNothing,
+          reason: 'the platform text is for the log',
+        );
         await tester.tap(find.widgetWithText(TextButton, 'OK'));
         await tester.pumpAndSettle();
         expect(repo.adopted, isEmpty);
@@ -453,36 +494,46 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      testWidgets('says so, and differs from a lost folder or bookmark',
-          (tester) async {
-        await tester.pumpWidget(harness(
-          _FakeRepo(
-            discovery: discovery(unavailable: [
-              far,
-              const UnavailableEngram(
-                id: 'moved',
-                displayName: 'Moved',
-                location: EngramLocation('/x'),
-                reason: UnreachableReason.bookmarkInvalid,
+      testWidgets('says so, and differs from a lost folder or bookmark', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          harness(
+            _FakeRepo(
+              discovery: discovery(
+                unavailable: [
+                  far,
+                  const UnavailableEngram(
+                    id: 'moved',
+                    displayName: 'Moved',
+                    location: EngramLocation('/x'),
+                    reason: UnreachableReason.bookmarkInvalid,
+                  ),
+                ],
               ),
-            ]),
+            ),
+            tutorial,
           ),
-          tutorial,
-        ));
+        );
         await tester.tap(find.text('Tutorial'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Needs access to your files — tap to grant'),
-            findsOneWidget);
         expect(
-          find.text(
-              'Its folder can’t be found — open it again with Open folder…'),
+          find.text('Needs access to your files — tap to grant'),
           findsOneWidget,
         );
-        final moved = tester.widget<ListTile>(find.ancestor(
-          of: find.text('Moved'),
-          matching: find.byType(ListTile),
-        ));
+        expect(
+          find.text(
+            'Its folder can’t be found — open it again with Open folder…',
+          ),
+          findsOneWidget,
+        );
+        final moved = tester.widget<ListTile>(
+          find.ancestor(
+            of: find.text('Moved'),
+            matching: find.byType(ListTile),
+          ),
+        );
         expect(moved.enabled, isFalse);
       });
 
@@ -506,8 +557,9 @@ void main() {
         expect(find.text('active:far'), findsOneWidget);
       });
 
-      testWidgets('turning the explanation down changes nothing',
-          (tester) async {
+      testWidgets('turning the explanation down changes nothing', (
+        tester,
+      ) async {
         final access = FakeFolderAccess(broadAccess: false);
         final repo = _FakeRepo(discovery: discovery(unavailable: [far]));
         await tester.pumpWidget(harness(repo, tutorial, folderAccess: access));
@@ -520,8 +572,9 @@ void main() {
         expect(find.text('active:$builtinTutorialId'), findsOneWidget);
       });
 
-      testWidgets('granted, but the folder is gone too: stays put',
-          (tester) async {
+      testWidgets('granted, but the folder is gone too: stays put', (
+        tester,
+      ) async {
         final access = FakeFolderAccess(broadAccess: false);
         final repo = _FakeRepo(discovery: discovery(unavailable: [far]));
         await tester.pumpWidget(harness(repo, tutorial, folderAccess: access));
@@ -534,8 +587,9 @@ void main() {
         expect(find.text('active:$builtinTutorialId'), findsOneWidget);
       });
 
-      testWidgets('access refused on the system screen: stays put',
-          (tester) async {
+      testWidgets('access refused on the system screen: stays put', (
+        tester,
+      ) async {
         final access = FakeFolderAccess(broadAccess: false)..grants = false;
         final repo = _FakeRepo(discovery: discovery(unavailable: [far]));
         await tester.pumpWidget(harness(repo, tutorial, folderAccess: access));
@@ -552,14 +606,14 @@ void main() {
         PlatformException(code: 'busy', message: 'native words'),
         MissingPluginException('native words'),
       ]) {
-        testWidgets(
-            'a request for access that fails says so '
+        testWidgets('a request for access that fails says so '
             '(${error.runtimeType})', (tester) async {
           final access = FakeFolderAccess(broadAccess: false)
             ..requestError = error;
           final repo = _FakeRepo(discovery: discovery(unavailable: [far]));
           await tester.pumpWidget(
-              harness(repo, tutorial, folderAccess: access));
+            harness(repo, tutorial, folderAccess: access),
+          );
 
           await tapFar(tester);
           await tester.tap(find.widgetWithText(TextButton, 'Continue'));

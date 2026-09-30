@@ -115,7 +115,8 @@ void convergesTo(
         expect(
           r.text,
           expected,
-          reason: 'replica ${r.label} under "${scenario.label}"'
+          reason:
+              'replica ${r.label} under "${scenario.label}"'
               '${confirmThenPin ? ' [confirm-then-pin]' : ''}',
         );
       }

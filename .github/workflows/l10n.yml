@@ -14,7 +14,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.44.4 # keep in sync with the local toolchain / coverage.yml, release.yml
+          flutter-version-file: pubspec.yaml # the one Flutter pin: environment.flutter
       - run: flutter pub get
       - name: No hardcoded UI strings; pseudo-locale fresh
         run: dart run tool/check_l10n.dart

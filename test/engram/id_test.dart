@@ -52,10 +52,7 @@ void main() {
     });
 
     test('throws for a timestamp before the Unix epoch', () {
-      expect(
-        () => newUlid(timestamp: DateTime.utc(1969)),
-        throwsArgumentError,
-      );
+      expect(() => newUlid(timestamp: DateTime.utc(1969)), throwsArgumentError);
     });
 
     test('throws for a timestamp beyond the 48-bit range', () {

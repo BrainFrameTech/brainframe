@@ -61,7 +61,14 @@ void main() {
       expect(isMarkdownPath('notes/log.txt'), isTrue); // plain text renders too
       expect(isMarkdownPath('photo.png'), isFalse);
 
-      for (final p in ['a.png', 'a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp']) {
+      for (final p in [
+        'a.png',
+        'a.jpg',
+        'a.jpeg',
+        'a.gif',
+        'a.webp',
+        'a.bmp',
+      ]) {
         expect(isImagePath(p), isTrue, reason: p);
       }
       expect(isImagePath('doc.pdf'), isFalse);
@@ -85,8 +92,9 @@ void main() {
       expect(find.byType(MarkdownReader), findsOneWidget);
     });
 
-    testWidgets('plain text routes to MarkdownReader and renders',
-        (tester) async {
+    testWidgets('plain text routes to MarkdownReader and renders', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(buildFileViewer(store: store, path: 'notes/log.txt')),
       );
@@ -109,8 +117,9 @@ void main() {
 
     testWidgets('writable markdown routes to the editor pane', (tester) async {
       await tester.pumpWidget(
-        _host(buildFileViewer(
-            store: store, path: 'welcome.md', readOnly: false)),
+        _host(
+          buildFileViewer(store: store, path: 'welcome.md', readOnly: false),
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.byType(MarkdownEditorPane), findsOneWidget);
@@ -119,8 +128,9 @@ void main() {
 
     testWidgets('readOnly:false does not affect images', (tester) async {
       await tester.pumpWidget(
-        _host(buildFileViewer(
-            store: store, path: 'diagram.png', readOnly: false)),
+        _host(
+          buildFileViewer(store: store, path: 'diagram.png', readOnly: false),
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.byType(ImageFileViewer), findsOneWidget);
@@ -134,8 +144,9 @@ void main() {
       expect(find.byType(ImageFileViewer), findsOneWidget);
     });
 
-    testWidgets('unknown format routes to UnsupportedFileViewer',
-        (tester) async {
+    testWidgets('unknown format routes to UnsupportedFileViewer', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(buildFileViewer(store: store, path: 'book.epub')),
       );
@@ -146,12 +157,14 @@ void main() {
 
   group('ImageFileViewer', () {
     testWidgets('shows the breadcrumb and renders the image', (tester) async {
-      await tester.pumpWidget(_host(
-        ImageFileViewer(
-          store: _MapStore({'pics/diagram.png': _onePixelPng}),
-          path: 'pics/diagram.png',
+      await tester.pumpWidget(
+        _host(
+          ImageFileViewer(
+            store: _MapStore({'pics/diagram.png': _onePixelPng}),
+            path: 'pics/diagram.png',
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('pics/diagram.png'), findsOneWidget); // breadcrumb
@@ -159,39 +172,46 @@ void main() {
       expect(image.semanticLabel, contains('diagram.png'));
     });
 
-    testWidgets('shows a message when the image cannot be read',
-        (tester) async {
-      await tester.pumpWidget(_host(
-        ImageFileViewer(store: _MapStore(const {}), path: 'missing.png'),
-      ));
+    testWidgets('shows a message when the image cannot be read', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(ImageFileViewer(store: _MapStore(const {}), path: 'missing.png')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Could not open'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
     });
 
-    testWidgets('starts fitted (BoxFit.contain, no scroll view)',
-        (tester) async {
-      await tester.pumpWidget(_host(
-        ImageFileViewer(
-          store: _MapStore({'diagram.png': _onePixelPng}),
-          path: 'diagram.png',
+    testWidgets('starts fitted (BoxFit.contain, no scroll view)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          ImageFileViewer(
+            store: _MapStore({'diagram.png': _onePixelPng}),
+            path: 'diagram.png',
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.contain);
       expect(find.byType(SingleChildScrollView), findsNothing);
     });
 
-    testWidgets('toggles to actual size (natural size, scroll bars) and back',
-        (tester) async {
-      await tester.pumpWidget(_host(
-        ImageFileViewer(
-          store: _MapStore({'diagram.png': _onePixelPng}),
-          path: 'diagram.png',
+    testWidgets('toggles to actual size (natural size, scroll bars) and back', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          ImageFileViewer(
+            store: _MapStore({'diagram.png': _onePixelPng}),
+            path: 'diagram.png',
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       // The one button in the viewer flips the mode.
@@ -211,11 +231,13 @@ void main() {
       expect(find.byType(SingleChildScrollView), findsNothing);
     });
 
-    testWidgets('resets to fitted when switched to a different image',
-        (tester) async {
+    testWidgets('resets to fitted when switched to a different image', (
+      tester,
+    ) async {
       final store = _MapStore({'a.png': _onePixelPng, 'b.png': _onePixelPng});
-      await tester
-          .pumpWidget(_host(ImageFileViewer(store: store, path: 'a.png')));
+      await tester.pumpWidget(
+        _host(ImageFileViewer(store: store, path: 'a.png')),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byType(IconButton)); // into actual size
@@ -223,18 +245,23 @@ void main() {
       expect(find.byType(SingleChildScrollView), findsNWidgets(2));
 
       // Reuse the same State (same tree position) with a different path.
-      await tester
-          .pumpWidget(_host(ImageFileViewer(store: store, path: 'b.png')));
+      await tester.pumpWidget(
+        _host(ImageFileViewer(store: store, path: 'b.png')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('b.png'), findsOneWidget);
-      expect(find.byType(SingleChildScrollView), findsNothing); // back to fitted
+      expect(
+        find.byType(SingleChildScrollView),
+        findsNothing,
+      ); // back to fitted
     });
   });
 
   group('UnsupportedFileViewer', () {
-    testWidgets('shows the breadcrumb and an unsupported-format message',
-        (tester) async {
+    testWidgets('shows the breadcrumb and an unsupported-format message', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(const UnsupportedFileViewer(path: 'library/book.epub')),
       );

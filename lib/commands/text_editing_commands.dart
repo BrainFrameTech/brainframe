@@ -179,7 +179,8 @@ class TextEditingCommands extends ChangeNotifier {
 
   void _recompute() {
     final state = target;
-    final canCopy = state != null && !state.widget.obscureText && _hasSelection(state);
+    final canCopy =
+        state != null && !state.widget.obscureText && _hasSelection(state);
     final canCut = canCopy && !state.widget.readOnly;
     final canPaste = state != null && !state.widget.readOnly;
     final canSelectAll =

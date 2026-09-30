@@ -27,16 +27,18 @@ void main() {
   AssetEngramStore store([String locale = 'en']) =>
       AssetEngramStore(assetPrefix: 'p/', locale: locale, bundle: bundle);
 
-  test('list() returns the base-locale page set, whatever the active locale',
-      () async {
-    Future<void> expectBaseSet(AssetEngramStore s) async {
-      expect((await s.list()).toSet(), {'a.md', 'notes/b.md'});
-    }
+  test(
+    'list() returns the base-locale page set, whatever the active locale',
+    () async {
+      Future<void> expectBaseSet(AssetEngramStore s) async {
+        expect((await s.list()).toSet(), {'a.md', 'notes/b.md'});
+      }
 
-    await expectBaseSet(store('en'));
-    await expectBaseSet(store('es'));
-    await expectBaseSet(store('es').forLocale(const Locale('es', 'MX')));
-  });
+      await expectBaseSet(store('en'));
+      await expectBaseSet(store('es'));
+      await expectBaseSet(store('es').forLocale(const Locale('es', 'MX')));
+    },
+  );
 
   test('reads the active locale when that page is translated', () async {
     expect(await store('es').readString('a.md'), 'spanish a');
@@ -60,14 +62,16 @@ void main() {
     expect(await es.readString('a.md'), 'spanish a');
   });
 
-  test('contentForLocale binds an AssetEngramStore and passes others through',
-      () {
-    final asset = store();
-    final bound = contentForLocale(asset, const Locale('es'));
-    expect(bound, isA<AssetEngramStore>());
-    expect((bound as AssetEngramStore).localeChain, ['es', 'en']);
+  test(
+    'contentForLocale binds an AssetEngramStore and passes others through',
+    () {
+      final asset = store();
+      final bound = contentForLocale(asset, const Locale('es'));
+      expect(bound, isA<AssetEngramStore>());
+      expect((bound as AssetEngramStore).localeChain, ['es', 'en']);
 
-    final plain = _FilesystemLikeStore();
-    expect(contentForLocale(plain, const Locale('es')), same(plain));
-  });
+      final plain = _FilesystemLikeStore();
+      expect(contentForLocale(plain, const Locale('es')), same(plain));
+    },
+  );
 }

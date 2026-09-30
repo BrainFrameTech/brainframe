@@ -20,9 +20,9 @@ void main() {
   void platform(Object? Function(MethodCall call) answer) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      return answer(call);
-    });
+          calls.add(call);
+          return answer(call);
+        });
   }
 
   PlatformException code(String code) =>
@@ -79,15 +79,17 @@ void main() {
   });
 
   group('resolve', () {
-    test('sends the row, and returns the path with any fresh bookmark',
-        () async {
-      platform((_) => {'path': '/now', 'refreshedBookmark': 'fresh'});
-      final resolved = await access.resolve(path: '/then', bookmark: 'old');
-      expect(calls.single.method, 'resolve');
-      expect(calls.single.arguments, {'path': '/then', 'bookmark': 'old'});
-      expect(resolved.path, '/now');
-      expect(resolved.refreshedBookmark, 'fresh');
-    });
+    test(
+      'sends the row, and returns the path with any fresh bookmark',
+      () async {
+        platform((_) => {'path': '/now', 'refreshedBookmark': 'fresh'});
+        final resolved = await access.resolve(path: '/then', bookmark: 'old');
+        expect(calls.single.method, 'resolve');
+        expect(calls.single.arguments, {'path': '/then', 'bookmark': 'old'});
+        expect(resolved.path, '/now');
+        expect(resolved.refreshedBookmark, 'fresh');
+      },
+    );
 
     test('a row with no bookmark sends null for it', () async {
       platform((call) => {'path': '/p'});
@@ -150,27 +152,34 @@ void main() {
         TargetPlatform.macOS,
       ]) {
         debugDefaultTargetPlatformOverride = platform;
-        expect(platformFolderAccess(), isA<ChannelFolderAccess>(),
-            reason: '$platform');
+        expect(
+          platformFolderAccess(),
+          isA<ChannelFolderAccess>(),
+          reason: '$platform',
+        );
       }
     });
 
     test('is plain paths on Linux and Windows', () {
-      for (final platform in [
-        TargetPlatform.linux,
-        TargetPlatform.windows,
-      ]) {
+      for (final platform in [TargetPlatform.linux, TargetPlatform.windows]) {
         debugDefaultTargetPlatformOverride = platform;
-        expect(platformFolderAccess(), isA<PathFolderAccess>(),
-            reason: '$platform');
+        expect(
+          platformFolderAccess(),
+          isA<PathFolderAccess>(),
+          reason: '$platform',
+        );
       }
     });
   });
 
   test('FolderNotLocalException names its words, when it has them', () {
-    expect(const FolderNotLocalException().toString(),
-        'FolderNotLocalException');
-    expect(const FolderNotLocalException('x').toString(),
-        'FolderNotLocalException(x)');
+    expect(
+      const FolderNotLocalException().toString(),
+      'FolderNotLocalException',
+    );
+    expect(
+      const FolderNotLocalException('x').toString(),
+      'FolderNotLocalException(x)',
+    );
   });
 }

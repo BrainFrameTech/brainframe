@@ -5,10 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Widget _host({
-  required DesignLanguage design,
-  List<Widget>? actions,
-}) {
+Widget _host({required DesignLanguage design, List<Widget>? actions}) {
   return MaterialApp(
     home: AppSettings(
       designOverride: design,
@@ -31,8 +28,9 @@ void main() {
     expect(find.text('Body'), findsOneWidget);
   });
 
-  testWidgets('Cupertino design renders a CupertinoPageScaffold',
-      (tester) async {
+  testWidgets('Cupertino design renders a CupertinoPageScaffold', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(design: DesignLanguage.cupertino));
 
     expect(find.byType(CupertinoPageScaffold), findsOneWidget);
@@ -41,8 +39,9 @@ void main() {
     expect(find.text('Body'), findsOneWidget);
   });
 
-  testWidgets('Cupertino trailing appears only when actions are given',
-      (tester) async {
+  testWidgets('Cupertino trailing appears only when actions are given', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _host(
         design: DesignLanguage.cupertino,

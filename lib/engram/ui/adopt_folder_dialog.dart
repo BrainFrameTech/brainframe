@@ -154,8 +154,8 @@ class _AdoptFolderDialogState extends State<AdoptFolderDialog> {
     final value = progress != null
         ? (progress.total == 0 ? 1.0 : progress.done / progress.total)
         : MediaQuery.disableAnimationsOf(context)
-            ? 0.0
-            : null;
+        ? 0.0
+        : null;
     return AlertDialog.adaptive(
       title: Text(l10n.adoptFolderLooking(widget.previewing.name)),
       content: Semantics(

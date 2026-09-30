@@ -7,13 +7,18 @@ void main() {
   Future<void> pump(WidgetTester tester, SettingControl control) =>
       tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: Center(child: SettingControlView(control: control))),
+          home: Scaffold(
+            body: Center(child: SettingControlView(control: control)),
+          ),
         ),
       );
 
   testWidgets('toggle renders and reports changes', (tester) async {
     bool? changed;
-    await pump(tester, ToggleControl(value: false, onChanged: (v) => changed = v));
+    await pump(
+      tester,
+      ToggleControl(value: false, onChanged: (v) => changed = v),
+    );
     await tester.tap(find.byType(Switch));
     expect(changed, isTrue);
   });
@@ -23,7 +28,9 @@ void main() {
     expect(find.byType(Switch), findsOneWidget);
   });
 
-  testWidgets('segmented renders options and reports selection', (tester) async {
+  testWidgets('segmented renders options and reports selection', (
+    tester,
+  ) async {
     String? selected;
     await pump(
       tester,
@@ -52,7 +59,9 @@ void main() {
     expect(find.text('Aye'), findsOneWidget);
   });
 
-  testWidgets('select shows its value and opens a menu to change', (tester) async {
+  testWidgets('select shows its value and opens a menu to change', (
+    tester,
+  ) async {
     String? picked;
     await pump(
       tester,
@@ -69,7 +78,9 @@ void main() {
     expect(picked, 'Two');
   });
 
-  testWidgets('a select with no handler just displays the value', (tester) async {
+  testWidgets('a select with no handler just displays the value', (
+    tester,
+  ) async {
     await pump(tester, const SelectControl(value: 'Only', options: ['Only']));
     expect(find.text('Only'), findsOneWidget);
   });

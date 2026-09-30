@@ -180,7 +180,10 @@ void main() {
     });
 
     test('sidebarWidthSetting round-trips a double and defaults to null', () {
-      expect(sidebarWidthSetting.decode(sidebarWidthSetting.encode(312.5)), 312.5);
+      expect(
+        sidebarWidthSetting.decode(sidebarWidthSetting.encode(312.5)),
+        312.5,
+      );
       expect(sidebarWidthSetting.decode(null), isNull);
       expect(sidebarWidthSetting.decode('x'), isNull);
     });

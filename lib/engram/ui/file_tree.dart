@@ -61,7 +61,8 @@ class FileTree extends StatefulWidget {
     FileTreeNode node,
     String fullPath,
     FileTreeRowAction action,
-  )? onRowAction;
+  )?
+  onRowAction;
 
   @override
   State<FileTree> createState() => _FileTreeState();
@@ -102,8 +103,10 @@ class _FileTreeState extends State<FileTree> {
 
   void _mirrorScrollToActionColumn() {
     if (!_actionController.hasClients) return;
-    final target = _verticalController.offset
-        .clamp(0.0, _actionController.position.maxScrollExtent);
+    final target = _verticalController.offset.clamp(
+      0.0,
+      _actionController.position.maxScrollExtent,
+    );
     if (_actionController.offset != target) _actionController.jumpTo(target);
   }
 
@@ -161,8 +164,10 @@ class _FileTreeState extends State<FileTree> {
   Widget _treeView(List<_Row> rows, double rowExtent) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final contentWidth =
-            math.max(_contentWidth(context, rows), constraints.maxWidth);
+        final contentWidth = math.max(
+          _contentWidth(context, rows),
+          constraints.maxWidth,
+        );
 
         // Both scrollbars sit outside the horizontal scroll view so they stay
         // pinned to the sidebar edges instead of sliding away when the content
@@ -219,8 +224,9 @@ class _FileTreeState extends State<FileTree> {
   List<_Row> _visibleRows() {
     final rows = <_Row>[];
     void walk(FileTreeNode node, int depth, String parentPath) {
-      final fullPath =
-          parentPath.isEmpty ? node.name : '$parentPath/${node.name}';
+      final fullPath = parentPath.isEmpty
+          ? node.name
+          : '$parentPath/${node.name}';
       if (!node.isFolder) {
         rows.add(_Row(node: node, depth: depth, fullPath: fullPath));
         return;
@@ -289,10 +295,9 @@ class _FileTreeState extends State<FileTree> {
       return _cachedWidth!;
     }
 
-    final style = Theme.of(context)
-        .textTheme
-        .bodyMedium
-        ?.copyWith(fontWeight: FontWeight.w600);
+    final style = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
     final painter = TextPainter(
       textDirection: Directionality.of(context),
       textScaler: textScaler,
@@ -392,10 +397,9 @@ class _FolderRow extends StatelessWidget {
                 // horizontal scroll view reaches anything past the sidebar edge.
                 Text(
                   node.name,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),

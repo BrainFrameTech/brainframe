@@ -9,11 +9,11 @@ void main() {
   final sampleId = newUlid(timestamp: DateTime.utc(2026, 6, 29), random: null);
 
   EngramMetadata sample() => EngramMetadata(
-        schemaVersion: EngramMetadata.currentSchemaVersion,
-        id: sampleId,
-        displayName: 'Personal',
-        createdUtc: DateTime.utc(2026, 6, 29, 12),
-      );
+    schemaVersion: EngramMetadata.currentSchemaVersion,
+    id: sampleId,
+    displayName: 'Personal',
+    createdUtc: DateTime.utc(2026, 6, 29, 12),
+  );
 
   group('EngramMetadata.create', () {
     test('stamps the current schema version and normalizes time to UTC', () {
@@ -221,17 +221,19 @@ void main() {
       expect(() => original.withDisplayName('   '), throwsArgumentError);
     });
 
-    test('keeps a marker at its stored schema version rather than upgrading',
-        () {
-      // Written by a hypothetical older build; renaming must not restamp it.
-      final v1 = EngramMetadata(
-        schemaVersion: 1,
-        id: original.id,
-        displayName: 'old',
-        createdUtc: original.createdUtc,
-      );
-      expect(v1.withDisplayName('new').schemaVersion, 1);
-    });
+    test(
+      'keeps a marker at its stored schema version rather than upgrading',
+      () {
+        // Written by a hypothetical older build; renaming must not restamp it.
+        final v1 = EngramMetadata(
+          schemaVersion: 1,
+          id: original.id,
+          displayName: 'old',
+          createdUtc: original.createdUtc,
+        );
+        expect(v1.withDisplayName('new').schemaVersion, 1);
+      },
+    );
 
     test('round-trips through encode/decode', () {
       final renamed = original.withDisplayName('Field Notebook');

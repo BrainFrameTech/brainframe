@@ -84,9 +84,7 @@ class _EngramStartupGateState extends State<EngramStartupGate> {
 /// needed; the loading spinner carries a label for screen readers.
 class _StartupMessage extends StatelessWidget {
   const _StartupMessage(String this.message) : _loading = false;
-  const _StartupMessage.loading()
-      : message = null,
-        _loading = true;
+  const _StartupMessage.loading() : message = null, _loading = true;
 
   final String? message;
   final bool _loading;

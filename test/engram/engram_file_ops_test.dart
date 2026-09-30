@@ -102,7 +102,10 @@ void main() {
       expect(await store.list(), ['archive/notes/a.md']);
       final dirs = await store.listDirectories();
       expect(dirs, contains('archive/notes/empty'));
-      expect(dirs.where((d) => d == 'notes' || d.startsWith('notes/')), isEmpty);
+      expect(
+        dirs.where((d) => d == 'notes' || d.startsWith('notes/')),
+        isEmpty,
+      );
     });
 
     test('moves into a nested destination, creating its parents', () async {
@@ -135,17 +138,19 @@ void main() {
       );
     });
 
-    test('leaves a sibling folder with a shared name prefix untouched',
-        () async {
-      final store = _MemoryStore();
-      await store.writeString('notes/a.md', 'A');
-      await store.writeString('notes-archive/b.md', 'B');
+    test(
+      'leaves a sibling folder with a shared name prefix untouched',
+      () async {
+        final store = _MemoryStore();
+        await store.writeString('notes/a.md', 'A');
+        await store.writeString('notes-archive/b.md', 'B');
 
-      await EngramFileOps(store).deleteFolder('notes');
+        await EngramFileOps(store).deleteFolder('notes');
 
-      expect(await store.list(), ['notes-archive/b.md']);
-      expect(await store.listDirectories(), contains('notes-archive'));
-    });
+        expect(await store.list(), ['notes-archive/b.md']);
+        expect(await store.listDirectories(), contains('notes-archive'));
+      },
+    );
   });
 
   group('EngramFileOps.freeName', () {

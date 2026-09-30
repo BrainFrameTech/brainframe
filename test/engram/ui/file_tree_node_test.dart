@@ -60,11 +60,7 @@ void main() {
   });
 
   test('a folder gathered from several files appears once', () {
-    final tree = buildFileTree([
-      'books/a.md',
-      'books/sub/b.md',
-      'books/c.md',
-    ]);
+    final tree = buildFileTree(['books/a.md', 'books/sub/b.md', 'books/c.md']);
     final books = tree.single;
     expect(books.name, 'books');
     // One "sub" folder plus the two direct files, folder first.
@@ -100,17 +96,11 @@ void main() {
         ['notes/first.md'],
         directoryPaths: ['archive', 'notes/empty'],
       );
-      expect(_dump(tree), [
-        'archive/',
-        'notes/',
-        '  empty/',
-        '  first.md',
-      ]);
+      expect(_dump(tree), ['archive/', 'notes/', '  empty/', '  first.md']);
     });
 
     test('a directory that also holds a file is not duplicated', () {
-      final tree =
-          buildFileTree(['notes/a.md'], directoryPaths: ['notes']);
+      final tree = buildFileTree(['notes/a.md'], directoryPaths: ['notes']);
       expect(tree, hasLength(1));
       expect(tree.single.name, 'notes');
       expect(tree.single.children.map((n) => n.name), ['a.md']);

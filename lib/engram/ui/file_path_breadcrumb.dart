@@ -17,9 +17,9 @@ class FilePathBreadcrumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).hintColor,
-        );
+    final muted = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor);
     return Semantics(
       label: AppLocalizations.of(context).readerFilePath(path),
       child: Text(

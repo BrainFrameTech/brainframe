@@ -60,9 +60,9 @@ void main() {
     test('a row from before bookmarks resolves as its plain path, and is '
         'written back unchanged', () async {
       final path = await folder('Legacy');
-      final engram = await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(path),
-      );
+      final engram = await repoWith(
+        FakeFolderAccess(),
+      ).adoptFolder(EngramLocation(path));
       final legacy = jsonEncode({
         'id': engram.id,
         'displayName': 'Legacy',
@@ -91,9 +91,9 @@ void main() {
     });
 
     test('a row with no bookmark stores none, not a null', () async {
-      await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(await folder('Plain')),
-      );
+      await repoWith(
+        FakeFolderAccess(),
+      ).adoptFolder(EngramLocation(await folder('Plain')));
       expect((await rows()).single.containsKey('bookmark'), isFalse);
     });
 
@@ -114,38 +114,38 @@ void main() {
   });
 
   group('refresh on resolve', () {
-    test('a folder that moved: the row follows it, bookmark and path',
-        () async {
-      final before = await folder('Before');
-      final engram = await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(before),
-        bookmark: 'bm-old',
-      );
-      final after = '${tempRoot.path}/After';
-      await Directory(before).rename(after);
-      final access = FakeFolderAccess(
-        onResolve: (path, bookmark) =>
-            ResolvedFolder(after, refreshedBookmark: 'bm-new'),
-      );
-      final repo = repoWith(access);
+    test(
+      'a folder that moved: the row follows it, bookmark and path',
+      () async {
+        final before = await folder('Before');
+        final engram = await repoWith(
+          FakeFolderAccess(),
+        ).adoptFolder(EngramLocation(before), bookmark: 'bm-old');
+        final after = '${tempRoot.path}/After';
+        await Directory(before).rename(after);
+        final access = FakeFolderAccess(
+          onResolve: (path, bookmark) =>
+              ResolvedFolder(after, refreshedBookmark: 'bm-new'),
+        );
+        final repo = repoWith(access);
 
-      final discovery = await repo.discover();
+        final discovery = await repo.discover();
 
-      expect(discovery.available.map((e) => e.id), contains(engram.id));
-      final row = (await rows()).single;
-      expect(row['path'], after);
-      expect(row['bookmark'], 'bm-new');
-      final registered = await repo.registeredEngrams();
-      expect(registered.single.path, after);
-      expect(registered.single.available, isTrue);
-    });
+        expect(discovery.available.map((e) => e.id), contains(engram.id));
+        final row = (await rows()).single;
+        expect(row['path'], after);
+        expect(row['bookmark'], 'bm-new');
+        final registered = await repo.registeredEngrams();
+        expect(registered.single.path, after);
+        expect(registered.single.available, isTrue);
+      },
+    );
 
     test('a stale bookmark alone is replaced, the path kept', () async {
       final path = await folder('Stale');
-      await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(path),
-        bookmark: 'bm-stale',
-      );
+      await repoWith(
+        FakeFolderAccess(),
+      ).adoptFolder(EngramLocation(path), bookmark: 'bm-stale');
       final access = FakeFolderAccess(
         onResolve: (path, bookmark) =>
             ResolvedFolder(path, refreshedBookmark: 'bm-fresh'),
@@ -175,9 +175,9 @@ void main() {
       bool deleteFolder = false,
     }) async {
       final path = await folder('Target');
-      final engram = await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(path),
-      );
+      final engram = await repoWith(
+        FakeFolderAccess(),
+      ).adoptFolder(EngramLocation(path));
       if (deleteFolder) await Directory(path).delete(recursive: true);
 
       final discovery = await repoWith(
@@ -193,16 +193,17 @@ void main() {
       expect(unavailable.reason, UnreachableReason.missing);
     });
 
-    test('lost permission is accessNeeded, though the folder is there',
-        () async {
-      final unavailable = await unavailableWith(
-        (_, _) => throw const FolderAccessException(
-          UnreachableReason.accessNeeded,
-        ),
-      );
-      expect(unavailable.reason, UnreachableReason.accessNeeded);
-      expect(unavailable.displayName, 'Target');
-    });
+    test(
+      'lost permission is accessNeeded, though the folder is there',
+      () async {
+        final unavailable = await unavailableWith(
+          (_, _) =>
+              throw const FolderAccessException(UnreachableReason.accessNeeded),
+        );
+        expect(unavailable.reason, UnreachableReason.accessNeeded);
+        expect(unavailable.displayName, 'Target');
+      },
+    );
 
     test('a bookmark that no longer resolves is bookmarkInvalid', () async {
       final unavailable = await unavailableWith(
@@ -216,15 +217,14 @@ void main() {
 
     test('Housekeeping\'s list carries the reason too', () async {
       final path = await folder('Listed');
-      final engram = await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(path),
-      );
+      final engram = await repoWith(
+        FakeFolderAccess(),
+      ).adoptFolder(EngramLocation(path));
 
       final registered = await repoWith(
         FakeFolderAccess(
-          onResolve: (_, _) => throw const FolderAccessException(
-            UnreachableReason.accessNeeded,
-          ),
+          onResolve: (_, _) =>
+              throw const FolderAccessException(UnreachableReason.accessNeeded),
         ),
       ).registeredEngrams();
 
@@ -251,10 +251,9 @@ void main() {
   group('cleanUp through access', () {
     Future<({String path, String id, Directory store})> adopted() async {
       final path = await folder('Cleaned');
-      final engram = await repoWith(FakeFolderAccess()).adoptFolder(
-        EngramLocation(path),
-        bookmark: 'bm',
-      );
+      final engram = await repoWith(
+        FakeFolderAccess(),
+      ).adoptFolder(EngramLocation(path), bookmark: 'bm');
       final store = Directory('$dataRoot/engrams/${engram.id}');
       await store.create(recursive: true);
       return (path: path, id: engram.id, store: store);

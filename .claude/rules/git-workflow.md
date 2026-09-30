@@ -38,6 +38,17 @@ regenerates before measuring, so the push gate and CI heal themselves; a bare
 
 ## 2. Commit
 
+**Offer a local review first, when difit is available.** When the work is
+done, and before committing, check whether the
+[difit](https://github.com/yoshiko-pg/difit) CLI is on `PATH` and the `difit`
+skill is installed. If both are, open the uncommitted changes in it
+(`difit .`, plus `--include-untracked` for new files) and wait for the
+reviewer's comments before committing. If either is missing, don't ask the
+contributor to install anything — carry on to the commit, and say once, in
+passing, that the changes would have been opened in difit for a local review
+had it been available. This is a convenience, not a gate: the pull request
+review in step 3 is the one that counts.
+
 Before each `git commit`, make sure every Markdown file passes lint:
 
 1. From the repo root, run `markdownlint-cli2` (it reads its rules and file
@@ -49,6 +60,14 @@ Before each `git commit`, make sure every Markdown file passes lint:
 
 The pre-commit hook enforces this on staged files as a backstop, but don't
 lean on it — get the whole tree to `0 error(s)` first.
+
+Dart is formatted the same way: run `dart format bin lib test tool` before
+committing. Name those directories rather than `dart format .`, which also
+rewrites git-ignored build output. The pre-commit hook runs the same command
+and stops the commit if it changed anything; CI (`format.yml`) fails a PR
+that is not formatted. Formatter output depends on the SDK version, so it is
+only stable on the pinned Flutter — a different local SDK reformats files
+nobody touched.
 
 ## 3. Open a pull request
 

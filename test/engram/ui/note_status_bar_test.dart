@@ -180,7 +180,10 @@ void main() {
 
       expect(find.text('Over the size limit'), findsOneWidget);
       expect(find.text('Near the size limit'), findsNothing);
-      expect(find.text('Bytes: 1,001 of 1,000 · Words: 1 · Lines: 1'), findsOneWidget);
+      expect(
+        find.text('Bytes: 1,001 of 1,000 · Words: 1 · Lines: 1'),
+        findsOneWidget,
+      );
       expect(
         tester.getSemantics(find.text('Over the size limit')).label,
         'Over the size limit: 1,001 of 1,000 bytes. Opens the choices.',

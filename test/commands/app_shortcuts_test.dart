@@ -42,11 +42,7 @@ void main() {
       );
       expect(
         shortcuts.newFolder,
-        const SingleActivator(
-          LogicalKeyboardKey.keyN,
-          meta: true,
-          shift: true,
-        ),
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true, shift: true),
       );
       expect(
         shortcuts.quit,
@@ -217,7 +213,8 @@ void main() {
       expect(
         notes,
         0,
-        reason: 'the system menu bar invokes it, so binding it here too '
+        reason:
+            'the system menu bar invokes it, so binding it here too '
             'would fire the command twice',
       );
     });

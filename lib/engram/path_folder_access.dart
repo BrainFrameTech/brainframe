@@ -55,6 +55,5 @@ class PathFolderAccess extends FolderAccess {
 /// Uses `file_selector` (the maintained, built-in-Kotlin plugin) rather than
 /// `file_picker`, whose legacy Kotlin-Gradle-Plugin apply broke the Android
 /// build even though the picker itself is desktop-only.
-Future<String?> _pickDirectoryPath() => file_selector.getDirectoryPath(
-      confirmButtonText: 'Choose folder',
-    );
+Future<String?> _pickDirectoryPath() =>
+    file_selector.getDirectoryPath(confirmButtonText: 'Choose folder');

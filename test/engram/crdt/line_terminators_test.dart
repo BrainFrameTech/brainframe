@@ -17,10 +17,7 @@ void main() {
     });
 
     test('mixed terminators all end up LF', () {
-      expect(
-        normalizeTerminators('a\r\nb\nc\r\nd'),
-        'a\nb\nc\nd',
-      );
+      expect(normalizeTerminators('a\r\nb\nc\r\nd'), 'a\nb\nc\nd');
     });
 
     test('a CRLF with no trailing newline still converts', () {
@@ -87,7 +84,8 @@ void main() {
     });
 
     test('surrogate pairs are never split by the replacement', () {
-      final before = '${List.generate(200, (i) => '🎉 line $i').join('\r\n')}\n';
+      final before =
+          '${List.generate(200, (i) => '🎉 line $i').join('\r\n')}\n';
       final after = normalizeTerminators(before);
 
       // Re-encoding proves no half-pair survived: a split surrogate does not

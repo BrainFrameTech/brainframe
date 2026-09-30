@@ -515,21 +515,23 @@ void main() {
         expect(lines.where((l) => l.startsWith('scan: start')), hasLength(3));
       });
 
-      test('a queued scan does not start once the reconciler is closed',
-          () async {
-        final lines = <String>[];
-        final d = await device(trace: lines.add);
-        await d.writer.write('a.md', 'a\n');
-        await engram.writeString('a.md', 'a changed\n');
+      test(
+        'a queued scan does not start once the reconciler is closed',
+        () async {
+          final lines = <String>[];
+          final d = await device(trace: lines.add);
+          await d.writer.write('a.md', 'a\n');
+          await engram.writeString('a.md', 'a changed\n');
 
-        final first = d.reconciler.scan();
-        final queued = d.reconciler.scan();
-        await d.reconciler.close();
+          final first = d.reconciler.scan();
+          final queued = d.reconciler.scan();
+          await d.reconciler.close();
 
-        final report = await queued;
-        expect(identical(report, await first), isTrue);
-        expect(lines.where((l) => l.startsWith('scan: start')), hasLength(1));
-      });
+          final report = await queued;
+          expect(identical(report, await first), isTrue);
+          expect(lines.where((l) => l.startsWith('scan: start')), hasLength(1));
+        },
+      );
     });
 
     test('every reconciled path is announced on the stream', () async {
@@ -2860,25 +2862,28 @@ void main() {
       expect(d.valueOf('a.md'), 'ONE\ntwo\nthree\n');
     });
 
-    test('a change a scan already took in is merged with, not undone', () async {
-      // The scan reconciled the file under an open, dirty buffer, so by the
-      // time the buffer saves, the file matches the history and a check of
-      // the file alone sees nothing. The history is what the base is
-      // compared with, so the save still merges.
-      final d = await device();
-      await d.writer.write('a.md', 'one\ntwo\n');
-      await engram.writeString('a.md', 'one\ntwo\nthree\n');
-      await d.reconciler.scan();
+    test(
+      'a change a scan already took in is merged with, not undone',
+      () async {
+        // The scan reconciled the file under an open, dirty buffer, so by the
+        // time the buffer saves, the file matches the history and a check of
+        // the file alone sees nothing. The history is what the base is
+        // compared with, so the save still merges.
+        final d = await device();
+        await d.writer.write('a.md', 'one\ntwo\n');
+        await engram.writeString('a.md', 'one\ntwo\nthree\n');
+        await d.reconciler.scan();
 
-      final saved = await d.writer.write(
-        'a.md',
-        'ONE\ntwo\n',
-        base: 'one\ntwo\n',
-      );
+        final saved = await d.writer.write(
+          'a.md',
+          'ONE\ntwo\n',
+          base: 'one\ntwo\n',
+        );
 
-      expect(saved, 'ONE\ntwo\nthree\n');
-      expect(await engram.readString('a.md'), 'ONE\ntwo\nthree\n');
-    });
+        expect(saved, 'ONE\ntwo\nthree\n');
+        expect(await engram.readString('a.md'), 'ONE\ntwo\nthree\n');
+      },
+    );
 
     test('without a base, the external edit is still history first', () async {
       final d = await device();

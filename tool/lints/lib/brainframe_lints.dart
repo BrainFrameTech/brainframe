@@ -29,8 +29,9 @@ PluginBase createPlugin() => _BrainframeLints();
 
 class _BrainframeLints extends PluginBase {
   @override
-  List<LintRule> getLintRules(CustomLintConfigs configs) =>
-      [const NoRawWidgetStrings()];
+  List<LintRule> getLintRules(CustomLintConfigs configs) => [
+    const NoRawWidgetStrings(),
+  ];
 }
 
 /// Flags a string literal used as user-facing widget text — the first
@@ -99,9 +100,9 @@ class NoRawWidgetStrings extends DartLintRule {
     if (node is SimpleStringLiteral) return isLocalizableText(node.value);
     if (node is AdjacentStrings) return node.strings.any(_hasLetters);
     if (node is StringInterpolation) {
-      return node.elements
-          .whereType<InterpolationString>()
-          .any((e) => isLocalizableText(e.value));
+      return node.elements.whereType<InterpolationString>().any(
+        (e) => isLocalizableText(e.value),
+      );
     }
     return false;
   }

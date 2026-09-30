@@ -47,8 +47,9 @@ void main() {
     expect(found, same(store));
   });
 
-  testWidgets('a declared setting round-trips through the scoped store',
-      (tester) async {
+  testWidgets('a declared setting round-trips through the scoped store', (
+    tester,
+  ) async {
     final device = _MapBackend();
     final flag = Setting.boolean(
       key: 'demo.flag',

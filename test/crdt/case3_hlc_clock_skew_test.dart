@@ -47,7 +47,8 @@ void main() {
         expect(
           q.text,
           '',
-          reason: 'causal order must hold under "$label": delete applies '
+          reason:
+              'causal order must hold under "$label": delete applies '
               'after insert, so Q is empty',
         );
       });

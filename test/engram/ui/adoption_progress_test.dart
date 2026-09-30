@@ -259,5 +259,6 @@ class _Reconciler implements NoteReconciler {
   Stream<String> get reconciled => const Stream<String>.empty();
 
   @override
-  Stream<DriftScanReport> get scanReports => const Stream<DriftScanReport>.empty();
+  Stream<DriftScanReport> get scanReports =>
+      const Stream<DriftScanReport>.empty();
 }

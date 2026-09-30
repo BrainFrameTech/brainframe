@@ -58,8 +58,9 @@ void main() {
 
     test('built-in stores read bundled content', () async {
       final discovery = await repoWith().discover();
-      final tutorial =
-          discovery.available.firstWhere((e) => e.id == builtinTutorialId);
+      final tutorial = discovery.available.firstWhere(
+        (e) => e.id == builtinTutorialId,
+      );
       expect(
         await tutorial.store.readString('welcome.md'),
         contains('Welcome'),
@@ -72,19 +73,22 @@ void main() {
   });
 
   group('create and container discovery', () {
-    test('create places an engram in the container and discovery finds it',
-        () async {
-      final repo = repoWith();
-      final created = await repo.create('Personal');
-      expect(created.readOnly, isFalse);
+    test(
+      'create places an engram in the container and discovery finds it',
+      () async {
+        final repo = repoWith();
+        final created = await repo.create('Personal');
+        expect(created.readOnly, isFalse);
 
-      final discovery = await repo.discover();
-      expect(
-        discovery.available
-            .any((e) => e.id == created.id && e.displayName == 'Personal'),
-        isTrue,
-      );
-    });
+        final discovery = await repo.discover();
+        expect(
+          discovery.available.any(
+            (e) => e.id == created.id && e.displayName == 'Personal',
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('rejects a blank display name', () {
       expect(() => repoWith().create('   '), throwsArgumentError);
@@ -100,7 +104,9 @@ void main() {
     });
 
     test('a throwing container resolver degrades to built-ins only', () async {
-      final repo = repoWith(container: () async => throw UnsupportedError('no fs'));
+      final repo = repoWith(
+        container: () async => throw UnsupportedError('no fs'),
+      );
       final discovery = await repo.discover();
       expect(
         discovery.available.map((e) => e.id),
@@ -120,18 +126,23 @@ void main() {
       );
     });
 
-    test('adopt registers an out-of-container engram; discovery includes it',
-        () async {
-      final repo = repoWith();
-      final adopted = await repo.adopt(EngramLocation(externalPath));
-      final discovery = await repo.discover();
-      expect(discovery.available.any((e) => e.id == adopted.id), isTrue);
-    });
+    test(
+      'adopt registers an out-of-container engram; discovery includes it',
+      () async {
+        final repo = repoWith();
+        final adopted = await repo.adopt(EngramLocation(externalPath));
+        final discovery = await repo.discover();
+        expect(discovery.available.any((e) => e.id == adopted.id), isTrue);
+      },
+    );
 
     test('the registry persists across repository instances', () async {
       await repoWith().adopt(EngramLocation(externalPath));
       final discovery = await repoWith().discover();
-      expect(discovery.available.any((e) => e.displayName == 'External'), isTrue);
+      expect(
+        discovery.available.any((e) => e.displayName == 'External'),
+        isTrue,
+      );
     });
 
     test('forget removes an adopted engram from discovery', () async {
@@ -161,67 +172,81 @@ void main() {
       expect(listed.single.available, isFalse); // a dangling entry
     });
 
-    test('registeredEngrams excludes built-ins and container engrams',
-        () async {
-      final repo = repoWith();
-      await repo.create('In the container'); // Location A, not registry-backed
+    test(
+      'registeredEngrams excludes built-ins and container engrams',
+      () async {
+        final repo = repoWith();
+        await repo.create(
+          'In the container',
+        ); // Location A, not registry-backed
 
-      expect(await repo.registeredEngrams(), isEmpty);
-    });
+        expect(await repo.registeredEngrams(), isEmpty);
+      },
+    );
 
-    test('a deleted root becomes reconnectable-unavailable, not gone', () async {
-      final repo = repoWith();
-      final adopted = await repo.adopt(EngramLocation(externalPath));
-      Directory(externalPath).deleteSync(recursive: true);
+    test(
+      'a deleted root becomes reconnectable-unavailable, not gone',
+      () async {
+        final repo = repoWith();
+        final adopted = await repo.adopt(EngramLocation(externalPath));
+        Directory(externalPath).deleteSync(recursive: true);
 
-      final gone = await repo.discover();
-      expect(gone.available.any((e) => e.id == adopted.id), isFalse);
-      expect(
-        gone.unavailable
-            .any((u) => u.id == adopted.id && u.displayName == 'External'),
-        isTrue,
-      );
+        final gone = await repo.discover();
+        expect(gone.available.any((e) => e.id == adopted.id), isFalse);
+        expect(
+          gone.unavailable.any(
+            (u) => u.id == adopted.id && u.displayName == 'External',
+          ),
+          isTrue,
+        );
 
-      // Still registered — it reconnects when the folder returns.
-      await createFileSystemEngram(
-        location: EngramLocation(externalPath),
-        displayName: 'External',
-      );
-      final back = await repo.discover();
-      expect(back.available.any((e) => e.displayName == 'External'), isTrue);
-    });
+        // Still registered — it reconnects when the folder returns.
+        await createFileSystemEngram(
+          location: EngramLocation(externalPath),
+          displayName: 'External',
+        );
+        final back = await repo.discover();
+        expect(back.available.any((e) => e.displayName == 'External'), isTrue);
+      },
+    );
 
     group('cleanUp', () {
       /// The device-local store for [id], as a session would have left it.
       Directory storeFor(String id) =>
           Directory('$dataRoot/engrams/$id')..createSync(recursive: true);
 
-      test('deletes the marker tree, the store, and the registry row', () async {
-        final repo = repoWith();
-        final adopted = await repo.adopt(EngramLocation(externalPath));
-        final store = storeFor(adopted.id);
-        File('${store.path}/metadata.db').writeAsStringSync('db');
-        File('$externalPath/.brainframe/shared/peer.db')
-          ..createSync(recursive: true)
-          ..writeAsStringSync('map');
-        File('$externalPath/notes/keep.md')
-          ..createSync(recursive: true)
-          ..writeAsStringSync('mine');
+      test(
+        'deletes the marker tree, the store, and the registry row',
+        () async {
+          final repo = repoWith();
+          final adopted = await repo.adopt(EngramLocation(externalPath));
+          final store = storeFor(adopted.id);
+          File('${store.path}/metadata.db').writeAsStringSync('db');
+          File('$externalPath/.brainframe/shared/peer.db')
+            ..createSync(recursive: true)
+            ..writeAsStringSync('map');
+          File('$externalPath/notes/keep.md')
+            ..createSync(recursive: true)
+            ..writeAsStringSync('mine');
 
-        await repo.cleanUp(adopted.id);
+          await repo.cleanUp(adopted.id);
 
-        expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
-        expect(store.existsSync(), isFalse);
-        expect(await repo.registeredEngrams(), isEmpty);
-        expect(
-          (await repo.discover()).unavailable,
-          isEmpty,
-          reason: 'cleaned up, not dangling',
-        );
-        // The notes are the user's and stay exactly where they were.
-        expect(File('$externalPath/notes/keep.md').readAsStringSync(), 'mine');
-        expect(Directory(externalPath).existsSync(), isTrue);
-      });
+          expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
+          expect(store.existsSync(), isFalse);
+          expect(await repo.registeredEngrams(), isEmpty);
+          expect(
+            (await repo.discover()).unavailable,
+            isEmpty,
+            reason: 'cleaned up, not dangling',
+          );
+          // The notes are the user's and stay exactly where they were.
+          expect(
+            File('$externalPath/notes/keep.md').readAsStringSync(),
+            'mine',
+          );
+          expect(Directory(externalPath).existsSync(), isTrue);
+        },
+      );
 
       test('a dangling entry still loses its orphaned store', () async {
         // The folder is gone but this device's metadata.db for it is not —
@@ -237,16 +262,18 @@ void main() {
         expect(await repo.registeredEngrams(), isEmpty);
       });
 
-      test('an engram never opened on this device has no store to lose',
-          () async {
-        final repo = repoWith();
-        final adopted = await repo.adopt(EngramLocation(externalPath));
+      test(
+        'an engram never opened on this device has no store to lose',
+        () async {
+          final repo = repoWith();
+          final adopted = await repo.adopt(EngramLocation(externalPath));
 
-        await repo.cleanUp(adopted.id);
+          await repo.cleanUp(adopted.id);
 
-        expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
-        expect(await repo.registeredEngrams(), isEmpty);
-      });
+          expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
+          expect(await repo.registeredEngrams(), isEmpty);
+        },
+      );
 
       test('leaves other engrams\' stores and folders alone', () async {
         final repo = repoWith();
@@ -307,7 +334,10 @@ void main() {
               throwsA(isA<FileSystemException>()),
             );
 
-            expect(Directory('$externalPath/.brainframe').existsSync(), isFalse);
+            expect(
+              Directory('$externalPath/.brainframe').existsSync(),
+              isFalse,
+            );
             final listed = await repo.registeredEngrams();
             expect(listed.map((e) => e.id), [adopted.id]);
             expect(listed.single.available, isFalse, reason: 'marker gone');
@@ -333,10 +363,7 @@ void main() {
       final adopted = await repo.adoptFolder(EngramLocation(plainPath));
       expect(adopted.readOnly, isFalse);
       expect(adopted.displayName, 'Journal'); // derived from the folder name
-      expect(
-        File('$plainPath/.brainframe/engram.json').existsSync(),
-        isTrue,
-      );
+      expect(File('$plainPath/.brainframe/engram.json').existsSync(), isTrue);
 
       final discovery = await repo.discover();
       expect(discovery.available.any((e) => e.id == adopted.id), isTrue);
@@ -345,33 +372,34 @@ void main() {
     test('adoptFolder honours an explicit display name', () async {
       final plainPath = '${tempRoot.path}/raw-folder';
       await Directory(plainPath).create(recursive: true);
-      final adopted = await repoWith()
-          .adoptFolder(EngramLocation(plainPath), displayName: 'My Notes');
+      final adopted = await repoWith().adoptFolder(
+        EngramLocation(plainPath),
+        displayName: 'My Notes',
+      );
       expect(adopted.displayName, 'My Notes');
     });
 
-    test('adoptFolder opens an existing engram without a second registry row',
-        () async {
-      final repo = repoWith();
-      final first = await repo.adoptFolder(EngramLocation(externalPath));
-      // Re-adopting the same, now-marked folder keeps its identity and does not
-      // duplicate the registry entry.
-      final second = await repo.adoptFolder(EngramLocation(externalPath));
-      expect(second.id, first.id);
-      expect(second.displayName, 'External');
+    test(
+      'adoptFolder opens an existing engram without a second registry row',
+      () async {
+        final repo = repoWith();
+        final first = await repo.adoptFolder(EngramLocation(externalPath));
+        // Re-adopting the same, now-marked folder keeps its identity and does not
+        // duplicate the registry entry.
+        final second = await repo.adoptFolder(EngramLocation(externalPath));
+        expect(second.id, first.id);
+        expect(second.displayName, 'External');
 
-      final discovery = await repo.discover();
-      expect(
-        discovery.available.where((e) => e.id == first.id).length,
-        1,
-      );
-    });
+        final discovery = await repo.discover();
+        expect(discovery.available.where((e) => e.id == first.id).length, 1);
+      },
+    );
 
     test('a corrupt registry line is skipped, not fatal', () async {
       SharedPreferencesAsyncPlatform.instance =
           InMemorySharedPreferencesAsync.withData({
-        'engram.registry.v1': ['{ not json', '{"id":"x"}'],
-      });
+            'engram.registry.v1': ['{ not json', '{"id":"x"}'],
+          });
       prefs = SharedPreferencesAsync();
       final discovery = await repoWith().discover();
       expect(
@@ -418,11 +446,13 @@ void main() {
       expect((await repo.openInitialEngram()).id, created.id);
     });
 
-    test('falls back to the tutorial when the last-opened id is gone',
-        () async {
-      await repoWith().setLastOpened('nonexistent-id');
-      expect((await repoWith().openInitialEngram()).id, builtinTutorialId);
-    });
+    test(
+      'falls back to the tutorial when the last-opened id is gone',
+      () async {
+        await repoWith().setLastOpened('nonexistent-id');
+        expect((await repoWith().openInitialEngram()).id, builtinTutorialId);
+      },
+    );
   });
 
   group('openEngramAtPath (the --engram override)', () {
@@ -439,15 +469,17 @@ void main() {
       expect(opened.readOnly, isFalse);
     });
 
-    test('creates a marker for a plain folder, named from the folder',
-        () async {
-      final path = '${tempRoot.path}/Field Journal';
-      await Directory(path).create(recursive: true);
+    test(
+      'creates a marker for a plain folder, named from the folder',
+      () async {
+        final path = '${tempRoot.path}/Field Journal';
+        await Directory(path).create(recursive: true);
 
-      final opened = await repoWith().openEngramAtPath(path);
-      expect(opened.displayName, 'Field Journal'); // derived from the folder
-      expect(File('$path/.brainframe/engram.json').existsSync(), isTrue);
-    });
+        final opened = await repoWith().openEngramAtPath(path);
+        expect(opened.displayName, 'Field Journal'); // derived from the folder
+        expect(File('$path/.brainframe/engram.json').existsSync(), isTrue);
+      },
+    );
 
     test('does not register the engram or record it as last-opened', () async {
       final path = '${tempRoot.path}/transient';
@@ -462,8 +494,10 @@ void main() {
       // The override is transient: registry and last-opened are untouched, so a
       // normal launch afterwards still resolves to the tutorial.
       final discovery = await repo.discover();
-      expect(discovery.available.any((e) => e.displayName == 'Transient'),
-          isFalse);
+      expect(
+        discovery.available.any((e) => e.displayName == 'Transient'),
+        isFalse,
+      );
       expect((await repo.openInitialEngram()).id, builtinTutorialId);
     });
   });
@@ -574,17 +608,17 @@ void main() {
       final engram = await repo.create('zettel');
 
       expect(() => repo.rename(engram, '   '), throwsArgumentError);
-      final after = (await repo.discover())
-          .available
-          .firstWhere((e) => e.id == engram.id);
+      final after = (await repo.discover()).available.firstWhere(
+        (e) => e.id == engram.id,
+      );
       expect(after.displayName, 'zettel');
     });
 
     test('refuses the read-only built-ins', () async {
       final repo = repoWith();
-      final tutorial = (await repo.discover())
-          .available
-          .firstWhere((e) => e.id == builtinTutorialId);
+      final tutorial = (await repo.discover()).available.firstWhere(
+        (e) => e.id == builtinTutorialId,
+      );
 
       expect(() => repo.rename(tutorial, 'My Tutorial'), throwsArgumentError);
     });
@@ -596,5 +630,4 @@ void main() {
       expect((await repo.rename(engram, '  Notes  ')).displayName, 'Notes');
     });
   });
-
 }

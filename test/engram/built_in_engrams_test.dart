@@ -12,8 +12,9 @@ void main() {
   });
 
   test('built-in stores read their bundled content', () async {
-    final tutorial =
-        builtInEngrams().firstWhere((e) => e.id == builtinTutorialId);
+    final tutorial = builtInEngrams().firstWhere(
+      (e) => e.id == builtinTutorialId,
+    );
     expect(
       await tutorial.store.readString('welcome.md'),
       contains('Welcome to BrainFrame'),

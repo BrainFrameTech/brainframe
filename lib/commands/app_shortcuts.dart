@@ -39,10 +39,7 @@ class AppShortcuts {
             shift: true,
           ),
           quit: SingleActivator(LogicalKeyboardKey.keyQ, control: true),
-          preferences: SingleActivator(
-            LogicalKeyboardKey.comma,
-            control: true,
-          ),
+          preferences: SingleActivator(LogicalKeyboardKey.comma, control: true),
           find: SingleActivator(LogicalKeyboardKey.keyF, control: true),
           cut: SingleActivator(LogicalKeyboardKey.keyX, control: true),
           copy: SingleActivator(LogicalKeyboardKey.keyC, control: true),

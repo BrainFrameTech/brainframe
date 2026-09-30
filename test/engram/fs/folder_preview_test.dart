@@ -26,74 +26,73 @@ void main() {
   });
 
   group('countCrlfTextFiles', () {
-    test('counts a CRLF file larger than a chunk without reading it whole',
-        () async {
-      // #152: the store refuses to hand over a whole file, and the answer
-      // is found in the first chunk, so the rest is never pulled.
-      final store = _ChunkedStore(
-        {'a.md': text(1000, crAt: 10)},
-        chunkSize: 100,
-      );
+    test(
+      'counts a CRLF file larger than a chunk without reading it whole',
+      () async {
+        // #152: the store refuses to hand over a whole file, and the answer
+        // is found in the first chunk, so the rest is never pulled.
+        final store = _ChunkedStore({
+          'a.md': text(1000, crAt: 10),
+        }, chunkSize: 100);
 
-      expect(await countCrlfTextFiles(store, ['a.md']), 1);
-      expect(store.chunksYielded['a.md'], 1, reason: 'left at the first \\r');
-    });
+        expect(await countCrlfTextFiles(store, ['a.md']), 1);
+        expect(store.chunksYielded['a.md'], 1, reason: 'left at the first \\r');
+      },
+    );
 
-    test('a file whose only \\r is in its last chunk is still counted',
-        () async {
-      final store = _ChunkedStore(
-        {'a.md': text(1000, crAt: 999)},
-        chunkSize: 100,
-      );
+    test(
+      'a file whose only \\r is in its last chunk is still counted',
+      () async {
+        final store = _ChunkedStore({
+          'a.md': text(1000, crAt: 999),
+        }, chunkSize: 100);
 
-      expect(await countCrlfTextFiles(store, ['a.md']), 1);
-      expect(store.chunksYielded['a.md'], 10, reason: 'read to the end');
-    });
+        expect(await countCrlfTextFiles(store, ['a.md']), 1);
+        expect(store.chunksYielded['a.md'], 10, reason: 'read to the end');
+      },
+    );
 
-    test('an LF file is passed over once, and a blob is never opened',
-        () async {
-      final store = _ChunkedStore(
-        {
+    test(
+      'an LF file is passed over once, and a blob is never opened',
+      () async {
+        final store = _ChunkedStore({
           'lf.md': text(250),
           'pic.png': text(250, crAt: 0),
           'notes.txt': text(250, crAt: 200),
-        },
-        chunkSize: 100,
-      );
+        }, chunkSize: 100);
 
-      expect(
-        await countCrlfTextFiles(store, ['lf.md', 'pic.png', 'notes.txt']),
-        1,
-      );
-      expect(store.chunksYielded['lf.md'], 3);
-      expect(store.chunksYielded.containsKey('pic.png'), isFalse);
-    });
+        expect(
+          await countCrlfTextFiles(store, ['lf.md', 'pic.png', 'notes.txt']),
+          1,
+        );
+        expect(store.chunksYielded['lf.md'], 3);
+        expect(store.chunksYielded.containsKey('pic.png'), isFalse);
+      },
+    );
 
     test('reports every file as one step, a blob included', () async {
-      final store = _ChunkedStore(
-        {'a.md': text(10), 'b.png': text(10), 'c.md': text(10, crAt: 0)},
-        chunkSize: 100,
-      );
+      final store = _ChunkedStore({
+        'a.md': text(10),
+        'b.png': text(10),
+        'c.md': text(10, crAt: 0),
+      }, chunkSize: 100);
       final steps = <(int, int)>[];
 
-      await countCrlfTextFiles(
-        store,
-        ['a.md', 'b.png', 'c.md'],
-        onProgress: (done, total) => steps.add((done, total)),
-      );
+      await countCrlfTextFiles(store, [
+        'a.md',
+        'b.png',
+        'c.md',
+      ], onProgress: (done, total) => steps.add((done, total)));
 
       expect(steps, [(0, 3), (1, 3), (2, 3), (3, 3)]);
     });
 
     test('stops between files when told to, with the count so far', () async {
-      final store = _ChunkedStore(
-        {
-          'a.md': text(10, crAt: 0),
-          'b.md': text(10, crAt: 0),
-          'c.md': text(10, crAt: 0),
-        },
-        chunkSize: 100,
-      );
+      final store = _ChunkedStore({
+        'a.md': text(10, crAt: 0),
+        'b.md': text(10, crAt: 0),
+        'c.md': text(10, crAt: 0),
+      }, chunkSize: 100);
       var seen = 0;
 
       final count = await countCrlfTextFiles(
@@ -130,8 +129,9 @@ class _ChunkedStore extends EngramStore {
   Future<List<String>> list() async => files.keys.toList();
 
   @override
-  Future<Uint8List> readBytes(String path) =>
-      throw StateError('readBytes($path): the preview never reads a file whole');
+  Future<Uint8List> readBytes(String path) => throw StateError(
+    'readBytes($path): the preview never reads a file whole',
+  );
 
   @override
   Stream<List<int>> openRead(String path) async* {

@@ -67,16 +67,20 @@ void main() {
     });
   });
 
-  test('listDirectories defaults to none for backends without directories',
-      () async {
-    expect(await _ReadOnlyStore({'a.md': '# A'}).listDirectories(), isEmpty);
-  });
+  test(
+    'listDirectories defaults to none for backends without directories',
+    () async {
+      expect(await _ReadOnlyStore({'a.md': '# A'}).listDirectories(), isEmpty);
+    },
+  );
 
-  test('readString/writeString are conveniences over the byte methods',
-      () async {
-    final store = _ReadOnlyStore({'a.md': '# A'});
-    expect(await store.readString('a.md'), '# A');
-    // writeString funnels through the read-only writeBytes.
-    expect(() => store.writeString('a.md', 'x'), throwsUnsupportedError);
-  });
+  test(
+    'readString/writeString are conveniences over the byte methods',
+    () async {
+      final store = _ReadOnlyStore({'a.md': '# A'});
+      expect(await store.readString('a.md'), '# A');
+      // writeString funnels through the read-only writeBytes.
+      expect(() => store.writeString('a.md', 'x'), throwsUnsupportedError);
+    },
+  );
 }

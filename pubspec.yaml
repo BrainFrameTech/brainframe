@@ -20,6 +20,11 @@ version: 0.0.1+1
 
 environment:
   sdk: ^3.12.2
+  # The one place the Flutter version is pinned. Every CI workflow reads it
+  # from here (subosito/flutter-action's flutter-version-file), so an upgrade
+  # is this line plus `flutter pub get` on the new SDK to refresh
+  # pubspec.lock. Formatter output and the lockfile both depend on it.
+  flutter: 3.44.4
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions

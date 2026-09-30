@@ -1,0 +1,15 @@
+# Commits that changed formatting only. `git blame` skips them and attributes
+# each line to the change before, so a bulk reformat does not bury who wrote
+# what and why.
+#
+# GitHub reads this file automatically. Local git reads it once told to, per
+# clone — scripts/install.sh (and install.ps1) set that up:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Add a commit here only when it is purely mechanical, and only after it is on
+# main: list the squash-merge commit, with its full 40-character hash.
+
+# Format the Dart tree with dart format, once, when the formatter was first
+# enforced (#231)
+184b2804a45e75363d11d03c7a8fd70a8dc8fe99

@@ -1,0 +1,36 @@
+# Warms the caches the PR checks restore: the Flutter SDK, and the pub cache
+# with coverde already activated in it.
+#
+# Why a workflow of its own. A GitHub Actions cache saved by a pull request's
+# run is scoped to that pull request; every other pull request can read only
+# caches saved on the base branch. The checks (coverage, format, l10n) run on
+# pull requests alone, so without this nothing would ever be saved on main,
+# and every new pull request would start cold — downloading the SDK, about a
+# minute, in each of the three. This runs on main after each merge, saving the
+# caches where every pull request can read them.
+#
+# A cache is saved only under a key not already taken, so a run that changes
+# nothing saves nothing. The SDK key follows the Flutter pin in pubspec.yaml,
+# and the pub cache's adds a hash of pubspec.lock: a version or dependency
+# change is what produces new caches.
+name: ci-cache
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # to warm by hand, if the caches were evicted
+permissions:
+  contents: read
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml # the one Flutter pin: environment.flutter
+          cache: true
+      - run: flutter pub get
+      # Into the pub cache before it is saved, so coverage.yml's activation
+      # finds it there.
+      - run: dart pub global activate coverde

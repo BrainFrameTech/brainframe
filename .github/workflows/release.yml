@@ -23,6 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Deliberately uncached, unlike the PR checks: a release is rare, so
+      # the minute saved is worth little, and a fresh SDK download keeps
+      # what ships independent of whatever a cache happens to hold.
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

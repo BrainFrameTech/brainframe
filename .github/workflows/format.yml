@@ -16,6 +16,8 @@ jobs:
         with:
           channel: stable
           flutter-version-file: pubspec.yaml # the one Flutter pin: environment.flutter
+          # The SDK and the pub cache, restored from main's (ci-cache.yml).
+          cache: true
       # The formatter reads each package's language version from its
       # package_config.json, which pub get writes.
       - run: flutter pub get

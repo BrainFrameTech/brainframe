@@ -15,6 +15,7 @@ import 'package:brainframe/engram/crdt/materializer_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/note_document_io.dart';
 import 'package:brainframe/engram/crdt/note_document_lock.dart';
+import 'package:brainframe/engram/crdt/sketch.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
@@ -2756,6 +2757,32 @@ void main() {
           },
         );
 
+        test(
+          'one that arrived over the ceiling is recorded as the scan would',
+          () async {
+            // Minted a plain file either way, so the card must say so
+            // either way: "oversized", with its size, never "created".
+            final d = await device(ceiling: 4096);
+            await engram.writeString('big.md', 'a' * 5000);
+
+            expect(
+              await d.reconciler.reconcile('big.md', trigger: ScanTrigger.note),
+              isTrue,
+            );
+
+            final card = (await d.reconciler.recentScans()).single;
+            expect(card.report.oversized, ['big.md']);
+            expect(card.report.created, isEmpty);
+            expect(card.report.overCeiling, {
+              'big.md': const OverCeiling(sizeBytes: 5000, ceilingBytes: 4096),
+            });
+            expect(
+              d.store.catalog.byPath('big.md')!.mergePolicy,
+              MergePolicy.blobLww,
+            );
+          },
+        );
+
         test('a save that merges an outside edit records it', () async {
           final d = await device();
           await d.writer.write('a.md', 'one\ntwo\n');
@@ -2955,6 +2982,218 @@ void main() {
       await scanning;
 
       expect(d.store.scans.count(), 0);
+    });
+  });
+
+  group('event detail (the device names design, Decision 4)', () {
+    // Each kind's facts are captured as the scan decides it, and read back
+    // from the history as they were — never looked up when shown.
+
+    /// [d]'s newest recorded scan, read back from the history.
+    DriftScanReport recorded(_Device d) => d.store.scans.recent().first.report;
+
+    /// A seed claim as the detail states it.
+    Mint mintOf(OperationId claim) => Mint(
+      peer: claim.peerId.toString(),
+      at: DateTime.fromMillisecondsSinceEpoch(claim.hlc.l, isUtc: true),
+    );
+
+    test('an adoption names the device that minted it, and when', () async {
+      final a = await device();
+      await engram.writeString('one.md', 'first\n');
+      await a.reconciler.scan();
+      await a.publish();
+      final minted = mintOf(a.store.catalog.byPath('one.md')!.seedClaim!);
+
+      final b = await device();
+      final report = await b.reconciler.scan();
+
+      expect(report.adopted, ['one.md']);
+      expect(report.adoptedFrom, {'one.md': minted});
+      expect(minted.peer, a.store.peerId.toString());
+      expect(recorded(b).adoptedFrom, {'one.md': minted});
+    });
+
+    test('an adoption found before an open says the same', () async {
+      final a = await device();
+      await engram.writeString('one.md', 'first\n');
+      await a.reconciler.scan();
+      await a.publish();
+      final minted = mintOf(a.store.catalog.byPath('one.md')!.seedClaim!);
+
+      final b = await device();
+      await b.reconciler.reconcile('one.md', trigger: ScanTrigger.note);
+
+      expect(recorded(b).adoptedFrom, {'one.md': minted});
+    });
+
+    test('a move says identical for a plain rename', () async {
+      final d = await device();
+      await d.writer.write('old.md', 'the same\n');
+      await engram.move('old.md', 'new.md');
+
+      final report = await d.reconciler.scan();
+
+      expect(report.moveMatches, {'old.md': const MoveDetail.identical()});
+      expect(recorded(d).moveMatches, {'old.md': const MoveDetail.identical()});
+    });
+
+    test(
+      'a move says similar, and how similar, for a rename with an edit',
+      () async {
+        final d = await device();
+        final text = List.generate(
+          30,
+          (i) => 'Line $i of a note long enough to sketch reliably.',
+        ).join('\n');
+        await d.writer.write('old.md', '$text\n');
+        await engram.move('old.md', 'new.md');
+        await engram.writeString('new.md', '$text\nAnd a line added after.\n');
+
+        final report = await d.reconciler.scan();
+
+        final how = report.moveMatches['old.md']!;
+        expect(how.match, MoveMatch.similar);
+        expect(
+          how.similarity,
+          inExclusiveRange(renameSimilarityCutoff - 1e-9, 1),
+        );
+        expect(recorded(d).moveMatches, {'old.md': how});
+      },
+    );
+
+    test('a retirement tells the whole story', () async {
+      final a = await device();
+      final b = await device();
+      await a.writer.write('note.md', 'shared text\n');
+      await b.writer.write('note.md', 'shared text\n');
+      await a.publish();
+      await b.publish();
+      final rowA = a.store.catalog.byPath('note.md')!;
+      final rowB = b.store.catalog.byPath('note.md')!;
+      final (winner, loser) = rowA.ulid.compareTo(rowB.ulid) < 0
+          ? (rowA, b)
+          : (rowB, a);
+      final losing = loser.store.catalog.byPath('note.md')!;
+
+      final report = await loser.reconciler.scan();
+
+      final expected = Retirement(
+        winner: winner.ulid,
+        winnerMint: mintOf(winner.seedClaim!),
+        loserMintedAt: mintOf(losing.seedClaim!).at,
+        loserChanges: 1,
+      );
+      expect(report.retirements, {'note.md': expected});
+      expect(recorded(loser).retirements, {'note.md': expected});
+    });
+
+    test('a conversion elsewhere names the converting device', () async {
+      final a = await device();
+      await a.writer.write('shared.md', 'from A\n');
+      await a.publish();
+      final b = await device();
+      await b.reconciler.scan();
+      await a.reconciler.convertToPlainFile('shared.md');
+      await a.publish();
+
+      final report = await b.reconciler.scan();
+
+      expect(report.convertedBy, {'shared.md': a.store.peerId.toString()});
+      expect(recorded(b).convertedBy, report.convertedBy);
+    });
+
+    test('a conversion here counts the changes it dropped', () async {
+      final d = await device();
+      await d.writer.write('long.md', 'one\n');
+      await d.writer.write('long.md', 'one\ntwo\n');
+      final held = changesOf(d, 'long.md');
+
+      await d.reconciler.convertToPlainFile('long.md');
+
+      expect(recorded(d).dropped, {'long.md': held});
+      expect(held, greaterThan(1));
+    });
+
+    group('over the ceiling', () {
+      const ceiling = 4096;
+
+      test('an arrival records its size against the ceiling', () async {
+        final d = await device(ceiling: ceiling);
+        await engram.writeString('big.md', 'a' * (ceiling + 1));
+
+        final report = await d.reconciler.scan();
+
+        const expected = OverCeiling(
+          sizeBytes: ceiling + 1,
+          ceilingBytes: ceiling,
+        );
+        expect(report.overCeiling, {'big.md': expected});
+        expect(recorded(d).overCeiling, {'big.md': expected});
+      });
+
+      test(
+        'a note grown past it records the same, by scan or by open',
+        () async {
+          for (final viaOpen in [false, true]) {
+            final d = await device(ceiling: ceiling);
+            await d.writer.write('journal.md', 'kept\n');
+            await engram.writeString('journal.md', 'kept\n${'a' * ceiling}');
+
+            if (viaOpen) {
+              await d.reconciler.reconcile('journal.md');
+            } else {
+              await d.reconciler.scan();
+            }
+
+            expect(
+              recorded(d).overCeiling,
+              {
+                'journal.md': const OverCeiling(
+                  sizeBytes: 5 + ceiling,
+                  ceilingBytes: ceiling,
+                ),
+              },
+              reason: viaOpen ? 'before an open' : 'by a scan',
+            );
+          }
+        },
+      );
+
+      test('a moved note found over it records at its new path', () async {
+        // The ceiling lowered under a note that is then renamed: the move
+        // is matched by hash, and the note at its new path waits.
+        final d = await device(ceiling: ceiling);
+        await d.writer.write('journal.md', 'kept\n');
+        d.reconciler.noteSizeCeilingBytes = 4;
+        await engram.move('journal.md', 'renamed.md');
+
+        final report = await d.reconciler.scan();
+
+        expect(report.moved, {'journal.md': 'renamed.md'});
+        expect(report.awaitingDecision, ['renamed.md']);
+        expect(recorded(d).overCeiling, {
+          'renamed.md': const OverCeiling(sizeBytes: 5, ceilingBytes: 4),
+        });
+      });
+    });
+
+    test('kinds with nothing to add record no detail', () async {
+      final d = await device();
+      await d.writer.write('gone.md', 'two\n');
+      await engram.delete('gone.md');
+      await engram.writeString('fresh.md', 'three\n');
+
+      await d.reconciler.scan();
+
+      final details = d.store.database
+          .select('SELECT kind, detail FROM bf_scan_event')
+          .map((row) => (row['kind'], row['detail']))
+          .toList();
+      expect(
+        details,
+        unorderedEquals([('created', null), ('tombstoned', null)]),
+      );
     });
   });
 

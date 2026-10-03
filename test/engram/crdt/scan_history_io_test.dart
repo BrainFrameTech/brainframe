@@ -1,6 +1,7 @@
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart' as sq;
 
 /// The scan history's two tables: what a record round-trips, what the prune
 /// rule keeps, and what a dismiss does.
@@ -54,8 +55,52 @@ void main() {
         'new_path',
         'ulid',
         'error',
+        'detail',
       ]);
     });
+
+    test(
+      'an event table from before `detail` gains it, its rows as they were',
+      () {
+        // A database written before the column: the tables as they were,
+        // with a scan already in them.
+        final old = sq.sqlite3.openInMemory();
+        addTearDown(old.close);
+        old
+          ..execute(ScanHistory.createScanSql)
+          ..execute('''
+CREATE TABLE bf_scan_event (
+  scan_id  INTEGER NOT NULL REFERENCES bf_scan(id) ON DELETE CASCADE,
+  kind     TEXT    NOT NULL,
+  path     TEXT    NOT NULL,
+  new_path TEXT,
+  ulid     TEXT,
+  error    TEXT
+);
+''')
+          ..execute(
+            'INSERT INTO bf_scan VALUES (1, 0, 1000, \'resume\', 1, NULL, 0, NULL)',
+          )
+          ..execute(
+            "INSERT INTO bf_scan_event VALUES (1, 'moved', 'a.md', 'b.md', "
+            "NULL, NULL), (1, 'retired', 'c.md', NULL, NULL, NULL)",
+          );
+
+        ScanHistory.createSchema(old);
+        ScanHistory.createSchema(old); // and again: idempotent
+
+        final columns = old
+            .select('SELECT name FROM pragma_table_info(?)', ['bf_scan_event'])
+            .map((row) => row['name'])
+            .toList();
+        expect(columns.last, 'detail');
+        final back = ScanHistory(old).byId(1)!.report;
+        expect(back.moved, {'a.md': 'b.md'});
+        expect(back.retired, ['c.md']);
+        expect(back.moveMatches, isEmpty);
+        expect(back.retirements, isEmpty);
+      },
+    );
 
     test('creating the schema twice is a no-op', () {
       ScanHistory.createSchema(store.database);
@@ -119,6 +164,85 @@ void main() {
           .select("SELECT ulid FROM bf_scan_event WHERE kind = 'moved'")
           .single;
       expect(moved['ulid'], 'ULID-moved-new.md');
+    });
+
+    test('every kind\'s detail round-trips', () {
+      final mint = Mint(
+        peer: 'peer-a',
+        at: DateTime.utc(2026, 9, 30, 11, 54, 22, 123),
+      );
+      final retirement = Retirement(
+        winner: 'ULID-WINNER',
+        winnerMint: mint,
+        loserMintedAt: DateTime.utc(2026, 9, 30, 11, 54, 33),
+        loserChanges: 1,
+      );
+      const over = OverCeiling(sizeBytes: 200000, ceilingBytes: 131072);
+      const grown = OverCeiling(sizeBytes: 140000, ceilingBytes: 131072);
+      final report = DriftScanReport(
+        oversized: const ['huge.md'],
+        converted: const ['long.md'],
+        convertedElsewhere: const {'theirs.md': 12},
+        awaitingDecision: const ['grown.md'],
+        adopted: const ['d.md'],
+        moved: const {'old.md': 'new.md', 'twin.md': 'twin2.md'},
+        retired: const ['lost.md'],
+        adoptedFrom: {'d.md': mint},
+        moveMatches: const {
+          'old.md': MoveDetail.similar(0.82),
+          'twin.md': MoveDetail.identical(),
+        },
+        retirements: {'lost.md': retirement},
+        convertedBy: const {'theirs.md': 'peer-b'},
+        overCeiling: const {'huge.md': over, 'grown.md': grown},
+        dropped: const {'long.md': 40},
+      );
+
+      final back = history.byId(record(report)!)!.report;
+
+      expect(back.adoptedFrom, {'d.md': mint});
+      expect(back.moveMatches, {
+        'old.md': const MoveDetail.similar(0.82),
+        'twin.md': const MoveDetail.identical(),
+      });
+      expect(back.retirements, {'lost.md': retirement});
+      expect(back.convertedBy, {'theirs.md': 'peer-b'});
+      expect(back.overCeiling, {'huge.md': over, 'grown.md': grown});
+      expect(back.dropped, {'long.md': 40});
+      // The count a converted-elsewhere event keeps in `error` stays there.
+      expect(back.convertedElsewhere, {'theirs.md': 12});
+    });
+
+    test('a detail that does not parse reads as none, the event kept', () {
+      final id = record(
+        DriftScanReport(
+          adopted: const ['d.md'],
+          adoptedFrom: {'d.md': Mint(peer: 'p', at: t0)},
+        ),
+      )!;
+      store.database.execute(
+        "UPDATE bf_scan_event SET detail = '{not json' WHERE kind = 'adopted'",
+      );
+
+      final back = history.byId(id)!.report;
+      expect(back.adopted, ['d.md']);
+      expect(back.adoptedFrom, isEmpty);
+    });
+
+    test('a detail with a time out of range does not hide the history', () {
+      final id = record(
+        DriftScanReport(
+          adopted: const ['d.md'],
+          adoptedFrom: {'d.md': Mint(peer: 'p', at: t0)},
+        ),
+      )!;
+      store.database.execute(
+        'UPDATE bf_scan_event SET detail = '
+        '\'{"peer":"p","at":8640000000000001}\'',
+      );
+
+      expect(history.recent().single.id, id);
+      expect(history.byId(id)!.report.adoptedFrom, isEmpty);
     });
 
     test('a listing failure is kept as its text, and complete stays false', () {

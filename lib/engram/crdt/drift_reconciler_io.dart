@@ -444,12 +444,38 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     // This device counts whether or not it has written its file yet — it is
     // plainly here — and with no map at all it is the only one.
     var peers = 1;
+    final others = <SeenDevice>[];
     if (map != null) {
       final seen = await map.map.peersSeen();
       peers = seen.contains(ours) ? seen.length : seen.length + 1;
+      final names = await map.map.readEveryDevicesNames();
+      for (final peer in seen) {
+        if (peer == ours) continue;
+        others.add(SeenDevice(peer: peer.toString(), name: names[peer]?.name));
+      }
+      // By name, the unnamed last and among themselves by ID, so the list
+      // reads the same on every open.
+      others.sort(
+        (a, b) => switch ((a.name, b.name)) {
+          (final x?, final y?) => x.compareTo(y),
+          (_?, null) => -1,
+          (null, _?) => 1,
+          (null, null) => a.peer.compareTo(b.peer),
+        },
+      );
     }
     return NoteLedger(
       peers: peers,
+      devices: [
+        // This device by the name it holds now — the one just published,
+        // which its file may not carry yet.
+        SeenDevice(
+          peer: ours.toString(),
+          name: map?.name?.name,
+          isThisDevice: true,
+        ),
+        ...others,
+      ],
       minted: minted,
       adopted: adopted,
       unclaimed: unclaimed,

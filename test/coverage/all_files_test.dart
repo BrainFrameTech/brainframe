@@ -100,6 +100,7 @@ import 'package:brainframe/settings/device_name_section.dart';
 import 'package:brainframe/settings/device_settings.dart';
 import 'package:brainframe/settings/engram_pane.dart';
 import 'package:brainframe/settings/housekeeping_pane.dart';
+import 'package:brainframe/settings/scan_details.dart';
 import 'package:brainframe/settings/setting_control.dart';
 import 'package:brainframe/settings/settings_controls.dart';
 import 'package:brainframe/settings/settings_registry.dart';

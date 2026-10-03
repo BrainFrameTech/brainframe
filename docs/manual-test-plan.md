@@ -794,19 +794,28 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
     `sqlite3 metadata.db`, then `BEGIN EXCLUSIVE;`. Tap one card's
     **Dismiss**, then **Dismiss all**. Type `ROLLBACK;` in the terminal and
     tap **Dismiss all** again.
+18. **A card's Details (the device names design, step 3):** with the app
+    open, outside it edit `about.md`, create seven new notes, and rename
+    `trails/cedar-marsh.md` to `trails/cedar-marsh-loop.md` without changing
+    its content; wait a moment, then open Housekeeping. On the newest card,
+    tap **Details**; read it; tap one of its **Open** buttons; come back to
+    Housekeeping and tap **Details** twice more. Then turn on the platform's
+    reduce-motion setting and tap it again.
 
 **Expected:**
 
 - Step 1: five sentences — devices that have written to the engram (one, and
-  it says "this one"), notes minted on this device, notes adopted from
+  it says "this one", followed by this device's name and "(this device)"),
+  notes minted on this device, notes adopted from
   another device (none), deleted notes remembered, and when the last scan
   ran — every count a whole sentence with correct singular and plural. Under
   **Recent scans**, either "Nothing to show" or one card per scan that
   changed something, newest first, each headed by its date and time and
   what started it ("Sep 28, 5:16 PM · at open"), with the year only when it
-  is not this year; below that a summary such as "32 created", and a
-  **Dismiss** button. Cards from different days read in order by their
-  dates — a later evening's card is never above an earlier one's. Changes
+  is not this year; below that a summary such as "32 created", a
+  **Dismiss** button, and a **Details** toggle, closed. Cards from
+  different days read in order by their dates — a later evening's card is
+  never above an earlier one's. Changes
   made outside the app while it was open fold into one card per run,
   headed with a time range (F29 step 19). At the narrowest window the
   header wraps inside its card rather than overflowing it.
@@ -858,16 +867,33 @@ folder**, is the list of registry-backed engrams, each with **Forget** and
   database's own error ("database is locked"), and **every card stays
   listed** — the list does not blank. After `ROLLBACK;` Dismiss all
   succeeds.
+- Step 18: the Details open **at once**, with no animation, below the
+  summary: first "Taken in by *name* (this device)." — once for the card,
+  never "made on" — then each kind in the summary's order under its own
+  heading ("1 note updated from disk", "7 created", "1 moved"). Each kind
+  lists at most **five** paths, then "2 more". The move reads
+  `trails/cedar-marsh.md → trails/cedar-marsh-loop.md · identical` (an edit
+  with the rename would read "similar (*N*%)"). Every updated, created, and
+  moved path has an **Open** icon right after it, which opens that note — the
+  moved one at its new path; a deleted note has none. The last line gives
+  exact times to the second: "*N* changes, 6:03:30 PM–6:03:33 PM" for a
+  folded card, "Recorded at …" for one standing alone. The toggle closes
+  them and opens them again, and with reduce motion on nothing changes —
+  there was no animation to turn off. A card from before this build opens
+  to its paths without the sentences it has no facts for.
 
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path; step 17 **N/A** — no terminal can lock the app's private database; the automated tests cover the failure path | same as Android | ✓ adopting the fixture through Open folder… (F40); steps 13–14 check the folder in the Files app; steps 15 and 17 **N/A** — no way to make the store refuse a delete or lock its database; the automated tests cover the failure path | ✓ pane renders, but with no folder adoption on the Pi (F15) there may be **no forgettable engrams** — verify the empty state |
+| ✓ step 15 N/A — no POSIX permissions; the failure path is covered by the automated tests | ✓ | ✓ | ✓ adopting the fixture through Open folder… (F39); steps 13–14 check the folder with `adb shell ls` and the store under `/data/data/tech.brainframe.app.debug/files/` with `adb shell run-as`; step 15 **N/A** — use F39 step 8 (clean-up with file access revoked) as this platform's failure path; step 17 **N/A** — no terminal can lock the app's private database; the automated tests cover the failure path | same as Android | ✓ adopting the fixture through Open folder… (F40); steps 13–14 check the folder in the Files app; steps 15 and 17 **N/A** — no way to make the store refuse a delete or lock its database; the automated tests cover the failure path | ✓ pane renders, but with no folder adoption on the Pi (F15) there may be **no forgettable engrams** — verify the empty state; step 18 ✓ with the edits made over SSH, and the Details open in one repaint, nothing animating |
 
 - **A11y:** the Forget and Clean up buttons are each labeled with the engram
   name; Dismiss all is announced with how many scans it dismisses ("Dismiss
   all 5 recent scans"); the disabled Clean up reports as disabled; the
-  confirm and failure dialogs are adaptive. The ledger is plain text and
-  reads in order.
+  confirm and failure dialogs are adaptive. A card's toggle is announced as
+  a button, "Details for the scan at *the card's time*", **collapsed** or
+  **expanded**, and activating it from the screen reader opens and closes
+  the Details; each Open in them is announced as "Open *path*". The ledger
+  is plain text and reads in order.
 - **Declarative-trap probe:** after a confirmed forget or clean-up, the list
   actually re-loads (the row is gone), not just visually dimmed; after a
   failed clean-up it re-loads too (the row's badge reflects the partial
@@ -2137,6 +2163,15 @@ guards against.
     ```
 
     Quit both, relaunch them (same commands), and run it again.
+12. **The names in Housekeeping.** With the names from step 11 set, open
+    **Settings › Housekeeping** in **B**. Read the ledger, then open the
+    **Details** of a card that says "adopted".
+13. **A retirement (the device names design, *Why now*).** Unfocus both.
+    In **A**, create `Twin.md` with a line of text and let it save; then,
+    **within 5 seconds** — before A's identity map is written — focus **B**,
+    so B's scan finds the file before A's claim and mints its own identity.
+    Wait 10 seconds. Focus **A**, then **B**, and open Housekeeping in
+    **B**; open the Details of the newest card.
 
 **Expected:**
 
@@ -2189,8 +2224,20 @@ guards against.
   `--ignore-config` replaces, so it does not survive a relaunch here.)
   Before step 11 each file already named its device by the hostname — the
   same for both instances, since they run on one machine, which is exactly
-  what a name of one's own is for. Showing these names in Housekeeping
-  comes with the card Details (the device names design, step 3).
+  what a name of one's own is for.
+- Step 12: the ledger's first line names both devices, this one first: "2
+  devices have written to this engram, including this one: jdoe B (this
+  device) and jdoe A." The adopted card's Details say, per note, "took the
+  identity jdoe A seeded at *time*" — with A's current name, even on a card
+  recorded before step 11 renamed it.
+- Step 13: **B**'s newest card reads "1 identity retired", and its Details
+  tell the whole story with no database open: "Twin.md — jdoe A seeded this
+  note first (*time*, *N* seconds earlier), so this device's identity for
+  it was retired." then "Nothing was lost: it held only its first snapshot,
+  and the file is unchanged." `Twin.md` opens in both with its line intact,
+  and **A** shows no retirement — its identity won. If B's scan was too
+  late and adopted A's identity instead, B's card says "adopted" and its
+  Details "took the identity jdoe A seeded at …": repeat the step, quicker.
 - Throughout: every line typed on either side is on disk at the end, and
   none is duplicated. If a line vanishes, note which instance saved last
   and what the other one was showing at the time.

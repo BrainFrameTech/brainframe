@@ -280,11 +280,27 @@ class NoteLedger {
     required this.tombstoned,
     this.plainFiles = 0,
     this.lastScanAt,
+    this.devices = const <SeenDevice>[],
   });
 
   /// Devices that have written to this engram's shared map, this one
   /// included — one file each under `.brainframe/shared/`.
   final int peers;
+
+  /// The same devices, by peer and by name where they have published one
+  /// (the device names design, Decision 2): this device first, then the
+  /// rest by name, the unnamed last. What the ledger lists, and what a scan
+  /// card looks a peer up in — resolved now, so a device renamed since an
+  /// event is shown by the name it has today.
+  final List<SeenDevice> devices;
+
+  /// The device [peer] names, or null for one this engram has not seen.
+  SeenDevice? device(String peer) {
+    for (final device in devices) {
+      if (device.peer == peer) return device;
+    }
+    return null;
+  }
 
   /// Notes this device seeded: minted here, so their whole history is here.
   final int minted;
@@ -312,6 +328,38 @@ class NoteLedger {
   /// When the last scan finished — clean or not — or null if none has run on
   /// this device. Clean scans leave only this behind.
   final DateTime? lastScanAt;
+}
+
+/// One device that has written to an engram, as the ledger knows it.
+class SeenDevice {
+  const SeenDevice({required this.peer, this.name, this.isThisDevice = false});
+
+  /// Its peer ID, as text.
+  final String peer;
+
+  /// What it calls itself in this engram, or null for a device that has
+  /// published no name — a build from before names, or one yet to write.
+  final String? name;
+
+  /// Whether it is this device.
+  final bool isThisDevice;
+
+  /// The first block of the peer ID: what an unnamed device is shown as.
+  String get shortId => peer.split('-').first;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SeenDevice &&
+      other.peer == peer &&
+      other.name == name &&
+      other.isThisDevice == isThisDevice;
+
+  @override
+  int get hashCode => Object.hash(peer, name, isThisDevice);
+
+  @override
+  String toString() =>
+      'SeenDevice($peer, ${name ?? "unnamed"}${isThisDevice ? ", this" : ""})';
 }
 
 /// What started a scan. Recorded with it, so a notice can say whether the

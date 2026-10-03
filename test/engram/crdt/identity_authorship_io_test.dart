@@ -319,4 +319,213 @@ void main() {
       expect(authored.publishName('jdoe', platform: 'android'), isTrue);
     });
   });
+
+  group('a map file that cannot be read is not an empty one (step 1.5)', () {
+    /// This device's file as another session left it: a claim to have
+    /// renamed a note another device made — which nothing but this file
+    /// records — and a name.
+    Future<IdentityRow> earlierSession() async {
+      final adopted = IdentityRow(
+        ulid: newUlid(),
+        path: 'renamed-here.md',
+        mergePolicy: MergePolicy.fugueText,
+        recordedAt: OperationId(peerA, HybridLogicalClock(l: 1000, c: 0)),
+        seedClaim: OperationId(peerB, HybridLogicalClock(l: 500, c: 0)),
+      );
+      await map.write(
+        [adopted],
+        self: PeerName(
+          peer: peerA,
+          name: 'jdoe-desktop',
+          platform: 'linux',
+          setAt: HybridLogicalClock(l: 1000, c: 0),
+        ),
+      );
+      return adopted;
+    }
+
+    /// Makes the file unreadable — locked, or half-arrived — keeping what
+    /// was in it to put back.
+    List<int> breakFile() {
+      final file = File(map.filePath);
+      final bytes = file.readAsBytesSync();
+      file.writeAsStringSync('not a database right now');
+      return bytes;
+    }
+
+    test('an unreadable file at open is never written over', () async {
+      await earlierSession();
+      breakFile();
+
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+      expect(authored.loaded, isFalse);
+
+      // What an open does: publish the name, record a mint.
+      authored.publishName('jdoe-desktop', platform: 'linux');
+      authored.record(note('new.md'), deleted: false);
+      await authored.flush();
+
+      expect(
+        File(map.filePath).readAsStringSync(),
+        'not a database right now',
+        reason: 'held: a write now would discard the file\'s claims',
+      );
+    });
+
+    test(
+      'once it reads, its claims are kept and the owed write goes out',
+      () async {
+        final adopted = await earlierSession();
+        final good = breakFile();
+
+        final authored = await AuthoredIdentity.load(map);
+        addTearDown(authored.dispose);
+        final mint = note('new.md');
+        authored.record(mint, deleted: false);
+        await authored.flush();
+        expect(authored.loaded, isFalse);
+
+        // The sync service finishes; the file reads again.
+        File(map.filePath).writeAsBytesSync(good);
+        await authored.flush();
+
+        expect(authored.loaded, isTrue);
+        final written = await map.readOurs();
+        expect(
+          written.map((row) => row.path),
+          unorderedEquals(['renamed-here.md', 'new.md']),
+          reason: 'the file\'s rename survives, beside this session\'s mint',
+        );
+        expect(written.firstWhere((row) => row.ulid == adopted.ulid), adopted);
+        expect(map.readOurName()?.name, 'jdoe-desktop', reason: 'kept, too');
+      },
+    );
+
+    test('a change made while held retries the read by itself', () async {
+      await earlierSession();
+      final good = breakFile();
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+
+      File(map.filePath).writeAsBytesSync(good);
+      authored.record(note('new.md'), deleted: false);
+      // The retry is asynchronous; a flush waits for whatever it scheduled.
+      await pumpEventQueue();
+      expect(authored.loaded, isTrue);
+      await authored.flush();
+      expect(
+        (await map.readOurs()).map((row) => row.path),
+        unorderedEquals(['renamed-here.md', 'new.md']),
+      );
+    });
+
+    test('this session\'s claim and name win over the file\'s', () async {
+      final adopted = await earlierSession();
+      final good = breakFile();
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+
+      // Renamed again this session — newer than the file's claim.
+      authored.record(
+        CatalogRow(
+          ulid: adopted.ulid,
+          path: 'renamed-again.md',
+          mergePolicy: MergePolicy.fugueText,
+          state: NoteState.live,
+          seedClaim: adopted.seedClaim,
+        ),
+        deleted: false,
+      );
+      authored.publishName('Work laptop', platform: 'linux');
+      File(map.filePath).writeAsBytesSync(good);
+      await authored.flush();
+
+      expect((await map.readOurs()).single.path, 'renamed-again.md');
+      expect(map.readOurName()?.name, 'Work laptop');
+    });
+
+    test('a file that vanishes while held is still not written', () async {
+      // A sync service replacing the file may delete it first. A write in
+      // that gap would land over the claims it is bringing back.
+      final adopted = await earlierSession();
+      final good = breakFile();
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+
+      File(map.filePath).deleteSync();
+      authored.record(note('new.md'), deleted: false);
+      await authored.flush();
+      expect(authored.loaded, isFalse);
+      expect(File(map.filePath).existsSync(), isFalse);
+
+      File(map.filePath).writeAsBytesSync(good);
+      await authored.flush();
+      expect(
+        (await map.readOurs()).map((row) => row.ulid),
+        contains(adopted.ulid),
+      );
+    });
+
+    test('a read that lands after dispose sends nothing', () async {
+      await earlierSession();
+      final good = breakFile();
+      final written = <List<IdentityRow>>[];
+      final authored = await AuthoredIdentity.load(
+        map,
+        writer: immediate(written),
+      );
+
+      File(map.filePath).writeAsBytesSync(good);
+      authored.record(note('new.md'), deleted: false);
+      authored.dispose();
+      await pumpEventQueue();
+      await authored.flush();
+
+      expect(written, isEmpty, reason: 'a torn-down session writes nothing');
+    });
+
+    test('a repair while held reads the file once, not once a row', () async {
+      await earlierSession();
+      final good = breakFile();
+      final counting = _CountingMap(root.path, peerA);
+      final authored = await AuthoredIdentity.load(counting);
+      addTearDown(authored.dispose);
+      counting.loads = 0;
+
+      // The file comes back just before the open repairs from its catalog.
+      File(map.filePath).writeAsBytesSync(good);
+      final repaired = authored.repairFrom([
+        for (var i = 0; i < 50; i++) note('mint-$i.md'),
+      ]);
+      await pumpEventQueue();
+
+      expect(repaired, 50);
+      expect(authored.loaded, isTrue);
+      expect(counting.loads, 1, reason: 'one read shared by every row');
+    });
+
+    test('a missing file is an empty map, written as normal', () async {
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+      expect(authored.loaded, isTrue);
+      authored.record(note('a.md'), deleted: false);
+      await authored.flush();
+      expect(await map.readOurs(), hasLength(1));
+    });
+  });
+}
+
+/// An [IdentityMap] that counts its strict reads.
+class _CountingMap extends IdentityMap {
+  _CountingMap(String engramRoot, PeerId peerId)
+    : super(engramRoot: engramRoot, peerId: peerId);
+
+  int loads = 0;
+
+  @override
+  Future<({List<IdentityRow> rows, PeerName? name, bool found})> loadOurs() {
+    loads++;
+    return super.loadOurs();
+  }
 }

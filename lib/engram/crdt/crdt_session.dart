@@ -1,13 +1,17 @@
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../settings/settings_store.dart';
+import '../device_name.dart';
 import '../engram.dart';
 import '../fs/fs_store_io.dart';
 import '../note_reconciler.dart';
 import '../note_writer.dart';
 import 'app_data_resolver.dart';
 import 'crdt_note_writer_io.dart';
+import 'device_naming_io.dart';
 import 'drift_reconciler_io.dart';
 import 'identity_authorship_io.dart';
 import 'identity_map_io.dart';
@@ -38,6 +42,7 @@ class CrdtSession {
     this._identity,
     this._folder,
     this._watcherFor,
+    this._naming,
   );
 
   final MetadataDatabase _database;
@@ -69,6 +74,12 @@ class CrdtSession {
   /// How the app brings files that changed outside it back into history.
   NoteReconciler get reconciler => _reconciler;
 
+  final SessionDeviceNaming _naming;
+
+  /// What this device is called in this engram, and how Settings changes it
+  /// (the device names design, Decisions 1 and 2).
+  DeviceNaming get naming => _naming;
+
   /// Opens the op-log for [engram], or returns null if it should not have one.
   ///
   /// Null for a read-only engram: the built-ins ship as assets, cannot be
@@ -88,11 +99,17 @@ class CrdtSession {
   /// [watcherFor] makes the folder's watcher, which [startWatching] starts;
   /// it defaults to this platform's ([engramWatcherFor]), and a test hands in
   /// a fake.
+  ///
+  /// [deviceSettings] is where the device's default name is kept, the
+  /// device-tier store by default; [platformName] is what the platform calls
+  /// the device. A test hands in both, so no plugin or hostname is involved.
   static Future<CrdtSession?> openFor(
     Engram engram, {
     AppDataRootResolver? resolveRoot,
     void Function(String line)? trace,
     EngramWatcher? Function(String root) watcherFor = engramWatcherFor,
+    SettingsBackend? deviceSettings,
+    PlatformDeviceName? platformName,
   }) async {
     if (engram.readOnly) return null;
     final root = resolveRoot ?? appDataRootResolver();
@@ -148,6 +165,16 @@ class CrdtSession {
         );
       }
     }
+    // What this device is called here, published in its map file before the
+    // first scan — so even an open that changes nothing else names the
+    // device to the engram's others. A file already saying so is left
+    // alone.
+    final naming = await SessionDeviceNaming.open(
+      database: database,
+      identity: identity,
+      deviceSettings: deviceSettings ?? _deviceSettings(),
+      platformName: platformName ?? PlatformDeviceName(),
+    );
     // One lock between the two: a save and a reconciliation of the same note
     // must never overlap, and nothing above the session sequences them.
     final lock = NoteDocumentLock();
@@ -175,7 +202,26 @@ class CrdtSession {
       identity,
       store is FileSystemEngramStore ? store.location.path : null,
       watcherFor,
+      naming,
     );
+  }
+
+  /// The device tier, where the device's default name is kept — or, where
+  /// the platform's preferences cannot be reached at all, a tier with
+  /// nothing in it. A name is never worth failing an engram's open over: the
+  /// device is then called by the platform's name.
+  static SettingsBackend _deviceSettings() {
+    try {
+      return DeviceSettingsBackend(SharedPreferencesAsync());
+    } on StateError catch (error, stack) {
+      developer.log(
+        'device preferences are unavailable; no default device name',
+        name: crdtSessionLogName,
+        error: error,
+        stackTrace: stack,
+      );
+      return const NullSettingsBackend();
+    }
   }
 
   /// Starts watching the engram folder for changes made outside the app
@@ -234,6 +280,7 @@ class CrdtSession {
   /// a mint or a rename made seconds before a quit must reach the folder, or
   /// every other device keeps its own idea of that note.
   Future<void> flush() async {
+    await _naming.settle();
     await _identity?.flush();
   }
 
@@ -246,6 +293,9 @@ class CrdtSession {
   Future<void> close() async {
     // First: nothing the watcher dispatches may reach a closing reconciler.
     await stopWatching();
+    // A name save still in flight publishes before the map is flushed, and
+    // none may start after: its writer is about to be left behind.
+    await _naming.close();
     await _identity?.flush();
     await _reconciler.close();
     _database.close();

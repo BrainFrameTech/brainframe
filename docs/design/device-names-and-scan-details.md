@@ -2,7 +2,8 @@
 
 - **Status:** accepted (2026-09-30) — agreed in conversation and reviewed
   before any code; the choices made in review are under *Settled in review*.
-  Not yet built: *What this asks of the implementation* is the plan
+  Step 1 of *What this asks of the implementation* — the device name — is
+  built; step 1.5, found in its review, and steps 2 and 3 are not
 - **Author:** Claude
 - **Date:** 2026-09-30
 - **Companion to:** [note-identity-and-crdt.md](note-identity-and-crdt.md),
@@ -268,6 +269,21 @@ they have been seen on real cards, if they prove cluttered.
    changed default reaching an engram without an override and not one with,
    a rename reaching the map file, a reader ignoring a row about another
    peer, a file with no `bf_peer` table.
+
+   1.5. **A map file that cannot be read is not an empty one** — found in
+   review of step 1, and its own PR. A device's own map file that is
+   locked or unreadable for a moment when the engram opens loads today as
+   *no claims*, because the reader skips an unreadable file. Anything that
+   then rewrites the file — the name published on open is the likeliest —
+   replaces it with what was loaded, discarding this device's renames and
+   deletions of notes another device made, which the catalog cannot
+   rebuild. Step 1 makes it likelier: the name is published on every
+   open, and a failed read leaves no published name to compare against,
+   so a rewrite is always scheduled. The fix: tell a missing or empty file
+   apart from one that failed to read, and write nothing — no claim, no
+   name — until this device's own file has loaded. Tests: an unreadable
+   own file at open schedules no write, and a later successful read
+   restores the claims before any write.
 2. **The event detail** (Decision 4) — the column, added on open; each kind
    recording its fields at the point the scan or reconcile already knows
    them. Tests: each kind's detail round-trips; an old row reads as before.

@@ -1167,15 +1167,52 @@ items stay greyed there.
    "Bundled with the app"; Created and Format version are **absent**.
 10. Press **Copy details** and paste elsewhere: a plain-text block with the same
     values, suitable for a bug report.
+11. **This device — the platform's name.** Back in a writable engram, find the
+    **This device** section. With both fields blank, read the hints and the
+    line "Other devices see this one as …".
+12. **A default name.** Type a name in **Default name (every engram)** and
+    Save. Then open a *second* writable engram that has no name of its own for
+    this device, and read its **This device** section.
+13. **A name in this engram.** Back in the first engram, type a different name
+    in **Name in this engram** and Save. Then go back to the second engram.
+14. **Clearing falls back a step.** In the first engram, clear **Name in this
+    engram** and Save; then clear **Default name** and Save.
+15. **The limit.** Type or paste a name longer than 64 characters into either
+    field.
+16. **Where it is kept.** With a name set in this engram, look in the engram
+    folder at `.brainframe/settings.json` and `.brainframe/shared/`.
 
 **Expected:** the display name is editable and the change lands in the marker
 file; identity (identifier, creation stamp) is shown but never editable; the
 folder on disk is never renamed; the new name reaches the switcher immediately;
 built-in engrams are read-only here.
 
+- Step 11: both fields are empty, each showing what applies while it is blank
+  as a hint — the platform's name for the default (the hostname on a desktop,
+  without a macOS `.local`; the phone's own name on Android; "iPhone" or
+  "iPad" on iOS), and that same name for this engram's field. The line says
+  other devices see this one by the platform's name. A built-in engram has
+  **no** This device section at all.
+- Step 12: Save confirms with the name other devices now see. The second
+  engram's line shows the **default** too, without anything set there — a
+  default reaches every engram with no name of its own the next time that
+  engram is open.
+- Step 13: the first engram's line shows **its own** name; the second still
+  shows the default — a name in one engram changes no other.
+- Step 14: each Save falls back one step, and the line follows: this
+  engram's name → the default → the platform's name. Each field's help says
+  what blank falls back to, and stays right as the other changes.
+- Step 15: the field stops at 64 characters, its counter at 64/64; an emoji
+  or accented letter at the end is never cut in half.
+- Step 16: `settings.json` holds **no** device name — it is synced, and would
+  hand this name to every other device as its own. The device's own file in
+  `shared/` (named for its peer ID) has a `bf_peer` table naming it, which
+  `sqlite3 <file> 'SELECT * FROM bf_peer'` shows; the name itself is kept in
+  this device's app-data `metadata.db`.
+
 | Win | Mac | Lin | Android | PixelTab | iOS | Pi/eink |
 | --- | --- | --- | --- | --- | --- | --- |
-| ✓ | ✓ | ✓ | ✓ (step 8 needs a file manager, or re-check via the pane after a restart) | same as Android | ✓ — step 8 is **N/A** without a files app that reaches the container | ✓ |
+| ✓ | ✓ | ✓ | ✓ (step 8 needs a file manager, or re-check via the pane after a restart); step 11's default is the name set in Settings › About phone, or the model; step 16 via `adb shell run-as` | same as Android | ✓ — step 8 is **N/A** without a files app that reaches the container; step 11's default is "iPhone" or "iPad", never the name given in Settings — iOS withholds it; step 16 **N/A** without a files app | ✓ — step 11's default is the Pi's hostname |
 
 - **Why the folder is not renamed:** the name and the folder are deliberately
   independent — an engram's ULID is what everything cross-references, so it
@@ -2089,6 +2126,17 @@ guards against.
     `dart run bin/bfmon.dart deliver /tmp/deviceA /tmp/deviceB` from the
     repo root, then relaunch **B** and open `index.md`. Add a line in **B**
     and let it save. Switch to **A**.
+11. **Each device names itself.** In **A**, Settings › Engram › This device,
+    set **Name in this engram** to `jdoe A` and Save; in **B**, `jdoe B`.
+    Then, in a terminal, run:
+
+    ```bash
+    for f in /tmp/shared-engram/.brainframe/shared/*.db; do
+      sqlite3 "$f" 'SELECT peer, name FROM bf_peer'
+    done
+    ```
+
+    Quit both, relaunch them (same commands), and run it again.
 
 **Expected:**
 
@@ -2133,6 +2181,16 @@ guards against.
   like the command refusing with "open in another process: pid N
   (brainframe)" while B is quit (report it, with the pid's process), or B's
   `index.md` opening with different content than before.
+- Step 11: two lines, one per map file, each naming **its own file's**
+  device: `jdoe A` beside A's peer ID, `jdoe B` beside B's — never a file
+  naming the other device. Both names survive the relaunch: each is kept in
+  that instance's own app-data `metadata.db`, so `--ignore-config` does not
+  lose it. (A **default** name, by contrast, lives in the device preferences
+  `--ignore-config` replaces, so it does not survive a relaunch here.)
+  Before step 11 each file already named its device by the hostname — the
+  same for both instances, since they run on one machine, which is exactly
+  what a name of one's own is for. Showing these names in Housekeeping
+  comes with the card Details (the device names design, step 3).
 - Throughout: every line typed on either side is on disk at the end, and
   none is duplicated. If a line vanishes, note which instance saved last
   and what the other one was showing at the time.

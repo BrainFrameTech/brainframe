@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:brainframe/engram/device_name.dart';
 import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/engram/asset_engram_store.dart';
 import 'package:brainframe/engram/crdt/crdt_session.dart';
@@ -13,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/localized_app.dart';
+import '../../support/fake_device_naming.dart';
 
 /// The host that owns the active engram's session and publishes its writer.
 void main() {
@@ -565,6 +567,9 @@ class _FakeSession implements CrdtSession {
 
   @override
   Future<void> close() async => _onClose();
+
+  @override
+  DeviceNaming get naming => FakeDeviceNaming();
 
   /// What the host asked of the watch, in order: `start` and `stop`.
   final List<String> watching = [];

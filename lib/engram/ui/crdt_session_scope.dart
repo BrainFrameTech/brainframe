@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../../commands/pending_saves.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../crdt/crdt_session.dart';
+import '../device_name.dart';
 import '../engram.dart';
 import '../engram_scope.dart';
 import '../note_reconciler.dart';
@@ -243,6 +244,7 @@ class _CrdtSessionHostState extends State<CrdtSessionHost>
       writer: _session?.writer,
       reconciler: _session?.reconciler,
       watchStatus: _session?.watchStatus,
+      naming: _session?.naming,
       child: widget.child,
     );
   }
@@ -255,6 +257,7 @@ class CrdtSessionScope extends InheritedWidget {
     required this.writer,
     required this.reconciler,
     required this.watchStatus,
+    required this.naming,
     required super.child,
   });
 
@@ -272,6 +275,7 @@ class CrdtSessionScope extends InheritedWidget {
     required this.writer,
     required this.reconciler,
     this.watchStatus,
+    this.naming,
     required super.child,
   });
 
@@ -286,6 +290,12 @@ class CrdtSessionScope extends InheritedWidget {
   /// — or null itself when there is no session to watch for (the filesystem
   /// watcher design, Decision 9). What Housekeeping says.
   final ValueListenable<EngramWatchUnavailable?>? watchStatus;
+
+  /// This device's names in the active engram, and how to change them (the
+  /// device names design), or null when there is no session — a read-only
+  /// engram has no map file to publish a name in. What Settings › Engram
+  /// edits.
+  final DeviceNaming? naming;
 
   /// The writer published by the enclosing [CrdtSessionHost] widget — the
   /// closest one up the widget tree from [context] — or null if this widget
@@ -312,9 +322,15 @@ class CrdtSessionScope extends InheritedWidget {
       .dependOnInheritedWidgetOfExactType<CrdtSessionScope>()
       ?.watchStatus;
 
+  /// The device naming published by the enclosing [CrdtSessionHost], or
+  /// null if there is no session — the cases of [maybeOf].
+  static DeviceNaming? maybeNamingOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CrdtSessionScope>()?.naming;
+
   @override
   bool updateShouldNotify(CrdtSessionScope oldWidget) =>
       oldWidget.writer != writer ||
       oldWidget.reconciler != reconciler ||
-      oldWidget.watchStatus != watchStatus;
+      oldWidget.watchStatus != watchStatus ||
+      oldWidget.naming != naming;
 }

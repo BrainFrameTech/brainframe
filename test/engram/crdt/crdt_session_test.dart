@@ -9,6 +9,7 @@ import 'package:brainframe/engram/crdt/identity_authorship_io.dart';
 import 'package:brainframe/engram/crdt/identity_map_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
 import 'package:brainframe/engram/crdt/note_document_lock.dart';
+import 'package:brainframe/engram/device_name.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/fs/engram_location.dart';
 import 'package:brainframe/engram/fs/fs_store_io.dart';
@@ -16,6 +17,8 @@ import 'package:brainframe/engram/id.dart';
 import 'package:brainframe/engram/metadata.dart';
 import 'package:brainframe/engram/note_reconciler.dart';
 import 'package:brainframe/engram/watch/engram_watcher.dart';
+import 'package:brainframe/settings/device_settings.dart';
+import 'package:brainframe/settings/settings_store.dart';
 import 'package:crdt_lf/crdt_lf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -76,6 +79,38 @@ void main() {
 
     expect(session, isNotNull);
     expect(session!.writer, isA<CrdtNoteWriter>());
+  });
+
+  test('opening names this device in the engram\'s shared map', () async {
+    // The device names design, Decision 2: an open that changes nothing else
+    // still publishes what this device is called, so the engram's other
+    // devices see a name rather than a peer ID.
+    final engram = engramWith(readOnly: false);
+    final device = _MemorySettings()
+      ..values[deviceDefaultNameSetting.key] = 'jdoe\'s laptop';
+    final session = await CrdtSession.openFor(
+      engram,
+      resolveRoot: resolveRoot,
+      deviceSettings: device,
+      platformName: PlatformDeviceName(
+        operatingSystem: 'linux',
+        hostname: () => 'jdoe-desktop',
+      ),
+    );
+    expect(session!.naming.names.resolved, 'jdoe\'s laptop');
+    await session.close();
+
+    final store = await MetadataDatabase.open(
+      engram.id,
+      resolveRoot: resolveRoot,
+    );
+    addTearDown(store.close);
+    final names = await IdentityMap(
+      engramRoot: '${root.path}/engram',
+      peerId: store.peerId,
+    ).readEveryDevicesNames();
+    expect(names.keys.single, store.peerId);
+    expect(names.values.single.name, 'jdoe\'s laptop');
   });
 
   test('a writable engram gets a reconciler over the same op-log', () async {
@@ -481,4 +516,15 @@ class _FakeWatcher implements EngramWatcher {
 
   @override
   Future<void> stop() async => log.add('stop');
+}
+
+/// A device tier held in memory.
+class _MemorySettings implements SettingsBackend {
+  final Map<String, Object?> values = {};
+
+  @override
+  Future<Object?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, Object? value) async => values[key] = value;
 }

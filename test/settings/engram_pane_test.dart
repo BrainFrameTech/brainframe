@@ -1,11 +1,14 @@
+import 'package:brainframe/engram/device_name.dart';
 import 'package:brainframe/engram/engram.dart';
 import 'package:brainframe/engram/engram_store.dart';
 import 'package:brainframe/engram/metadata.dart';
+import 'package:brainframe/settings/device_name_section.dart';
 import 'package:brainframe/settings/engram_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/fake_device_naming.dart';
 import '../support/localized_app.dart';
 
 /// A store standing in for a filesystem engram: it reports a location, which is
@@ -73,16 +76,35 @@ void main() {
     renameError = null;
   });
 
-  Widget host({Engram? open, ValueChanged<Engram>? onRenamed}) => localizedApp(
+  Widget host({
+    Engram? open,
+    ValueChanged<Engram>? onRenamed,
+    DeviceNaming? naming,
+  }) => localizedApp(
     home: Scaffold(
       body: EngramPane(
         engram: open ?? engram,
         loadMetadata: load,
         rename: rename,
         onRenamed: onRenamed,
+        naming: naming,
       ),
     ),
   );
+
+  testWidgets('a session\'s engram has a This device section', (tester) async {
+    await tester.pumpWidget(host(naming: FakeDeviceNaming()));
+    await tester.pumpAndSettle();
+    expect(find.byType(DeviceNameSection), findsOneWidget);
+    expect(find.text('This device'), findsOneWidget);
+  });
+
+  testWidgets('an engram without a session has none', (tester) async {
+    // A read-only engram has no map file to publish a name in.
+    await tester.pumpWidget(host(open: _engram(readOnly: true)));
+    await tester.pumpAndSettle();
+    expect(find.byType(DeviceNameSection), findsNothing);
+  });
 
   testWidgets('shows the stored name, identifier, location and format', (
     tester,

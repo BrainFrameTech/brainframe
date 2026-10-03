@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:brainframe/engram/device_name.dart';
 import 'package:brainframe/commands/pending_saves.dart';
 import 'package:brainframe/commands/app_commands.dart';
 import 'package:brainframe/engram/built_in_engrams.dart';
@@ -32,6 +33,7 @@ import 'package:shared_preferences_platform_interface/in_memory_shared_preferenc
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import '../../support/localized_app.dart';
+import '../../support/fake_device_naming.dart';
 
 void main() {
   late Directory tempRoot;
@@ -1800,6 +1802,9 @@ class _FakeSession implements CrdtSession {
 
   @override
   Future<void> close() async {}
+
+  @override
+  DeviceNaming get naming => FakeDeviceNaming();
 
   @override
   ValueListenable<EngramWatchUnavailable?> get watchStatus =>

@@ -715,6 +715,62 @@
     "description": "Button that saves the edited engram display name."
   },
 
+  "engramPaneDeviceSection": "This device",
+  "@engramPaneDeviceSection": {
+    "description": "Heading of the Settings › Engram section where this device's name is set: what the engram's other devices see it as."
+  },
+
+  "engramPaneDeviceIntro": "What this engram's other devices call this one. The name is saved in the engram's shared folder, so anyone the folder is synced or shared with can see it.",
+  "@engramPaneDeviceIntro": {
+    "description": "Explains the This device section, and that the name is visible to whoever has the folder."
+  },
+
+  "engramPaneDeviceDefaultLabel": "Default name (every engram)",
+  "@engramPaneDeviceDefaultLabel": {
+    "description": "Label of the field for this device's default name, used in every engram that has no name of its own for it."
+  },
+
+  "engramPaneDeviceDefaultHelp": "Used in every engram with no name of its own for this device. Leave blank to use “{platform}”.",
+  "@engramPaneDeviceDefaultHelp": {
+    "description": "Help under the default device name field. platform is what the operating system calls the device, used when no default is set.",
+    "placeholders": { "platform": { "type": "String", "example": "jdoe-desktop" } }
+  },
+
+  "engramPaneDeviceEngramLabel": "Name in this engram",
+  "@engramPaneDeviceEngramLabel": {
+    "description": "Label of the field for this device's name in the open engram only, which overrides the default."
+  },
+
+  "engramPaneDeviceEngramHelp": "Overrides the default for this engram only. Leave blank to use “{fallback}”.",
+  "@engramPaneDeviceEngramHelp": {
+    "description": "Help under the per-engram device name field. fallback is the name used when it is blank: the default, else the platform's.",
+    "placeholders": { "fallback": { "type": "String", "example": "jdoe's laptop" } }
+  },
+
+  "engramPaneDeviceSeenAs": "Other devices see this one as “{name}”.",
+  "@engramPaneDeviceSeenAs": {
+    "description": "The name this device is published under in the open engram, as its other devices will see it.",
+    "placeholders": { "name": { "type": "String", "example": "jdoe's laptop" } }
+  },
+
+  "engramPaneDeviceSaveLabel": "Save {field}",
+  "@engramPaneDeviceSaveLabel": {
+    "description": "Accessibility label of the Save button under a device name field. field is that field's label.",
+    "placeholders": { "field": { "type": "String", "example": "Name in this engram" } }
+  },
+
+  "engramPaneDeviceSaved": "Saved. Other devices see this one as “{name}”.",
+  "@engramPaneDeviceSaved": {
+    "description": "Transient message after a device name is saved, with the name now published.",
+    "placeholders": { "name": { "type": "String", "example": "jdoe's laptop" } }
+  },
+
+  "engramPaneDeviceSaveFailed": "The device name could not be saved: {error}",
+  "@engramPaneDeviceSaveFailed": {
+    "description": "Transient message when saving a device name failed.",
+    "placeholders": { "error": { "type": "String", "example": "database is locked" } }
+  },
+
   "engramPaneSaved": "Renamed to “{name}”.",
   "@engramPaneSaved": {
     "description": "Confirmation shown after the engram's display name is saved.",

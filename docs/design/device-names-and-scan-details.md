@@ -2,9 +2,9 @@
 
 - **Status:** accepted (2026-09-30) — agreed in conversation and reviewed
   before any code; the choices made in review are under *Settled in review*.
-  Steps 1 and 1.5 of *What this asks of the implementation* — the device
-  name, and the unreadable map file found in its review — are built;
-  steps 2 and 3 are not
+  Steps 1, 1.5 and 2 of *What this asks of the implementation* — the
+  device name, the unreadable map file found in its review, and the event
+  detail — are built; step 3 is not
 - **Author:** Claude
 - **Date:** 2026-09-30
 - **Companion to:** [note-identity-and-crdt.md](note-identity-and-crdt.md),
@@ -297,6 +297,14 @@ they have been seen on real cards, if they prove cluttered.
 2. **The event detail** (Decision 4) — the column, added on open; each kind
    recording its fields at the point the scan or reconcile already knows
    them. Tests: each kind's detail round-trips; an old row reads as before.
+
+   *Built:* the facts are plain Dart types (`lib/engram/scan_detail.dart`)
+   so the card can read them, carried on `DriftScanReport` in sparse maps
+   keyed like the lists they describe, and folded with a run's adoptions
+   and moves. Every count of changes — what a retired identity held, what
+   a conversion dropped or one elsewhere left unreachable — is a `COUNT`
+   over the op-log, never a load of it. A detail that does not parse
+   reads as none, and its event as an old row does.
 3. **The card's Details** (Decision 5) — the toggle, the sections, the
    sentences, the names resolved at display, the ledger's device list.
    Tests: each kind's lines, the five-path cap, a folded card's count and

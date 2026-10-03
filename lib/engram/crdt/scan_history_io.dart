@@ -31,6 +31,9 @@
 /// op-log that is ten times that for the same vault.
 library;
 
+import 'dart:convert';
+import 'dart:developer' as developer;
+
 import 'package:sqlite3/sqlite3.dart' as sq;
 
 import '../note_reconciler.dart';
@@ -100,7 +103,9 @@ CREATE TABLE IF NOT EXISTS bf_scan (
 
   /// What the scan did to each note. `kind` is the enum's name, never its
   /// ordinal, for the reason the catalog gives. `ulid` is what keeps a
-  /// tombstone event meaningful after its path is reused.
+  /// tombstone event meaningful after its path is reused. `detail` is the
+  /// kind's facts as a JSON object (the device names design, Decision 4),
+  /// or null for a kind with none and for every row from before it.
   static const String createEventSql = '''
 CREATE TABLE IF NOT EXISTS bf_scan_event (
   scan_id  INTEGER NOT NULL REFERENCES bf_scan(id) ON DELETE CASCADE,
@@ -108,9 +113,14 @@ CREATE TABLE IF NOT EXISTS bf_scan_event (
   path     TEXT    NOT NULL,
   new_path TEXT,
   ulid     TEXT,
-  error    TEXT
+  error    TEXT,
+  detail   TEXT
 );
 ''';
+
+  /// Adds `detail` to an event table made before it.
+  static const String addDetailSql =
+      'ALTER TABLE bf_scan_event ADD COLUMN detail TEXT';
 
   static const String createIndexesSql = '''
 CREATE INDEX IF NOT EXISTS bf_scan_event_scan ON bf_scan_event (scan_id);
@@ -122,14 +132,19 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
 
   final sq.Database database;
 
-  /// Creates the tables and indexes if they are not there. Idempotent, so it
-  /// is safe on every open — which is how a database from before this step
-  /// gains them, with no schema-version change.
+  /// Creates the tables and indexes if they are not there, and the `detail`
+  /// column if the event table predates it. Idempotent, so it is safe on
+  /// every open — which is how a database from before this step gains them,
+  /// with no schema-version change.
   static void createSchema(sq.Database database) {
     database
       ..execute(createScanSql)
       ..execute(createEventSql)
       ..execute(createIndexesSql);
+    final columns = database.select('PRAGMA table_info(bf_scan_event)');
+    if (!columns.any((column) => column['name'] == 'detail')) {
+      database.execute(addDetailSql);
+    }
   }
 
   /// Records [report] as one scan, with its events, in one transaction.
@@ -167,8 +182,9 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
       );
       final id = database.lastInsertRowId;
       final insert = database.prepare(
-        'INSERT INTO bf_scan_event (scan_id, kind, path, new_path, ulid, error) '
-        'VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO bf_scan_event '
+        '(scan_id, kind, path, new_path, ulid, error, detail) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?)',
       );
       try {
         void event(
@@ -176,6 +192,7 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
           String path, {
           String? newPath,
           String? error,
+          Map<String, Object?>? detail,
         }) {
           insert.execute([
             id,
@@ -184,6 +201,7 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
             newPath,
             ulidOf(kind, newPath ?? path),
             error,
+            detail == null ? null : jsonEncode(detail),
           ]);
         }
 
@@ -194,13 +212,26 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
           event(ScanEventKind.created, path);
         }
         for (final path in report.oversized) {
-          event(ScanEventKind.oversized, path);
+          event(
+            ScanEventKind.oversized,
+            path,
+            detail: report.overCeiling[path]?.toJson(),
+          );
         }
         for (final path in report.converted) {
-          event(ScanEventKind.converted, path);
+          final dropped = report.dropped[path];
+          event(
+            ScanEventKind.converted,
+            path,
+            detail: dropped == null ? null : {'dropped': dropped},
+          );
         }
         for (final path in report.awaitingDecision) {
-          event(ScanEventKind.awaitingDecision, path);
+          event(
+            ScanEventKind.awaitingDecision,
+            path,
+            detail: report.overCeiling[path]?.toJson(),
+          );
         }
         for (final entry in report.reconstructed.entries) {
           event(ScanEventKind.reconstructed, entry.key, newPath: entry.value);
@@ -208,23 +239,38 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         for (final entry in report.convertedElsewhere.entries) {
           // The count of unreachable history rides in the error column: a
           // number, spelled as text, in a column no other kind uses.
+          final by = report.convertedBy[entry.key];
           event(
             ScanEventKind.convertedElsewhere,
             entry.key,
             error: '${entry.value}',
+            detail: by == null ? null : {'by': by},
           );
         }
         for (final path in report.adopted) {
-          event(ScanEventKind.adopted, path);
+          event(
+            ScanEventKind.adopted,
+            path,
+            detail: report.adoptedFrom[path]?.toJson(),
+          );
         }
         for (final move in report.moved.entries) {
-          event(ScanEventKind.moved, move.key, newPath: move.value);
+          event(
+            ScanEventKind.moved,
+            move.key,
+            newPath: move.value,
+            detail: report.moveMatches[move.key]?.toJson(),
+          );
         }
         for (final path in report.tombstoned) {
           event(ScanEventKind.tombstoned, path);
         }
         for (final path in report.retired) {
-          event(ScanEventKind.retired, path);
+          event(
+            ScanEventKind.retired,
+            path,
+            detail: report.retirements[path]?.toJson(),
+          );
         }
         for (final failure in report.failed.entries) {
           event(
@@ -382,7 +428,7 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
     final marks = List.filled(ids.length, '?').join(', ');
     final events = <int, List<sq.Row>>{};
     for (final event in database.select(
-      'SELECT scan_id, kind, path, new_path, error FROM bf_scan_event '
+      'SELECT scan_id, kind, path, new_path, error, detail FROM bf_scan_event '
       'WHERE scan_id IN ($marks) ORDER BY rowid',
       ids,
     )) {
@@ -408,8 +454,15 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
     final tombstoned = <String>[];
     final retired = <String>[];
     final failed = <String, Object>{};
+    final adoptedFrom = <String, Mint>{};
+    final moveMatches = <String, MoveDetail>{};
+    final retirements = <String, Retirement>{};
+    final convertedBy = <String, String>{};
+    final overCeiling = <String, OverCeiling>{};
+    final dropped = <String, int>{};
     for (final event in events) {
       final path = event['path'] as String;
+      final detail = _detailOf(event);
       switch (ScanEventKind.parse(event['kind'] as String)) {
         case ScanEventKind.reconciled:
           reconciled.add(path);
@@ -417,23 +470,37 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
           created.add(path);
         case ScanEventKind.oversized:
           oversized.add(path);
+          final over = OverCeiling.fromJson(detail);
+          if (over != null) overCeiling[path] = over;
         case ScanEventKind.converted:
           converted.add(path);
+          final count = detail?['dropped'];
+          if (count is int) dropped[path] = count;
         case ScanEventKind.convertedElsewhere:
           convertedElsewhere[path] =
               int.tryParse(event['error'] as String? ?? '') ?? 0;
+          final by = detail?['by'];
+          if (by is String) convertedBy[path] = by;
         case ScanEventKind.awaitingDecision:
           awaitingDecision.add(path);
+          final over = OverCeiling.fromJson(detail);
+          if (over != null) overCeiling[path] = over;
         case ScanEventKind.reconstructed:
           reconstructed[path] = event['new_path'] as String;
         case ScanEventKind.adopted:
           adopted.add(path);
+          final mint = Mint.fromJson(detail);
+          if (mint != null) adoptedFrom[path] = mint;
         case ScanEventKind.moved:
           moved[path] = event['new_path'] as String;
+          final how = MoveDetail.fromJson(detail);
+          if (how != null) moveMatches[path] = how;
         case ScanEventKind.tombstoned:
           tombstoned.add(path);
         case ScanEventKind.retired:
           retired.add(path);
+          final retirement = Retirement.fromJson(detail);
+          if (retirement != null) retirements[path] = retirement;
         case ScanEventKind.failed:
           failed[path] = event['error'] as String? ?? '';
       }
@@ -470,8 +537,33 @@ CREATE INDEX IF NOT EXISTS bf_scan_finished ON bf_scan (finished_utc);
         listingFailure: (row['complete'] as int) == 1
             ? null
             : (listingError ?? 'not listed'),
+        adoptedFrom: adoptedFrom,
+        moveMatches: moveMatches,
+        retirements: retirements,
+        convertedBy: convertedBy,
+        overCeiling: overCeiling,
+        dropped: dropped,
       ),
     );
+  }
+
+  /// The event's `detail` as a JSON object, or null — for a row with none,
+  /// a row from before the column, and one that does not parse. A detail is
+  /// an addition to the card, never a reason to lose it: the event still
+  /// reads, with its path and nothing more, as an old row does.
+  static Map<String, Object?>? _detailOf(sq.Row event) {
+    final text = event['detail'] as String?;
+    if (text == null) return null;
+    try {
+      final decoded = jsonDecode(text);
+      return decoded is Map<String, Object?> ? decoded : null;
+    } on FormatException catch (error) {
+      developer.log(
+        'scan event detail could not be read: ${error.message}',
+        name: 'brainframe.engram.scan_history',
+      );
+      return null;
+    }
   }
 }
 

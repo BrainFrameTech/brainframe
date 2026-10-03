@@ -42,6 +42,8 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crdt_lf/crdt_lf.dart' show OperationId;
+
 import '../engram_paths.dart';
 import '../engram_store.dart';
 import '../metadata.dart';
@@ -302,15 +304,18 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   @override
   Future<void> convertToPlainFile(String path) async {
     final started = DateTime.now();
-    final converted = await lock.run(() async {
+    final dropped = await lock.run<int?>(() async {
       final row = database.catalog.byPath(path);
       if (row == null) throw StateError('no note at $path');
-      if (row.mergePolicy == MergePolicy.blobLww) return false;
+      if (row.mergePolicy == MergePolicy.blobLww) return null;
       // The file as it is on disk is what the register will describe: the
       // caller has either just written it (the in-app door) or is keeping
       // it as found (the external one). Streamed — it is over the ceiling,
       // which is why it is being converted.
       final digest = await digestFile(engram, path);
+      // Counted first, for the card: what consenting cost. A COUNT, not a
+      // load — the history is large, which is why it is being dropped.
+      final dropped = database.crdt.changeStorageForDocument(row.ulid).count;
       // The history goes first, and all of it: the user was told. With
       // nothing left to replay, "never back to a text note" costs nothing
       // to enforce — there is no epoch to keep the old sequence out of.
@@ -334,13 +339,13 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       } finally {
         blob.dispose();
       }
-      return true;
+      return dropped;
     });
-    if (!converted) return;
+    if (dropped == null) return;
     // A scan of its own, so Housekeeping lists the conversion beside the
     // scans — it is a change to the engram the user will want to find.
     _recordScan(
-      DriftScanReport(converted: [path]),
+      DriftScanReport(converted: [path], dropped: {path: dropped}),
       trigger: ScanTrigger.manual,
       startedAt: started,
       stampLastScan: false,
@@ -474,6 +479,11 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     final retired = <String>[];
     final convertedElsewhere = <String, int>{};
     final awaitingDecision = <String>[];
+    final adoptedFrom = <String, Mint>{};
+    final moveMatches = <String, MoveDetail>{};
+    final retirements = <String, Retirement>{};
+    final convertedBy = <String, String>{};
+    final overCeiling = <String, OverCeiling>{};
 
     // The listing, and whether it can be trusted to be the whole folder.
     // Both halves are required before anything is called absent: a folder
@@ -528,13 +538,17 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
         if (merged != null && merged.retired.contains(row.ulid)) {
           // A lost election: the loser retires, before anything else is
           // concluded about a path it no longer owns.
-          await _retire(row, merged);
+          final retirement = await _retire(row, merged);
           retired.add(row.path);
+          if (retirement != null) retirements[row.path] = retirement;
           continue;
         }
         if (merged != null) {
-          final abandoned = await _followConversion(row, merged);
-          if (abandoned != null) convertedElsewhere[row.path] = abandoned;
+          final followed = await _followConversion(row, merged);
+          if (followed != null) {
+            convertedElsewhere[row.path] = followed.abandoned;
+            if (followed.by != null) convertedBy[row.path] = followed.by!;
+          }
         }
         if (complete && isHiddenEngramPath(row.path)) {
           // A note living where no note may. The listing never admits the
@@ -544,7 +558,11 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
           continue;
         }
         if (!complete || onDisk.contains(row.path)) {
-          switch (await _reconcileRow(row)) {
+          final drift = await _reconcileRow(
+            row,
+            onOverCeiling: (fact) => overCeiling[row.path] = fact,
+          );
+          switch (drift) {
             case _Drift.reconciled:
               reconciled.add(row.path);
             case _Drift.awaitingDecision:
@@ -623,11 +641,17 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
             size: sizes[path],
             onRead: read,
           );
-          final match = await _matchMissing(path, content, missing);
-          if (match != null) {
+          final found = await _matchMissing(path, content, missing);
+          if (found != null) {
+            final match = found.row;
             missing.remove(match);
             moved[match.path] = path;
-            switch (await _reconcileRow(database.catalog.byPath(path)!)) {
+            moveMatches[match.path] = found.how;
+            final drift = await _reconcileRow(
+              database.catalog.byPath(path)!,
+              onOverCeiling: (fact) => overCeiling[path] = fact,
+            );
+            switch (drift) {
               case _Drift.reconciled:
                 reconciled.add(path);
               case _Drift.awaitingDecision:
@@ -640,9 +664,17 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
           }
           switch (await _bringIn(path, content, merged!)) {
             case _Arrival.minted:
-              (content.overCeiling ? oversized : created).add(path);
+              final over = content.overCeiling;
+              if (over != null) {
+                oversized.add(path);
+                overCeiling[path] = over;
+              } else {
+                created.add(path);
+              }
             case _Arrival.adopted:
               adopted.add(path);
+              final mint = _mintOf(merged.forPath(path)?.seedClaim);
+              if (mint != null) adoptedFrom[path] = mint;
             case _Arrival.present:
               // The editor got there first: the user opened it, and
               // reconcile() brought it in. Nothing to report.
@@ -700,8 +732,23 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       convertedElsewhere: convertedElsewhere,
       awaitingDecision: awaitingDecision,
       listingFailure: listingFailure,
+      adoptedFrom: adoptedFrom,
+      moveMatches: moveMatches,
+      retirements: retirements,
+      convertedBy: convertedBy,
+      overCeiling: overCeiling,
     );
   }
+
+  /// A seed claim as a card shows it: who, and when to the millisecond.
+  ///
+  /// Null, never a throw, for a clock no [DateTime] can hold: the claim may
+  /// be another device's, read from its map file, and a detail is never
+  /// worth failing the retirement or adoption it describes — both already
+  /// committed by the time it is taken.
+  static Mint? _mintOf(OperationId? claim) => claim == null
+      ? null
+      : Mint.fromClock(claim.peerId.toString(), claim.hlc.l);
 
   /// Deletes the atomic-write temp files a crash left behind, from the
   /// listing this scan already made (the filesystem watcher design, Decision
@@ -759,7 +806,8 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     final row = database.catalog.byPath(path);
     if (row != null) {
       final started = DateTime.now();
-      switch (await _reconcileRow(row)) {
+      OverCeiling? over;
+      switch (await _reconcileRow(row, onOverCeiling: (fact) => over = fact)) {
         case _Drift.reconciled:
           // A change made outside the app, found one note at a time rather
           // than by a scan: recorded all the same (the filesystem watcher
@@ -777,7 +825,10 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
           // Found before an open rather than by a scan: recorded as one so
           // Housekeeping has the same card either way.
           _recordScan(
-            DriftScanReport(awaitingDecision: [path]),
+            DriftScanReport(
+              awaitingDecision: [path],
+              overCeiling: {path: ?over},
+            ),
             trigger: trigger ?? ScanTrigger.manual,
             startedAt: started,
             stampLastScan: false,
@@ -797,18 +848,29 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     // count, and a merged view cached per session (invalidated by a scan,
     // which re-reads anyway) is the fix if it ever shows up in a profile.
     final started = DateTime.now();
-    final arrival = await _bringIn(
+    final content = await _NewFile.read(
+      engram,
       path,
-      await _NewFile.read(engram, path, ceiling: noteSizeCeilingBytes),
-      mergeIdentity(await map.map.readEveryDevicesRows()),
+      ceiling: noteSizeCeilingBytes,
     );
+    final merged = mergeIdentity(await map.map.readEveryDevicesRows());
+    final arrival = await _bringIn(path, content, merged);
     // A file that appeared outside the app, found before it opened: the
-    // same news as the scan's "created", and recorded as it would be.
+    // same news as the scan's, and recorded as the scan records it — one
+    // that arrived over the ceiling as "oversized", not "created", since
+    // it was minted a plain file and the card must say so either way.
     if (trigger != null && arrival != _Arrival.present) {
+      final over = content.overCeiling;
+      final mint = _mintOf(merged.forPath(path)?.seedClaim);
       _recordScan(
-        arrival == _Arrival.minted
-            ? DriftScanReport(created: [path])
-            : DriftScanReport(adopted: [path]),
+        switch (arrival) {
+          _Arrival.minted when over != null => DriftScanReport(
+            oversized: [path],
+            overCeiling: {path: over},
+          ),
+          _Arrival.minted => DriftScanReport(created: [path]),
+          _ => DriftScanReport(adopted: [path], adoptedFrom: {path: ?mint}),
+        },
         trigger: trigger,
         startedAt: started,
         stampLastScan: false,
@@ -854,7 +916,13 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   ///
   /// The lock is taken per note and released before the next, so a save
   /// waiting on it waits for one reconciliation, not a whole scan.
-  Future<_Drift> _reconcileRow(CatalogRow row) async {
+  ///
+  /// [onOverCeiling] hears the size and the ceiling when the answer is
+  /// [_Drift.awaitingDecision], for the event's detail.
+  Future<_Drift> _reconcileRow(
+    CatalogRow row, {
+    void Function(OverCeiling fact)? onOverCeiling,
+  }) async {
     if (!_hasFile(row.state)) return _Drift.none;
 
     return lock.run(() async {
@@ -863,7 +931,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       // file before it.
       final current = database.catalog.byUlid(row.ulid);
       if (current == null || !_hasFile(current.state)) return _Drift.none;
-      return _reconcileHeld(current);
+      return _reconcileHeld(current, onOverCeiling: onOverCeiling);
     });
   }
 
@@ -903,6 +971,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   Future<_Drift> _reconcileHeld(
     CatalogRow found, {
     bool announce = true,
+    void Function(OverCeiling fact)? onOverCeiling,
   }) async {
     const unchanged = _Drift.none;
     var current = found;
@@ -930,6 +999,9 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     if (stat.size > noteSizeCeilingBytes) {
       if (current.state == NoteState.oversized) return unchanged;
       database.catalog.upsert(_withState(current, NoteState.oversized));
+      onOverCeiling?.call(
+        OverCeiling(sizeBytes: stat.size, ceilingBytes: noteSizeCeilingBytes),
+      );
       return _Drift.awaitingDecision;
     }
     if (current.state == NoteState.oversized) {
@@ -1134,8 +1206,8 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   /// The missing note that the new file at [path] is, if any: an exact
   /// content match first, then — for text, whose bytes [content] holds —
   /// the closest sketch above the cutoff. On a match the note is re-pointed
-  /// at [path] and the match is returned.
-  Future<CatalogRow?> _matchMissing(
+  /// at [path], and the match is returned with how it was made.
+  Future<({CatalogRow row, MoveDetail how})?> _matchMissing(
     String path,
     _NewFile content,
     List<CatalogRow> missing,
@@ -1144,6 +1216,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
     final hash = content.digest.hash;
 
     CatalogRow? match;
+    var how = const MoveDetail.identical();
     for (final candidate in missing) {
       if (candidate.materializedHash == hash) {
         match = candidate;
@@ -1166,13 +1239,14 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
           match = candidate;
         }
       }
+      if (match != null) how = MoveDetail.similar(best);
     }
 
     if (match == null) return null;
     await lock.run(() async {
       _record(_withPath(match!, path));
     });
-    return match;
+    return (row: match, how: how);
   }
 
   /// Brings a file the catalog does not know into it, as the identity map
@@ -1233,7 +1307,7 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
             store: database,
             path: path,
             digest: content.digest,
-            overCeiling: content.overCeiling,
+            overCeiling: content.overCeiling != null,
           );
           // Just written by mint, under this same lock; a missing row
           // here is a bug, and a named exception says so rather than a
@@ -1338,9 +1412,12 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
   /// device holds as a blob is an older row that lost to the conversion, or
   /// a build that predates it, and is ignored: promotion does not exist.
   ///
-  /// Returns the number of local changes made unreachable, or null when
-  /// nothing was followed.
-  Future<int?> _followConversion(CatalogRow row, MergedIdentity merged) async {
+  /// Returns the number of local changes made unreachable, and the peer that
+  /// converted it when its claim says; null when nothing was followed.
+  Future<({int abandoned, String? by})?> _followConversion(
+    CatalogRow row,
+    MergedIdentity merged,
+  ) async {
     final theirs = merged.byUlid[row.ulid];
     if (theirs == null ||
         theirs.mergePolicy != MergePolicy.blobLww ||
@@ -1352,10 +1429,8 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
       if (current == null || current.mergePolicy != MergePolicy.fugueText) {
         return null;
       }
-      final abandoned = database.crdt
-          .changeStorageForDocument(row.ulid)
-          .getChanges()
-          .length;
+      // A COUNT, not a load: the log may be long, and only its size is told.
+      final abandoned = database.crdt.changeStorageForDocument(row.ulid).count;
       database.catalog.upsert(
         CatalogRow(
           ulid: current.ulid,
@@ -1370,15 +1445,21 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
           seedClaim: theirs.seedClaim ?? current.seedClaim,
         ),
       );
-      return abandoned;
+      return (abandoned: abandoned, by: theirs.seedClaim?.peerId.toString());
     });
   }
 
-  Future<void> _retire(CatalogRow row, MergedIdentity merged) =>
+  ///
+  /// Returns who won and what losing cost, for the card; null when no other
+  /// identity holds the path, which leaves nothing to tell.
+  Future<Retirement?> _retire(CatalogRow row, MergedIdentity merged) =>
       lock.run(() async {
         final winner = merged.forPath(row.path);
+        // What losing cost: the changes the retired identity's log holds. A
+        // COUNT, not a load; the tombstone keeps the log either way.
+        final held = database.crdt.changeStorageForDocument(row.ulid).count;
         _tombstoneRow(row);
-        if (winner == null || winner.ulid == row.ulid) return;
+        if (winner == null || winner.ulid == row.ulid) return null;
         database.catalog.upsert(
           CatalogRow(
             ulid: winner.ulid,
@@ -1387,6 +1468,12 @@ class DriftReconciler implements NoteReconciler, PreSaveCheck {
             state: NoteState.historyPending,
             seedClaim: winner.seedClaim,
           ),
+        );
+        return Retirement(
+          winner: winner.ulid,
+          winnerMint: _mintOf(winner.seedClaim),
+          loserMintedAt: _mintOf(row.seedClaim)?.at,
+          loserChanges: held,
         );
       });
 
@@ -1454,7 +1541,7 @@ enum _Arrival { minted, adopted, present }
 /// Decisions 1 and 6). That is what keeps a 500 MB `.txt` from ever being
 /// loaded, and it is the one place the ceiling is measured for an arrival.
 class _NewFile {
-  const _NewFile(this.digest, this.bytes, {this.overCeiling = false});
+  const _NewFile(this.digest, this.bytes, {this.overCeiling});
 
   /// Reads the file at [path] the way its kind wants.
   ///
@@ -1479,7 +1566,7 @@ class _NewFile {
         return _NewFile(
           await digestFile(engram, path, onRead: onRead),
           null,
-          overCeiling: true,
+          overCeiling: OverCeiling(sizeBytes: size, ceilingBytes: ceiling),
         );
       }
       final bytes = await engram.readBytes(path);
@@ -1492,8 +1579,9 @@ class _NewFile {
   final ContentDigest digest;
   final Uint8List? bytes;
 
-  /// A text path the ceiling made a blob of.
-  final bool overCeiling;
+  /// Set for a text path the ceiling made a blob of: the size that decided
+  /// it, and the ceiling.
+  final OverCeiling? overCeiling;
 }
 
 /// What reconciling one note came to.

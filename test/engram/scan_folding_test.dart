@@ -102,6 +102,33 @@ void main() {
       expect(notesOnly.trigger, ScanTrigger.note);
     });
 
+    test('a folded card keeps each adoption\'s and move\'s detail', () {
+      final mint = Mint(peer: 'peer-a', at: DateTime.utc(2026, 9, 28, 17));
+      final cards = fold([
+        rec(
+          2,
+          1,
+          report: DriftScanReport(
+            adopted: const ['d.md'],
+            adoptedFrom: {'d.md': mint},
+          ),
+        ),
+        rec(
+          1,
+          0,
+          report: const DriftScanReport(
+            moved: {'old.md': 'new.md'},
+            moveMatches: {'old.md': MoveDetail.similar(0.7)},
+          ),
+        ),
+      ]);
+
+      final report = cards.single.report;
+      expect(cards.single.ids, [2, 1]);
+      expect(report.adoptedFrom, {'d.md': mint});
+      expect(report.moveMatches, {'old.md': const MoveDetail.similar(0.7)});
+    });
+
     test('a card standing alone keeps its report as it was', () {
       const report = DriftScanReport(reconciled: ['a.md']);
       final card = fold([rec(1, 0, report: report)]).single;

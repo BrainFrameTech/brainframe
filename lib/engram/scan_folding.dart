@@ -119,6 +119,11 @@ class _Run {
   final Set<String> _tombstoned = {};
   final Map<String, String> _moved = {};
 
+  // The details of the foldable kinds that have any, kept with the path
+  // they describe — the first seen, which is the newest, as for a move.
+  final Map<String, Mint> _adoptedFrom = {};
+  final Map<String, MoveDetail> _moveMatches = {};
+
   /// Whether [record], the next older one, joins this run: both foldable,
   /// and no more than [gap] between it finishing and this run's oldest
   /// starting.
@@ -140,7 +145,13 @@ class _Run {
     _adopted.addAll(report.adopted);
     _tombstoned.addAll(report.tombstoned);
     for (final move in report.moved.entries) {
-      _moved.putIfAbsent(move.key, () => move.value);
+      if (_moved.containsKey(move.key)) continue;
+      _moved[move.key] = move.value;
+      final how = report.moveMatches[move.key];
+      if (how != null) _moveMatches[move.key] = how;
+    }
+    for (final entry in report.adoptedFrom.entries) {
+      _adoptedFrom.putIfAbsent(entry.key, () => entry.value);
     }
   }
 
@@ -165,6 +176,8 @@ class _Run {
         adopted: List.unmodifiable(_adopted),
         tombstoned: List.unmodifiable(_tombstoned),
         moved: Map.unmodifiable(_moved),
+        adoptedFrom: Map.unmodifiable(_adoptedFrom),
+        moveMatches: Map.unmodifiable(_moveMatches),
       ),
     );
   }

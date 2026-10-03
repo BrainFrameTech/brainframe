@@ -10,6 +10,10 @@
 /// rather than an inert one.
 library;
 
+import 'scan_detail.dart';
+
+export 'scan_detail.dart';
+
 /// What one scan did (Decisions 6 and 7).
 ///
 /// A report rather than a boolean because the things a caller can act on are
@@ -33,6 +37,12 @@ class DriftScanReport {
     this.tombstoned = const <String>[],
     this.retired = const <String>[],
     this.listingFailure,
+    this.adoptedFrom = const <String, Mint>{},
+    this.moveMatches = const <String, MoveDetail>{},
+    this.retirements = const <String, Retirement>{},
+    this.convertedBy = const <String, String>{},
+    this.overCeiling = const <String, OverCeiling>{},
+    this.dropped = const <String, int>{},
   });
 
   /// A scan that found nothing to do.
@@ -117,6 +127,35 @@ class DriftScanReport {
   /// knew. Nothing was created, moved, or tombstoned — a scan that cannot see
   /// the folder must not conclude anything about what is absent from it.
   final Object? listingFailure;
+
+  // The details (the device names design, Decision 4): what each event's
+  // card needs beyond the path, captured as the scan or reconcile decided
+  // it. Each is keyed like the list or map it describes, and sparse — a
+  // path with nothing to say has no entry — so a report built without them
+  // reads exactly as before.
+
+  /// For a path in [adopted]: who minted the identity it adopted, and when.
+  /// Absent when the map row carries no seed claim.
+  final Map<String, Mint> adoptedFrom;
+
+  /// For a key of [moved] — the old path — how the move was matched.
+  final Map<String, MoveDetail> moveMatches;
+
+  /// For a path in [retired]: who won, and what losing cost.
+  final Map<String, Retirement> retirements;
+
+  /// For a key of [convertedElsewhere]: the peer that converted it, as
+  /// text. Absent when its row carries no seed claim.
+  final Map<String, String> convertedBy;
+
+  /// For a path in [oversized] or [awaitingDecision]: the file's size and
+  /// the ceiling it was over. One map for both, since the fact is the same
+  /// — and a path is one or the other: one is a file the catalog had never
+  /// met, the other a note it holds.
+  final Map<String, OverCeiling> overCeiling;
+
+  /// For a path in [converted]: how many changes of history were dropped.
+  final Map<String, int> dropped;
 
   /// Whether the folder was enumerated in full, which is the precondition for
   /// every deletion and every creation above.

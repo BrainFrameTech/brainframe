@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:brainframe/engram/crdt/catalog.dart';
+import 'package:brainframe/engram/device_name.dart';
 import 'package:brainframe/engram/crdt/identity_map.dart';
 import 'package:brainframe/engram/crdt/identity_map_io.dart';
 import 'package:brainframe/engram/crdt/metadata_db_io.dart';
@@ -515,6 +517,275 @@ void main() {
       File('${map.directoryPath}/notes.txt').writeAsStringSync('');
 
       expect(await map.peersSeen(), [peerA]);
+    });
+  });
+
+  group('what a device calls itself (bf_peer)', () {
+    PeerName named(PeerId peer, String name, {int millis = 500}) => PeerName(
+      peer: peer,
+      name: name,
+      platform: 'linux',
+      setAt: HybridLogicalClock(l: millis, c: 0),
+    );
+
+    test('written beside the rows, and read back by everyone', () async {
+      final ours = IdentityMap(engramRoot: engram.path, peerId: peerA);
+      final theirs = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      await ours.write([row()], self: named(peerA, 'jdoe-desktop'));
+      await theirs.write(const [], self: named(peerB, 'jdoe\'s Pixel'));
+
+      expect(ours.readOurName(), named(peerA, 'jdoe-desktop'));
+      expect(await theirs.readEveryDevicesNames(), {
+        peerA: named(peerA, 'jdoe-desktop'),
+        peerB: named(peerB, 'jdoe\'s Pixel'),
+      });
+      expect(await ours.readEveryDevicesRows(), hasLength(1));
+    });
+
+    test('rewritten whole: a write without a name drops it', () async {
+      await map.write(const [], self: named(peerA, 'jdoe-desktop'));
+      await map.write(const []);
+      expect(map.readOurName(), isNull);
+    });
+
+    test('no device may name another', () async {
+      expect(
+        () => map.write(const [], self: named(peerB, 'not mine')),
+        throwsArgumentError,
+      );
+    });
+
+    test('a row about another device, in someone\'s file, is ignored', () async {
+      // A file claiming to name a device other than its writer: only the
+      // writer's own row counts, and this file has none.
+      final theirs = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      await theirs.write(const []);
+      final database = sq.sqlite3.open(theirs.filePath);
+      try {
+        database
+          ..execute(IdentityMap.createPeerSchemaSql)
+          ..execute(
+            'INSERT INTO bf_peer (peer, name, platform, hlc) VALUES (?, ?, ?, ?)',
+            [peerA.toString(), 'impostor', 'linux', '500.0'],
+          );
+      } finally {
+        database.close();
+      }
+      expect(await map.readEveryDevicesNames(), isEmpty);
+    });
+
+    test('an older build\'s file, with no bf_peer, names no one', () async {
+      // An older build writes the map table alone. Its device has no name,
+      // and its rows read exactly as before.
+      final older = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      await older.write([row(recordedAt: stamp(peerB, 100))]);
+      expect(await map.readEveryDevicesNames(), isEmpty);
+      expect(older.readOurName(), isNull);
+      expect(await map.readEveryDevicesRows(), hasLength(1));
+    });
+
+    test('the map table is untouched, so an older reader is too', () async {
+      // An older build runs SELECT * FROM bf_identity_map and nothing else:
+      // the name must not be in that table or change its columns.
+      await map.write([row()], self: named(peerA, 'jdoe-desktop'));
+      expect(columnsOf(map.filePath), [
+        'ulid',
+        'path',
+        'merge_policy',
+        'deleted',
+        'seeded_by',
+        'seed_hlc',
+        'peer',
+        'hlc',
+      ]);
+      final database = sq.sqlite3.open(
+        map.filePath,
+        mode: sq.OpenMode.readOnly,
+      );
+      try {
+        expect(
+          database
+              .select('SELECT COUNT(*) AS n FROM bf_identity_map')
+              .first['n'],
+          1,
+        );
+      } finally {
+        database.close();
+      }
+    });
+
+    test('an unreadable or unnamed file is skipped, not fatal', () async {
+      await map.write(const [], self: named(peerA, 'jdoe-desktop'));
+      final stray = File('${map.directoryPath}/notes.db')
+        ..writeAsStringSync('');
+      File(
+        '${map.directoryPath}/${peerB.toString()}.db',
+      ).writeAsStringSync('not a database');
+      expect(await map.readEveryDevicesNames(), {
+        peerA: named(peerA, 'jdoe-desktop'),
+      });
+      stray.deleteSync();
+    });
+
+    test('a name whose stamp cannot be read is no name', () async {
+      await map.write(const [], self: named(peerA, 'jdoe-desktop'));
+      final database = sq.sqlite3.open(map.filePath);
+      try {
+        database.execute("UPDATE bf_peer SET hlc = 'not a clock'");
+      } finally {
+        database.close();
+      }
+      expect(map.readOurName(), isNull);
+    });
+
+    /// Writes a bf_peer row for [peer] into its own file, with raw values —
+    /// how a malformed or hostile device's file would look.
+    void forge(PeerId peer, List<Object?> nameplatformHlc) {
+      final file = IdentityMap(engramRoot: engram.path, peerId: peer);
+      Directory(file.directoryPath).createSync(recursive: true);
+      final database = sq.sqlite3.open(file.filePath);
+      try {
+        database
+          ..execute(IdentityMap.createSchemaSql)
+          ..execute(IdentityMap.createPeerSchemaSql)
+          ..execute(
+            'INSERT INTO bf_peer (peer, name, platform, hlc) '
+            'VALUES (?, ?, ?, ?)',
+            [peer.toString(), ...nameplatformHlc],
+          );
+      } finally {
+        database.close();
+      }
+    }
+
+    test(
+      'a malformed peer file is skipped, and never stops the others',
+      () async {
+        // The table is not STRICT, so another device's file can hold a BLOB
+        // or a number where text belongs. That file names no one; reading it
+        // must not throw, or one bad file would hide every device's name.
+        await map.write(const [], self: named(peerA, 'jdoe-desktop'));
+        forge(peerB, [
+          [1, 2, 3],
+          'linux',
+          '500.0',
+        ]);
+        // A number would be converted to text by the column's TEXT affinity;
+        // a BLOB is what survives as something other than text.
+        forge(peerC, [
+          'jdoe\'s Pixel',
+          Uint8List.fromList([1, 2]),
+          '500.0',
+        ]);
+
+        expect(await map.readEveryDevicesNames(), {
+          peerA: named(peerA, 'jdoe-desktop'),
+        });
+      },
+    );
+
+    test('another device\'s name is held to this one\'s rules', () async {
+      // Read cut short and normalized, so an enormous name is never loaded
+      // whole, and a blank one is no name.
+      forge(peerB, ['  ${'x' * 5000}  ', 'linux', '500.0']);
+      forge(peerC, ['   ', 'linux', '500.0']);
+
+      final names = await map.readEveryDevicesNames();
+      expect(names[peerB]!.name, 'x' * 64);
+      expect(names.containsKey(peerC), isFalse);
+    });
+
+    test('a name stored here is read back unchanged everywhere', () async {
+      // The code-point limit and the read's cut are the same number, so a
+      // name heavy with combining marks — within both limits — survives the
+      // bounded read whole, and every device agrees what this one is called.
+      final heavy = normalizeDeviceName('e\u0301\u0302\u0303' * 70)!;
+      expect(heavy.runes.length, deviceNameMaxCodePoints);
+      await map.write(const [], self: named(peerA, heavy));
+      final other = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      expect((await other.readEveryDevicesNames())[peerA]!.name, heavy);
+    });
+
+    test('a platform or stamp past its valid form names no one', () async {
+      // Refused rather than cut, and never loaded whole: a cut platform or
+      // stamp would be a different value, not a shorter one.
+      forge(peerB, ['jdoe B', 'x' * 100000, '500.0']);
+      forge(peerC, ['jdoe C', 'linux', '1' * 100000]);
+      expect(await map.readEveryDevicesNames(), isEmpty);
+    });
+
+    test('a NUL cannot hide an oversized platform or stamp', () async {
+      // SQLite's length() of TEXT stops at the first NUL, so a short value,
+      // a NUL, and a megabyte measured five characters — and was then
+      // selected whole. Counted in bytes, it is refused before it is read.
+      forge(peerB, ['jdoe B', 'linux\u0000${'x' * 100000}', '500.0']);
+      forge(peerC, ['jdoe C', 'linux', '500.0\u0000${'1' * 100000}']);
+      expect(await map.readEveryDevicesNames(), isEmpty);
+    });
+
+    test('a file without the one-row key yields one name, not all', () async {
+      // Another device's bf_peer need not carry the primary key, so it can
+      // hold any number of rows about its writer; only one is ever loaded.
+      final file = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      Directory(file.directoryPath).createSync(recursive: true);
+      final database = sq.sqlite3.open(file.filePath);
+      try {
+        database
+          ..execute(IdentityMap.createSchemaSql)
+          ..execute('CREATE TABLE bf_peer (peer, name, platform, hlc)');
+        final insert = database.prepare(
+          'INSERT INTO bf_peer VALUES (?, ?, ?, ?)',
+        );
+        for (var i = 0; i < 3; i++) {
+          insert.execute([peerB.toString(), 'jdoe $i', 'linux', '500.$i']);
+        }
+        insert.close();
+      } finally {
+        database.close();
+      }
+      expect((await map.readEveryDevicesNames())[peerB]!.name, 'jdoe 0');
+    });
+
+    test('a negative or overflowing stamp names no one, and never throws', () {
+      // The clock's parser asserts non-negative parts rather than refusing
+      // them, so a debug build would throw — aborting the open, for this
+      // device's own file — and a release build accept the bad clock.
+      for (final stamp in [
+        '-1.0',
+        '500.-1',
+        '1.0.0',
+        '99999999999999999999.0',
+      ]) {
+        forge(peerA, ['jdoe-desktop', 'linux', stamp]);
+        expect(map.readOurName(), isNull, reason: stamp);
+        File(map.filePath).deleteSync();
+      }
+    });
+
+    test('a name with a NUL in it round-trips, as spaces', () async {
+      // Normalized before it is stored, so the NUL that SQLite would cut
+      // at is never there to cut.
+      final name = normalizeDeviceName('Desk\u0000top')!;
+      await map.write(const [], self: named(peerA, name));
+      final other = IdentityMap(engramRoot: engram.path, peerId: peerB);
+      expect((await other.readEveryDevicesNames())[peerA]!.name, 'Desk top');
+      expect(map.readOurName()!.name, name, reason: 'so no republish on open');
+    });
+
+    test('a platform that is not an identifier names no one', () async {
+      forge(peerB, ['jdoe B', 'Linux; DROP', '500.0']);
+      forge(peerC, ['jdoe C', 'android', '500.0']);
+      expect((await map.readEveryDevicesNames()).keys, [peerC]);
+    });
+
+    test('nothing to read before the shared directory exists', () async {
+      expect(await map.readEveryDevicesNames(), isEmpty);
+      expect(map.readOurName(), isNull);
+    });
+
+    test('a name reads as itself', () {
+      expect(named(peerA, 'jdoe-desktop').toString(), contains('jdoe-desktop'));
+      expect(named(peerA, 'x').hashCode, named(peerA, 'x').hashCode);
     });
   });
 }

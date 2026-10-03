@@ -26,20 +26,26 @@ import 'identity_map_io.dart';
 
 /// This device's claims about notes, and where they go.
 class AuthoredIdentity {
-  AuthoredIdentity._(this.map, this._rows, this._writer);
+  AuthoredIdentity._(this.map, this._rows, this._name);
 
   /// The file, and the reader over every device's file beside it.
   final IdentityMap map;
 
   final Map<String, IdentityRow> _rows;
-  final DebouncedIdentityMapWriter _writer;
+  late final DebouncedIdentityMapWriter _writer;
+
+  /// What this device last published itself as. Loaded with the rows and
+  /// written with them every time, so a rewrite for a claim never drops a
+  /// name published earlier.
+  PeerName? _name;
 
   /// Loads what this device last wrote, so the next write carries every
   /// earlier claim forward. A device that started from an empty set would
   /// republish only its newest claim and silently retract the rest.
   ///
   /// [writer] overrides the debounced writer, so a test can drive its timers
-  /// or capture its rows without a filesystem.
+  /// or capture its rows without a filesystem. One that writes with
+  /// `map.write` alone writes no name; the default writes the name too.
   static Future<AuthoredIdentity> load(
     IdentityMap map, {
     DebouncedIdentityMapWriter? writer,
@@ -47,11 +53,41 @@ class AuthoredIdentity {
     final rows = <String, IdentityRow>{
       for (final row in await map.readOurs()) row.ulid: row,
     };
-    return AuthoredIdentity._(
-      map,
-      rows,
-      writer ?? DebouncedIdentityMapWriter(map.write),
+    final identity = AuthoredIdentity._(map, rows, map.readOurName());
+    identity._writer =
+        writer ??
+        DebouncedIdentityMapWriter(
+          (rows) => map.write(rows, self: identity._name),
+        );
+    return identity;
+  }
+
+  /// What this device last published itself as, or null if it never has.
+  PeerName? get name => _name;
+
+  /// Publishes [name] — already resolved and normalized — as what this
+  /// device is called in this engram, on [platform], and schedules the file
+  /// to be rewritten. Returns whether anything changed.
+  ///
+  /// **Quiet when nothing did.** Every open publishes, and a file rewritten
+  /// on every open is a file the sync service ships on every open; so a
+  /// name and platform already published leave the file, and its stamp,
+  /// alone.
+  bool publishName(String name, {required String platform}) {
+    final current = _name;
+    if (current != null &&
+        current.name == name &&
+        current.platform == platform) {
+      return false;
+    }
+    _name = PeerName(
+      peer: map.peerId,
+      name: name,
+      platform: platform,
+      setAt: HybridLogicalClock.now(),
     );
+    _writer.schedule(_rows.values.toList());
+    return true;
   }
 
   /// The rows this device has authored, by ULID.

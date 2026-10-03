@@ -38,3 +38,16 @@ final Setting<String?> lastOpenedEngramSetting = Setting<String?>(
   encode: (value) => value,
   decode: (raw) => raw is String ? raw : null,
 );
+
+/// What this device is called in every engram that has no name of its own
+/// for it, or null to use the platform's name (the device names design,
+/// Decision 1). Per-device, like the default theme; an engram's own name for
+/// the device is kept in that engram's local database instead, never in the
+/// synced folder.
+final Setting<String?> deviceDefaultNameSetting = Setting<String?>(
+  key: 'device.defaultName',
+  tier: SettingTier.device,
+  defaultValue: null,
+  encode: (value) => value,
+  decode: (raw) => raw is String ? raw : null,
+);

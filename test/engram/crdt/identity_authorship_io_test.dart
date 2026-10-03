@@ -245,4 +245,78 @@ void main() {
     expect(written, isEmpty);
     expect(File(map.filePath).existsSync(), isFalse);
   });
+
+  group('what this device calls itself (the device names design)', () {
+    test('publishing writes the name with the rows', () async {
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+      final claim = note('a.md');
+      authored.record(claim, deleted: false);
+
+      expect(authored.publishName('jdoe-desktop', platform: 'linux'), isTrue);
+      await authored.flush();
+
+      final written = map.readOurName()!;
+      expect(written.name, 'jdoe-desktop');
+      expect(written.platform, 'linux');
+      expect(written.peer, peerA);
+      expect(await map.readOurs(), hasLength(1), reason: 'the rows still go');
+    });
+
+    test('a later claim never drops a name published earlier', () async {
+      // The file is rewritten whole for every claim; the name is carried in
+      // every rewrite, including one in a later session that has not
+      // published yet.
+      final first = await AuthoredIdentity.load(map);
+      first.publishName('jdoe-desktop', platform: 'linux');
+      await first.flush();
+
+      final second = await AuthoredIdentity.load(map);
+      addTearDown(second.dispose);
+      expect(second.name?.name, 'jdoe-desktop', reason: 'loaded with rows');
+      second.record(note('b.md'), deleted: false);
+      await second.flush();
+
+      expect(map.readOurName()?.name, 'jdoe-desktop');
+    });
+
+    test('quiet when the name is already published', () async {
+      final writes = <List<IdentityRow>>[];
+      await map.write(
+        const [],
+        self: PeerName(
+          peer: peerA,
+          name: 'jdoe-desktop',
+          platform: 'linux',
+          setAt: HybridLogicalClock(l: 1, c: 0),
+        ),
+      );
+      final authored = await AuthoredIdentity.load(
+        map,
+        writer: immediate(writes),
+      );
+      addTearDown(authored.dispose);
+
+      expect(authored.publishName('jdoe-desktop', platform: 'linux'), isFalse);
+      await authored.flush();
+      expect(writes, isEmpty, reason: 'every open publishes; few write');
+
+      expect(authored.publishName('Work laptop', platform: 'linux'), isTrue);
+      await authored.flush();
+      expect(writes, hasLength(1));
+      expect(authored.name?.name, 'Work laptop');
+      expect(
+        authored.name!.setAt.compareTo(HybridLogicalClock(l: 1, c: 0)),
+        greaterThan(0),
+        reason: 'a rename is stamped anew',
+      );
+    });
+
+    test('a changed platform alone is published too', () async {
+      final authored = await AuthoredIdentity.load(map);
+      addTearDown(authored.dispose);
+      authored.publishName('jdoe', platform: 'linux');
+      expect(authored.publishName('jdoe', platform: 'android'), isTrue);
+    });
+  });
 }

@@ -9,9 +9,16 @@
 /// the content hash, the size and mtime beside it, scan state, the peerID
 /// itself — stays in `metadata.db`, because Decision 5 shows that sharing a
 /// hash converts drift detection into silent data loss.
+///
+/// **One exception, deliberate: the device's name ([PeerName]).** It describes
+/// the install, not a note, and it is shared because sharing it is its whole
+/// purpose — it is how the engram's other devices recognize this one (the
+/// device names design, Decision 2). It is one row, about the file's own
+/// writer, so no merge rule touches it.
 library;
 
 import 'package:crdt_lf/crdt_lf.dart';
+import 'package:hlc_dart/hlc_dart.dart';
 
 import 'catalog.dart';
 
@@ -108,4 +115,47 @@ class IdentityRow {
   String toString() =>
       'IdentityRow($ulid, $path, ${mergePolicy.name}, '
       '${deleted ? 'deleted' : 'live'}, by $recordedBy)';
+}
+
+/// What a device calls itself in this engram, as it publishes it in its own
+/// map file (the device names design, Decision 2).
+///
+/// **Only ever about the file's writer.** A device writes one of these, about
+/// itself, into the file only it writes — so no two devices ever write the
+/// same one, and there is nothing to merge. A reader takes from each file
+/// only the row naming that file's own peer.
+class PeerName {
+  const PeerName({
+    required this.peer,
+    required this.name,
+    required this.platform,
+    required this.setAt,
+  });
+
+  /// The device this names: always the writer of the file it is in.
+  final PeerId peer;
+
+  /// The name the device's other engram devices see it by, already resolved
+  /// from its three sources and normalized.
+  final String name;
+
+  /// The platform, as `Platform.operatingSystem` spells it.
+  final String platform;
+
+  /// When the name was last set, so a later reader can tell a rename.
+  final HybridLogicalClock setAt;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PeerName &&
+      other.peer == peer &&
+      other.name == name &&
+      other.platform == platform &&
+      other.setAt == setAt;
+
+  @override
+  int get hashCode => Object.hash(peer, name, platform, setAt);
+
+  @override
+  String toString() => 'PeerName($peer, "$name", $platform)';
 }

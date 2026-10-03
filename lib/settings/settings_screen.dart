@@ -29,6 +29,7 @@ Future<String?> openSettingsScreen(
   final writer = CrdtSessionScope.maybeOf(context);
   final reconciler = CrdtSessionScope.maybeReconcilerOf(context);
   final watchStatus = CrdtSessionScope.maybeWatchStatusOf(context);
+  final naming = CrdtSessionScope.maybeNamingOf(context);
   return Navigator.of(context).push<String?>(
     MaterialPageRoute<String?>(
       builder: (_) {
@@ -38,6 +39,7 @@ Future<String?> openSettingsScreen(
             writer: writer,
             reconciler: reconciler,
             watchStatus: watchStatus,
+            naming: naming,
             child: screen,
           );
         }

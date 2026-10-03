@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../engram/device_name.dart';
 import '../engram/engram.dart';
 import '../engram/metadata.dart';
 import '../l10n/gen/app_localizations.dart';
+import 'device_name_section.dart';
 
 /// Renames the open engram, returning it with its new display name.
 typedef EngramRenamer = Future<Engram> Function(String displayName);
@@ -40,6 +42,7 @@ class EngramPane extends StatefulWidget {
     required this.loadMetadata,
     required this.rename,
     this.onRenamed,
+    this.naming,
   });
 
   /// The engram this pane describes — the one that is open.
@@ -55,6 +58,11 @@ class EngramPane extends StatefulWidget {
   /// Notified after a successful rename, so the rest of the app (the switcher
   /// under the pushed Settings route) can pick the new name up.
   final ValueChanged<Engram>? onRenamed;
+
+  /// This device's names in the engram, or null when it has no session — a
+  /// read-only engram, which has nowhere to publish one. The "This device"
+  /// section is shown only when there is one.
+  final DeviceNaming? naming;
 
   @override
   State<EngramPane> createState() => _EngramPaneState();
@@ -201,6 +209,10 @@ class _EngramPaneState extends State<EngramPane> {
                       child: Text(l10n.engramPaneSave),
                     ),
                   ),
+                ],
+                if (widget.naming case final naming?) ...[
+                  const SizedBox(height: 28),
+                  DeviceNameSection(naming: naming),
                 ],
                 const SizedBox(height: 28),
                 _SectionHeading(title: l10n.engramPaneDetailsSection),

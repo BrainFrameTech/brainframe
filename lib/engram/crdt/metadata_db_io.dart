@@ -194,6 +194,11 @@ CREATE TABLE IF NOT EXISTS bf_meta (
   /// Sets the `bf_meta` value for [key].
   void writeMeta(String key, String value) => _writeMeta(database, key, value);
 
+  /// Removes the `bf_meta` value for [key], if there is one — how a setting
+  /// kept here is cleared, so [readMeta] answers null again.
+  void deleteMeta(String key) =>
+      database.execute('DELETE FROM bf_meta WHERE key = ?', [key]);
+
   static String? _readMeta(sq.Database database, String key) {
     final rows = database.select('SELECT value FROM bf_meta WHERE key = ?', [
       key,

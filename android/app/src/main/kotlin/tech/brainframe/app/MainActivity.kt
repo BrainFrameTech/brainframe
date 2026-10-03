@@ -11,6 +11,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         folderAccess = FolderAccessChannel(this, flutterEngine.dartExecutor.binaryMessenger)
+        // What this phone is called: the last fallback for its name in an
+        // engram. Stateless, so nothing needs to hold it.
+        DeviceNameChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     override fun onResume() {

@@ -52,6 +52,10 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.9
+  # Grapheme clusters for cutting a device's name without splitting a
+  # character (lib/engram/device_name_rules.dart), in plain Dart so bfmon can
+  # still run without Flutter. `any`, as with intl: the Flutter SDK pins it.
+  characters: any
   # Command-line parsing for the desktop startup options (see
   # lib/startup_options.dart). The Dart-team ArgParser; already in the tree
   # transitively, promoted to a direct dependency now that we use it directly.

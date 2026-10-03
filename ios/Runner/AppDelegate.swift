@@ -20,6 +20,45 @@ import UniformTypeIdentifiers
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FolderAccessChannel") {
       folderAccess = FolderAccessChannel(registrar: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DeviceNameChannel") {
+      deviceName = DeviceNameChannel(registrar: registrar)
+    }
+  }
+
+  /// What this device is called; held for the engine's life like the above.
+  private var deviceName: DeviceNameChannel?
+}
+
+// MARK: - Device name
+
+/// The iOS side of `tech.brainframe.app/device` — see
+/// `lib/engram/device_name.dart` for the contract. One method, `name`: the
+/// last fallback for this device's name in an engram (the device names
+/// design, Decision 1).
+///
+/// The model — "iPhone", "iPad" — and deliberately not `UIDevice.name`: since
+/// iOS 16 that returns the same generic model unless Apple grants the app the
+/// user-assigned-device-name entitlement, so the model is the honest answer
+/// and the in-app setting is how an iPhone gets a real name.
+///
+/// **Written without an iPhone to run it on**, like the folder channel above.
+final class DeviceNameChannel: NSObject {
+  private let channel: FlutterMethodChannel
+
+  init(registrar: FlutterPluginRegistrar) {
+    channel = FlutterMethodChannel(
+      name: "tech.brainframe.app/device",
+      binaryMessenger: registrar.messenger()
+    )
+    super.init()
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "name":
+        result(UIDevice.current.model)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }
 

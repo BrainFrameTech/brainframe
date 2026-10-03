@@ -11,8 +11,10 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:crdt_lf/crdt_lf.dart';
+import 'package:hlc_dart/hlc_dart.dart';
 import 'package:sqlite3/sqlite3.dart' as sq;
 
+import '../device_name_rules.dart';
 import '../fs/fs_store_io.dart';
 import 'catalog.dart';
 import 'identity_map.dart';
@@ -29,8 +31,10 @@ const String sharedDirectoryName = 'shared';
 ///
 /// **The peerID in the filename is authorship, not scope.** Every row in every
 /// one of these files is shared state that every device reads. Nothing
-/// peer-specific lives in them — that is `metadata.db`'s job. The name answers
-/// "who wrote this file", never "who is this file for".
+/// peer-specific lives in them — that is `metadata.db`'s job — with one
+/// deliberate exception: `bf_peer`, the file's writer saying what it is called
+/// ([PeerName]), shared because being seen by the others is its purpose. The
+/// name answers "who wrote this file", never "who is this file for".
 ///
 /// Sharding by author is what makes the map possible at all. A single
 /// `engram.db` in a synced folder is not merged by a sync service; it picks a
@@ -62,6 +66,24 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
 );
 ''';
 
+  /// What the file's writer calls itself (the device names design, Decision
+  /// 2): one row, about the writer alone.
+  ///
+  /// **A table of its own, so older builds never see it.** They read
+  /// `bf_identity_map` and nothing else, taking every row in it as a claim
+  /// about a note and refusing one they cannot parse — so a name there would
+  /// break the scan of every device still on an older build. Their own files
+  /// lack this table, and those devices are shown by a short form of their
+  /// peer ID.
+  static const String createPeerSchemaSql = '''
+CREATE TABLE IF NOT EXISTS bf_peer (
+  peer     TEXT PRIMARY KEY,
+  name     TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  hlc      TEXT NOT NULL
+);
+''';
+
   /// Absolute path to the engram's root directory.
   final String engramRoot;
 
@@ -75,7 +97,8 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
   /// This device's own file — the only one it may write.
   String get filePath => '$directoryPath/$peerId.db';
 
-  /// Replaces this device's file with exactly [rows].
+  /// Replaces this device's file with exactly [rows], and [self] — what this
+  /// device calls itself — when there is one.
   ///
   /// Written whole, never appended to. The map is measured in kilobytes, so
   /// rewriting it costs nothing — a discipline that would be ruinous applied
@@ -118,7 +141,14 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
   ///
   /// None of it does anything about two devices replacing one path. That is
   /// what the per-peer filename is for.
-  Future<void> write(List<IdentityRow> rows) async {
+  Future<void> write(List<IdentityRow> rows, {PeerName? self}) async {
+    if (self != null && self.peer != peerId) {
+      throw ArgumentError.value(
+        self.peer,
+        'self.peer',
+        'a device writes a name only for itself',
+      );
+    }
     await Directory(directoryPath).create(recursive: true);
 
     // A unique directory beside the destination, so the name comes from the
@@ -156,6 +186,20 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
         source.execute('COMMIT');
       } finally {
         statement.close();
+      }
+      if (self != null) {
+        source
+          ..execute(createPeerSchemaSql)
+          ..execute(
+            'INSERT INTO bf_peer (peer, name, platform, hlc) '
+            'VALUES (?, ?, ?, ?)',
+            [
+              self.peer.toString(),
+              self.name,
+              self.platform,
+              self.setAt.toString(),
+            ],
+          );
       }
       source.execute("VACUUM INTO '${_escape(temporaryPath)}'");
     } finally {
@@ -233,6 +277,110 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
     return peers;
   }
 
+  /// What every device that has named itself is called, by peer: from each
+  /// map file, the one row about that file's own writer.
+  ///
+  /// A row in one device's file about another device is ignored — no device
+  /// may name another — and so is a file with no `bf_peer` table, which is
+  /// what an older build writes. Unreadable files are skipped, as
+  /// [readEveryDevicesRows] skips them.
+  Future<Map<PeerId, PeerName>> readEveryDevicesNames() async {
+    final directory = Directory(directoryPath);
+    if (!await directory.exists()) return const {};
+    final names = <PeerId, PeerName>{};
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File || !entity.path.endsWith('.db')) continue;
+      final file = entity.uri.pathSegments.last;
+      final PeerId writer;
+      try {
+        writer = PeerId.parse(file.substring(0, file.length - 3));
+      } on FormatException {
+        continue; // not a device's file
+      }
+      final name = _readName(entity.path, writer);
+      if (name != null) names[writer] = name;
+    }
+    return names;
+  }
+
+  /// What this device last published itself as, or null if it never has.
+  PeerName? readOurName() =>
+      File(filePath).existsSync() ? _readName(filePath, peerId) : null;
+
+  PeerName? _readName(String path, PeerId writer) {
+    sq.Database? database;
+    try {
+      database = sq.sqlite3.open(path, mode: sq.OpenMode.readOnly);
+      final hasTable = database.select(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bf_peer'",
+      );
+      if (hasTable.isEmpty) return null; // an older build's file
+      // Another device's file, so input rather than state: the table is not
+      // STRICT, and a column can hold anything, of any size. Checked in the
+      // query, so nothing unbounded is ever loaded:
+      //
+      // - every value must be text — a BLOB where text belongs is no name,
+      //   not a cast that throws (a number is turned to text by the
+      //   columns' TEXT affinity, so a BLOB is what can arrive);
+      // - the name is read cut at [deviceNameMaxCodePoints] — exactly what a
+      //   device may store, so a name stored anywhere is read back whole;
+      // - the platform and the stamp are refused past their longest valid
+      //   form rather than cut, since a cut one would be a different value.
+      //   Measured in bytes, as a BLOB: `length` of TEXT stops at the first
+      //   NUL, so a short stamp followed by a NUL and a megabyte would pass
+      //   a character count and then be loaded whole. Both are ASCII when
+      //   valid, so the byte limit is the character limit.
+      final rows = database.select(
+        'SELECT substr(name, 1, ?) AS name, platform, hlc FROM bf_peer '
+        "WHERE peer = ? AND typeof(name) = 'text' "
+        "AND typeof(platform) = 'text' AND typeof(hlc) = 'text' "
+        'AND length(CAST(platform AS BLOB)) BETWEEN 1 AND ? '
+        'AND length(CAST(hlc AS BLOB)) BETWEEN 1 AND ? '
+        // One row: the schema's primary key says so, but another device's
+        // file need not have that schema.
+        'LIMIT 1',
+        [
+          deviceNameMaxCodePoints,
+          writer.toString(),
+          _platformMaxLength,
+          _hlcMaxLength,
+        ],
+      );
+      if (rows.isEmpty) return null;
+      final row = rows.first;
+      final platform = row['platform'] as String;
+      if (!_platformPattern.hasMatch(platform)) return null;
+      // Normalized as this device would have stored it: trimmed, within the
+      // limits, and a blank one is no name.
+      final name = normalizeDeviceName(row['name'] as String);
+      if (name == null) return null;
+      // Two non-negative integers and a dot, checked before parsing: the
+      // parser asserts a clock is non-negative rather than rejecting it, so
+      // `-1.0` would throw an AssertionError in a debug build — aborting the
+      // open, for this device's own file — and be accepted in a release one.
+      final hlc = row['hlc'] as String;
+      if (!_hlcPattern.hasMatch(hlc)) return null;
+      return PeerName(
+        peer: writer,
+        name: name,
+        platform: platform,
+        setAt: HybridLogicalClock.parse(hlc),
+      );
+    } on sq.SqliteException catch (error) {
+      developer.log(
+        'Skipping unreadable device name at $path: ${error.message}',
+        name: 'brainframe.identity_map',
+      );
+      return null;
+    } on FormatException {
+      // A name we cannot interpret is not worth refusing the engram over:
+      // the device is shown by its peer ID instead.
+      return null;
+    } finally {
+      database?.close();
+    }
+  }
+
   /// Every row this device itself last wrote.
   Future<List<IdentityRow>> readOurs() async =>
       File(filePath).existsSync() ? _readFile(filePath) : const [];
@@ -286,6 +434,25 @@ CREATE TABLE IF NOT EXISTS bf_identity_map (
   }
 
   static String _escape(String path) => path.replaceAll("'", "''");
+
+  /// The longest platform identifier read from another device's file. The
+  /// identifiers are `Platform.operatingSystem`'s — `linux`, `android`, … —
+  /// so this is room to spare, and a longer one is not a platform.
+  static const int _platformMaxLength = 32;
+
+  /// What a platform identifier looks like: lowercase letters, digits, and
+  /// underscores. Not a fixed list, so a platform added later is not
+  /// refused by a device that predates it.
+  static final RegExp _platformPattern = RegExp(r'^[a-z0-9_]+$');
+
+  /// The longest valid stamp: two 64-bit integers and the dot between them,
+  /// as `HybridLogicalClock.toString` writes it — at most 41 characters.
+  static const int _hlcMaxLength = 48;
+
+  /// What a valid stamp looks like: two non-negative integers and a dot. An
+  /// integer too large for 64 bits still matches, and is refused by the
+  /// parser as a FormatException, which the reader catches.
+  static final RegExp _hlcPattern = RegExp(r'^[0-9]+\.[0-9]+$');
 }
 
 /// Writes the identity map on the same debounce discipline the editor uses.

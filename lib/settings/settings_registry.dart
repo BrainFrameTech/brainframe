@@ -218,6 +218,7 @@ List<SettingsGroup> buildCoreGroups(BuildContext context) {
               // Push the renamed engram back down into the real scope, so the
               // switcher behind this route shows the new name on return.
               onRenamed: engramScope.updateActive,
+              naming: CrdtSessionScope.maybeNamingOf(ctx),
             ),
           ),
         SettingsCategory(

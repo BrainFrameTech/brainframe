@@ -381,9 +381,55 @@ CREATE TABLE IF NOT EXISTS bf_peer (
     }
   }
 
-  /// Every row this device itself last wrote.
+  /// Every row this device itself last wrote — leniently: a file that cannot
+  /// be read gives no rows, exactly as a missing one does. Right for a
+  /// reader; wrong for anything that will write the file afterwards, which
+  /// must use [loadOurs].
   Future<List<IdentityRow>> readOurs() async =>
       File(filePath).existsSync() ? _readFile(filePath) : const [];
+
+  /// This device's own file, read **strictly**, for a writer: its rows and
+  /// its name, or none of either — and [found] false — for a file that does
+  /// not exist yet; and
+  /// [IdentityMapUnreadable] for one that exists but cannot be read (the
+  /// device names design, step 1.5).
+  ///
+  /// The difference matters because this file is rewritten whole. Read
+  /// leniently, a file locked or half-synced at the moment of opening looks
+  /// empty, and the next rewrite would replace this device's claims with
+  /// nothing — the renames and deletions of notes another device made among
+  /// them, which nothing else records.
+  ///
+  /// **Missing means confirmed missing.** `existsSync` answers false for a
+  /// file it could not reach — a directory on the way that cannot be
+  /// traversed — so absence is taken only from an open that fails with
+  /// "not found"; any other failure to open is unreadable.
+  Future<({List<IdentityRow> rows, PeerName? name, bool found})>
+  loadOurs() async {
+    try {
+      File(filePath).openSync().closeSync();
+    } on PathNotFoundException {
+      return (rows: const <IdentityRow>[], name: null, found: false);
+    } on FileSystemException catch (error) {
+      throw IdentityMapUnreadable(filePath, error.message);
+    }
+    sq.Database? database;
+    final List<IdentityRow> rows;
+    try {
+      database = sq.sqlite3.open(filePath, mode: sq.OpenMode.readOnly);
+      rows = database
+          .select('SELECT * FROM bf_identity_map')
+          .map((row) => _rowFrom(row, filePath))
+          .toList();
+    } on sq.SqliteException catch (error) {
+      throw IdentityMapUnreadable(filePath, error.message);
+    } finally {
+      database?.close();
+    }
+    // The name is read leniently: one that cannot be interpreted is no
+    // name, and publishing the current one in its place loses nothing.
+    return (rows: rows, name: readOurName(), found: true);
+  }
 
   List<IdentityRow> _readFile(String path) {
     sq.Database? database;
@@ -453,6 +499,22 @@ CREATE TABLE IF NOT EXISTS bf_peer (
   /// integer too large for 64 bits still matches, and is refused by the
   /// parser as a FormatException, which the reader catches.
   static final RegExp _hlcPattern = RegExp(r'^[0-9]+\.[0-9]+$');
+}
+
+/// This device's own map file exists but could not be read — locked, or
+/// still arriving through a sync service. Not the same as a missing file,
+/// which is an empty map; see [IdentityMap.loadOurs].
+class IdentityMapUnreadable implements Exception {
+  const IdentityMapUnreadable(this.path, this.reason);
+
+  /// The file that could not be read.
+  final String path;
+
+  /// What SQLite said.
+  final String reason;
+
+  @override
+  String toString() => 'identity map at $path is unreadable: $reason';
 }
 
 /// Writes the identity map on the same debounce discipline the editor uses.

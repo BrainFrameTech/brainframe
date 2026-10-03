@@ -113,6 +113,41 @@ void main() {
     expect(names.values.single.name, 'jdoe\'s laptop');
   });
 
+  test('an unreadable map file of our own still opens, untouched', () async {
+    // The device names design, step 1.5: a map file locked or half-synced
+    // at the moment of opening is not an empty one. The engram opens as
+    // usual — but the name it publishes, and any claim, wait for the file
+    // to read rather than replacing it with nothing.
+    final engram = engramWith(readOnly: false);
+    final store = await MetadataDatabase.open(
+      engram.id,
+      resolveRoot: resolveRoot,
+    );
+    final mapFile = File(
+      IdentityMap(
+        engramRoot: '${root.path}/engram',
+        peerId: store.peerId,
+      ).filePath,
+    );
+    store.close();
+    mapFile.parent.createSync(recursive: true);
+    mapFile.writeAsStringSync('not a database right now');
+
+    final session = await CrdtSession.openFor(
+      engram,
+      resolveRoot: resolveRoot,
+      deviceSettings: _MemorySettings(),
+      platformName: PlatformDeviceName(
+        operatingSystem: 'linux',
+        hostname: () => 'jdoe-desktop',
+      ),
+    );
+    expect(session, isNotNull);
+    await session!.close();
+
+    expect(mapFile.readAsStringSync(), 'not a database right now');
+  });
+
   test('a writable engram gets a reconciler over the same op-log', () async {
     final engram = engramWith(readOnly: false);
     final session = await CrdtSession.openFor(engram, resolveRoot: resolveRoot);

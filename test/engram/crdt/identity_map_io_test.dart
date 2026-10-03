@@ -520,6 +520,61 @@ void main() {
     });
   });
 
+  group('reading our own file strictly (device names, step 1.5)', () {
+    test('a missing file is an empty map, not an unreadable one', () async {
+      final ours = await map.loadOurs();
+      expect(ours.rows, isEmpty);
+      expect(ours.name, isNull);
+    });
+
+    test('a file that exists but cannot be read throws', () async {
+      // Locked, or half-arrived through a sync service: not the same as a
+      // file with nothing in it, which the lenient reader cannot tell.
+      Directory(map.directoryPath).createSync(recursive: true);
+      File(map.filePath).writeAsStringSync('not a database yet');
+
+      await expectLater(map.loadOurs(), throwsA(isA<IdentityMapUnreadable>()));
+      expect(await map.readOurs(), isEmpty, reason: 'the lenient reader');
+      expect(
+        IdentityMapUnreadable(map.filePath, 'locked').toString(),
+        contains('unreadable'),
+      );
+    });
+
+    test(
+      'a file behind a directory that cannot be entered is unreadable',
+      () async {
+        // existsSync says false here, as for a missing file; a write made
+        // on that answer would replace the file once access came back.
+        await map.write([row(path: 'a.md')]);
+        final directory = Directory(map.directoryPath);
+        Process.runSync('chmod', ['000', directory.path]);
+        addTearDown(() => Process.runSync('chmod', ['755', directory.path]));
+
+        await expectLater(
+          map.loadOurs(),
+          throwsA(isA<IdentityMapUnreadable>()),
+        );
+      },
+      skip: Platform.isWindows || _isRoot ? 'needs POSIX permissions' : false,
+    );
+
+    test('a readable file gives its rows and its name', () async {
+      await map.write(
+        [row(path: 'a.md')],
+        self: PeerName(
+          peer: peerA,
+          name: 'jdoe-desktop',
+          platform: 'linux',
+          setAt: HybridLogicalClock(l: 1, c: 0),
+        ),
+      );
+      final ours = await map.loadOurs();
+      expect(ours.rows.single.path, 'a.md');
+      expect(ours.name?.name, 'jdoe-desktop');
+    });
+  });
+
   group('what a device calls itself (bf_peer)', () {
     PeerName named(PeerId peer, String name, {int millis = 500}) => PeerName(
       peer: peer,
@@ -789,3 +844,8 @@ void main() {
     });
   });
 }
+
+/// Whether the tests run as root, which no permission bit stops.
+final bool _isRoot =
+    !Platform.isWindows &&
+    (Process.runSync('id', ['-u']).stdout as String).trim() == '0';

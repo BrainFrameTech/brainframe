@@ -2,8 +2,9 @@
 
 - **Status:** accepted (2026-09-30) — agreed in conversation and reviewed
   before any code; the choices made in review are under *Settled in review*.
-  Step 1 of *What this asks of the implementation* — the device name — is
-  built; step 1.5, found in its review, and steps 2 and 3 are not
+  Steps 1 and 1.5 of *What this asks of the implementation* — the device
+  name, and the unreadable map file found in its review — are built;
+  steps 2 and 3 are not
 - **Author:** Claude
 - **Date:** 2026-09-30
 - **Companion to:** [note-identity-and-crdt.md](note-identity-and-crdt.md),
@@ -284,6 +285,15 @@ they have been seen on real cards, if they prove cluttered.
    name — until this device's own file has loaded. Tests: an unreadable
    own file at open schedules no write, and a later successful read
    restores the claims before any write.
+
+   *Built:* `IdentityMap.loadOurs` reads strictly — empty for a missing
+   file, `IdentityMapUnreadable` for one that cannot be read — and
+   `AuthoredIdentity` holds every write until its file loads, retrying at
+   each change and each flush (resume, quit). When it reads, the file's
+   claims are merged under this session's, which are newer. A file that
+   never reads is never written: that costs this session's claims, which
+   the next open rebuilds for this device's own mints, rather than every
+   claim the file held.
 2. **The event detail** (Decision 4) — the column, added on open; each kind
    recording its fields at the point the scan or reconcile already knows
    them. Tests: each kind's detail round-trips; an old row reads as before.

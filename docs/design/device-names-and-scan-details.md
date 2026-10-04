@@ -2,9 +2,9 @@
 
 - **Status:** accepted (2026-09-30) — agreed in conversation and reviewed
   before any code; the choices made in review are under *Settled in review*.
-  Steps 1, 1.5 and 2 of *What this asks of the implementation* — the
-  device name, the unreadable map file found in its review, and the event
-  detail — are built; step 3 is not
+  Every step of *What this asks of the implementation* is built: the
+  device name, the unreadable map file found in its review, the event
+  detail, and the card's Details
 - **Author:** Claude
 - **Date:** 2026-09-30
 - **Companion to:** [note-identity-and-crdt.md](note-identity-and-crdt.md),
@@ -309,6 +309,16 @@ they have been seen on real cards, if they prove cluttered.
    sentences, the names resolved at display, the ledger's device list.
    Tests: each kind's lines, the five-path cap, a folded card's count and
    span, an unnamed device's short ID, reduced motion, and `Semantics`.
+
+   *Built:* the Details are `lib/settings/scan_details.dart`, behind a
+   toggle on every card. They never animate, which serves reduced motion
+   and e-ink alike without asking which one this is. The ledger carries the
+   devices it has seen, this one first, so both its device list and every
+   card name devices from one lookup, made when the pane opens. Two changes
+   from the text above, made after the first look at real cards: "taken in
+   by" is said once per card rather than under each kind, since it is the
+   same device for all of them; and a mint is "seeded", not "made", because
+   after a conversion the claim is the converter's (step 2's review).
 
 Each lands as its own PR, in that order: the second and third need the
 first's names, and the third needs the second's facts.

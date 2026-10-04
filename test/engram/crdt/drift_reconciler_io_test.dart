@@ -66,10 +66,12 @@ void main() {
       resolveRoot: resolveRoot,
     );
     final map = IdentityMap(engramRoot: engramRoot, peerId: store.peerId);
-    final identity = await AuthoredIdentity.load(
+    late final AuthoredIdentity identity;
+    identity = await AuthoredIdentity.load(
       map,
       writer: DebouncedIdentityMapWriter(
-        map.write,
+        // With the name, as the session's writer writes it.
+        (rows) => map.write(rows, self: identity.name),
         idleDebounce: const Duration(days: 1),
         maxWait: const Duration(days: 1),
       ),
@@ -2569,6 +2571,48 @@ void main() {
   });
 
   group('the ledger (step 13)', () {
+    test(
+      'lists the devices: this one first, then by name, unnamed last',
+      (() async {
+        final a = await device();
+        final b = await device();
+        final c = await device();
+        final d = await device();
+        a.identity.publishName('jdoe-desktop', platform: 'linux');
+        b.identity.publishName('Work laptop', platform: 'linux');
+        c.identity.publishName('Attic Pi', platform: 'linux');
+        // d has a file and no name: a build from before names.
+        await d.writer.write('d.md', 'from d\n');
+        for (final each in [a, b, c, d]) {
+          await each.publish();
+        }
+
+        final devices = (await a.reconciler.ledger()).devices;
+
+        expect(devices, [
+          SeenDevice(
+            peer: a.store.peerId.toString(),
+            name: 'jdoe-desktop',
+            isThisDevice: true,
+          ),
+          SeenDevice(peer: c.store.peerId.toString(), name: 'Attic Pi'),
+          SeenDevice(peer: b.store.peerId.toString(), name: 'Work laptop'),
+          SeenDevice(peer: d.store.peerId.toString()),
+        ]);
+      }),
+    );
+
+    test('names this device before its file is written', () async {
+      final a = await device();
+      a.identity.publishName('jdoe-desktop', platform: 'linux');
+
+      final ledger = await a.reconciler.ledger();
+
+      expect(ledger.peers, 1);
+      expect(ledger.devices.single.name, 'jdoe-desktop');
+      expect(ledger.devices.single.isThisDevice, isTrue);
+    });
+
     test('counts what this device knows', () async {
       final a = await device();
       await engram.writeString('mine.md', 'minted here\n');

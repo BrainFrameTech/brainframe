@@ -1477,6 +1477,194 @@
     "placeholders": { "count": { "type": "int", "example": "1" } }
   },
 
+  "housekeepingPeersNamed": "{count, plural, =1{One device has written to this engram — this one: {names}.} other{{count} devices have written to this engram, including this one: {names}.}}",
+  "@housekeepingPeersNamed": {
+    "description": "Ledger line: how many devices have a file in the engram's shared map, and their names. {names} is a list built from housekeepingThisDevice, housekeepingUnnamedDevice, housekeepingListPair and housekeepingAndMore.",
+    "placeholders": {
+      "count": { "type": "int", "example": "2" },
+      "names": { "type": "String", "example": "jdoe-desktop (this device) and jdoe's Pixel" }
+    }
+  },
+
+  "housekeepingThisDevice": "{name} (this device)",
+  "@housekeepingThisDevice": {
+    "description": "How this device is named wherever devices are listed or a change is attributed to it.",
+    "placeholders": { "name": { "type": "String", "example": "jdoe-desktop" } }
+  },
+
+  "housekeepingUnnamedDevice": "device {id}",
+  "@housekeepingUnnamedDevice": {
+    "description": "A device that has published no name (an older build), shown by the first block of its peer ID.",
+    "placeholders": { "id": { "type": "String", "example": "5c1e09a2" } }
+  },
+
+  "housekeepingListPair": "{first} and {second}",
+  "@housekeepingListPair": {
+    "description": "Joins the last two items of a list of names or paths. Earlier items are joined to {first} with a comma.",
+    "placeholders": {
+      "first": { "type": "String", "example": "jdoe-desktop (this device), jdoe's Pixel" },
+      "second": { "type": "String", "example": "Work laptop" }
+    }
+  },
+
+  "housekeepingAndMore": "{count, plural, =1{1 more} other{{count} more}}",
+  "@housekeepingAndMore": {
+    "description": "The last item of a capped list: how many were not shown. Joined with housekeepingListPair, giving e.g. 'a, b and 3 more'.",
+    "placeholders": { "count": { "type": "int", "example": "3" } }
+  },
+
+  "housekeepingDetails": "Details",
+  "@housekeepingDetails": {
+    "description": "The toggle below a scan card's summary that shows or hides its details."
+  },
+
+  "housekeepingDetailsFor": "Details for the scan at {time}",
+  "@housekeepingDetailsFor": {
+    "description": "Screen-reader label for a scan card's Details toggle; {time} is the card's time as its header shows it.",
+    "placeholders": { "time": { "type": "String", "example": "Sep 30, 11:54 AM" } }
+  },
+
+  "housekeepingTakenIn": "Taken in by {device}.",
+  "@housekeepingTakenIn": {
+    "description": "Under a kind of change found on disk: the device that noticed it and made it history. Never 'made on' — a change found on disk may have been typed on another device and copied over by a sync tool.",
+    "placeholders": { "device": { "type": "String", "example": "jdoe-desktop (this device)" } }
+  },
+
+  "housekeepingDetailArrow": "{from} → {to}",
+  "@housekeepingDetailArrow": {
+    "description": "A path that became another: a move, or a reconstruction's kept copy.",
+    "placeholders": {
+      "from": { "type": "String", "example": "notes/old.md" },
+      "to": { "type": "String", "example": "notes/new.md" }
+    }
+  },
+
+  "housekeepingDetailMoveIdentical": "{move} · identical",
+  "@housekeepingDetailMoveIdentical": {
+    "description": "A move matched by identical content: a rename and nothing else.",
+    "placeholders": { "move": { "type": "String", "example": "notes/old.md → notes/new.md" } }
+  },
+
+  "housekeepingDetailMoveSimilar": "{move} · similar ({percent}%)",
+  "@housekeepingDetailMoveSimilar": {
+    "description": "A move matched by similar content: a rename with an edit. {percent} is how similar, 50–100.",
+    "placeholders": {
+      "move": { "type": "String", "example": "notes/old.md → notes/new.md" },
+      "percent": { "type": "int", "example": "82" }
+    }
+  },
+
+  "housekeepingDetailAdopted": "{path} — took the identity {device} seeded at {time}.",
+  "@housekeepingDetailAdopted": {
+    "description": "Why a note was adopted: another device had already seeded it.",
+    "placeholders": {
+      "path": { "type": "String", "example": "notes/plans.md" },
+      "device": { "type": "String", "example": "jdoe's Pixel" },
+      "time": { "type": "String", "example": "11:54:22 AM" }
+    }
+  },
+
+  "housekeepingDetailRetiredEarlier": "{path} — {device} seeded this note first ({time}, {gap} earlier), so this device's identity for it was retired.",
+  "@housekeepingDetailRetiredEarlier": {
+    "description": "Why an identity was retired: two devices seeded one note, and the other's was first. {gap} is a duration such as '11 seconds'.",
+    "placeholders": {
+      "path": { "type": "String", "example": "notes/plans.md" },
+      "device": { "type": "String", "example": "jdoe's Pixel" },
+      "time": { "type": "String", "example": "11:54:22 AM" },
+      "gap": { "type": "String", "example": "11 seconds" }
+    }
+  },
+
+  "housekeepingDetailRetired": "{path} — {device} also seeded this note ({time}), and its identity won, so this device's identity for it was retired.",
+  "@housekeepingDetailRetired": {
+    "description": "Why an identity was retired, when the winner was not seeded earlier by the clock: the election is decided by identity, not time.",
+    "placeholders": {
+      "path": { "type": "String", "example": "notes/plans.md" },
+      "device": { "type": "String", "example": "jdoe's Pixel" },
+      "time": { "type": "String", "example": "11:54:22 AM" }
+    }
+  },
+
+  "housekeepingDetailRetiredUnknown": "{path} — another identity for this note won, so this device's was retired.",
+  "@housekeepingDetailRetiredUnknown": {
+    "description": "Why an identity was retired, for a record with no details (from an older build).",
+    "placeholders": { "path": { "type": "String", "example": "notes/plans.md" } }
+  },
+
+  "housekeepingDetailRetiredCost": "{count, plural, =0{Nothing was lost: the file is unchanged.} =1{Nothing was lost: it held only its first snapshot, and the file is unchanged.} other{{count} changes of its history stay with the retired identity, no longer reachable; the file is unchanged.}}",
+  "@housekeepingDetailRetiredCost": {
+    "description": "What a retirement cost: how many changes the retired identity held. One is only its first snapshot, which the file still holds.",
+    "placeholders": { "count": { "type": "int", "example": "1" } }
+  },
+
+  "housekeepingDetailConvertedBy": "{path} — made a plain file by {device}.",
+  "@housekeepingDetailConvertedBy": {
+    "description": "Which device converted a note to a plain file, which this device then followed.",
+    "placeholders": {
+      "path": { "type": "String", "example": "journal/2025.md" },
+      "device": { "type": "String", "example": "Work laptop" }
+    }
+  },
+
+  "housekeepingDetailOverCeiling": "{path} — {size} bytes, over the {ceiling}-byte limit.",
+  "@housekeepingDetailOverCeiling": {
+    "description": "How far a file was over the note size limit when it was found. Both numbers are formatted for the locale.",
+    "placeholders": {
+      "path": { "type": "String", "example": "journal/2025.md" },
+      "size": { "type": "String", "example": "200,000" },
+      "ceiling": { "type": "String", "example": "131,072" }
+    }
+  },
+
+  "housekeepingDetailDropped": "{path} — {count, plural, =0{it had no history to drop} =1{its one change, its first snapshot, was dropped} other{{count} changes of its history were dropped}}.",
+  "@housekeepingDetailDropped": {
+    "description": "What converting a note to a plain file on this device cost.",
+    "placeholders": {
+      "path": { "type": "String", "example": "journal/2025.md" },
+      "count": { "type": "int", "example": "40" }
+    }
+  },
+
+  "housekeepingDetailFolded": "{count, plural, =1{1 change} other{{count} changes}}, {from}–{to}",
+  "@housekeepingDetailFolded": {
+    "description": "A folded card's span: how many recorded changes it holds, and its first and last, to the second.",
+    "placeholders": {
+      "count": { "type": "int", "example": "13" },
+      "from": { "type": "String", "example": "5:16:18 PM" },
+      "to": { "type": "String", "example": "5:24:39 PM" }
+    }
+  },
+
+  "housekeepingDetailRecordedAt": "Recorded at {time}.",
+  "@housekeepingDetailRecordedAt": {
+    "description": "A single card's exact time, to the second.",
+    "placeholders": { "time": { "type": "String", "example": "5:24:39 PM" } }
+  },
+
+  "housekeepingGapSeconds": "{count, plural, =1{1 second} other{{count} seconds}}",
+  "@housekeepingGapSeconds": {
+    "description": "A duration, for how much earlier another device seeded a note.",
+    "placeholders": { "count": { "type": "int", "example": "11" } }
+  },
+
+  "housekeepingGapMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
+  "@housekeepingGapMinutes": {
+    "description": "A duration, for how much earlier another device seeded a note.",
+    "placeholders": { "count": { "type": "int", "example": "3" } }
+  },
+
+  "housekeepingGapHours": "{count, plural, =1{1 hour} other{{count} hours}}",
+  "@housekeepingGapHours": {
+    "description": "A duration, for how much earlier another device seeded a note.",
+    "placeholders": { "count": { "type": "int", "example": "2" } }
+  },
+
+  "housekeepingGapDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@housekeepingGapDays": {
+    "description": "A duration, for how much earlier another device seeded a note.",
+    "placeholders": { "count": { "type": "int", "example": "4" } }
+  },
+
   "housekeepingScanIncomplete": "The folder could not be listed, so nothing was created or deleted.",
   "@housekeepingScanIncomplete": {
     "description": "Scan detail line when the engram folder could not be enumerated (unmounted drive, permission)."

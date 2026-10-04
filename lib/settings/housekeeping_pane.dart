@@ -9,6 +9,7 @@ import '../engram/note_reconciler.dart';
 import '../engram/ui/note_status_bar.dart';
 import '../engram/watch/engram_watcher.dart';
 import '../l10n/gen/app_localizations.dart';
+import 'scan_details.dart';
 
 /// Lists the registry-backed engrams that can be forgotten.
 typedef ForgettableEngramsLoader = Future<List<RegisteredEngram>> Function();
@@ -554,7 +555,21 @@ class _LedgerSection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _Line(l10n.housekeepingPeers(counts.peers)),
+                    _Line(
+                      counts.devices.isEmpty
+                          ? l10n.housekeepingPeers(counts.peers)
+                          : l10n.housekeepingPeersNamed(
+                              counts.peers,
+                              nameList(l10n, [
+                                for (final device in counts.devices)
+                                  deviceLabel(
+                                    l10n,
+                                    counts.devices,
+                                    device.peer,
+                                  ),
+                              ]),
+                            ),
+                    ),
                     _Line(l10n.housekeepingMinted(counts.minted)),
                     _Line(l10n.housekeepingAdopted(counts.adopted)),
                     if (counts.unclaimed > 0)
@@ -639,66 +654,79 @@ class _LedgerSection extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          FutureBuilder<List<ScanNotice>>(
-            future: scans,
-            builder: (context, snapshot) {
-              final recent = snapshot.data;
-              // Offered from two recorded cards up: with one, it is that
-              // card's own Dismiss. Newest first, so the first recorded
-              // card bounds what is dismissed.
-              final recorded = [
-                for (final scan in recent ?? const <ScanNotice>[])
-                  if (scan.id != null) scan,
-              ];
-              final title = Text(
-                l10n.housekeepingScansTitle,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              );
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (recorded.length < 2)
-                    title
-                  else
-                    Row(
-                      children: [
-                        Expanded(child: title),
-                        Semantics(
-                          button: true,
-                          label: l10n.housekeepingDismissAllScans(
-                            recorded.length,
-                          ),
-                          child: ExcludeSemantics(
-                            child: TextButton(
-                              onPressed: () => onDismissAll(recorded.first),
-                              child: Text(l10n.housekeepingDismissAll),
+          // The ledger for the devices' names, around the cards rather than
+          // ahead of them: until it is in — or if it fails — the cards show
+          // with short IDs, never not at all.
+          FutureBuilder<NoteLedger>(
+            future: ledger,
+            builder: (context, counts) => FutureBuilder<List<ScanNotice>>(
+              future: scans,
+              builder: (context, snapshot) {
+                final recent = snapshot.data;
+                final devices = counts.data?.devices ?? const <SeenDevice>[];
+                // Offered from two recorded cards up: with one, it is that
+                // card's own Dismiss. Newest first, so the first recorded
+                // card bounds what is dismissed.
+                final recorded = [
+                  for (final scan in recent ?? const <ScanNotice>[])
+                    if (scan.id != null) scan,
+                ];
+                final title = Text(
+                  l10n.housekeepingScansTitle,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (recorded.length < 2)
+                      title
+                    else
+                      Row(
+                        children: [
+                          Expanded(child: title),
+                          Semantics(
+                            button: true,
+                            label: l10n.housekeepingDismissAllScans(
+                              recorded.length,
+                            ),
+                            child: ExcludeSemantics(
+                              child: TextButton(
+                                onPressed: () => onDismissAll(recorded.first),
+                                child: Text(l10n.housekeepingDismissAll),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 8),
-                  if (recent != null && recent.isEmpty)
-                    _Card(child: _Line(l10n.housekeepingScansEmpty)),
-                  for (final scan in recent ?? const <ScanNotice>[])
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _ScanCard(
-                        scan: scan,
-                        ceilingBytes: engram.noteSizeCeilingBytes,
-                        onDismiss: scan.id == null
-                            ? null
-                            : () => onDismiss(scan),
-                        onOpenNote: onOpenNote,
-                        today: today,
+                        ],
                       ),
-                    ),
-                ],
-              );
-            },
+                    const SizedBox(height: 8),
+                    if (recent != null && recent.isEmpty)
+                      _Card(child: _Line(l10n.housekeepingScansEmpty)),
+                    for (final scan in recent ?? const <ScanNotice>[])
+                      Padding(
+                        // By record, on the entry itself — siblings are
+                        // matched by their outermost widget — so a card's
+                        // Details stay open while cards around it come and
+                        // go.
+                        key: ValueKey(scan.id ?? scan.at),
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _ScanCard(
+                          scan: scan,
+                          devices: devices,
+                          ceilingBytes: engram.noteSizeCeilingBytes,
+                          onDismiss: scan.id == null
+                              ? null
+                              : () => onDismiss(scan),
+                          onOpenNote: onOpenNote,
+                          today: today,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
         ],
       ],
@@ -707,10 +735,13 @@ class _LedgerSection extends StatelessWidget {
 }
 
 /// One scan that changed something or failed: a summary line, then the
-/// details that matter — a history loss, an unlisted folder, each failure.
-class _ScanCard extends StatelessWidget {
+/// details that matter — a history loss, an unlisted folder, each failure —
+/// and the rest behind a Details toggle (the device names design, Decision
+/// 5), closed by default.
+class _ScanCard extends StatefulWidget {
   const _ScanCard({
     required this.scan,
+    required this.devices,
     required this.ceilingBytes,
     required this.onDismiss,
     required this.onOpenNote,
@@ -747,10 +778,28 @@ class _ScanCard extends StatelessWidget {
   /// cannot be dismissed.
   final VoidCallback? onDismiss;
 
+  /// The devices the ledger knows, to name the ones the details involve.
+  final List<SeenDevice> devices;
+
+  @override
+  State<_ScanCard> createState() => _ScanCardState();
+}
+
+class _ScanCardState extends State<_ScanCard> {
+  /// Whether the Details are showing. Shown and hidden at once, never
+  /// animated: reduced motion and e-ink both want it so, and nothing is
+  /// lost by giving everyone the same.
+  bool _open = false;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final scan = widget.scan;
+    final today = widget.today;
+    final onDismiss = widget.onDismiss;
+    final onOpenNote = widget.onOpenNote;
+    final ceilingBytes = widget.ceilingBytes;
     final report = scan.report;
     final parts = <String>[
       if (report.reconciled.isNotEmpty)
@@ -889,19 +938,36 @@ class _ScanCard extends StatelessWidget {
               ),
               emphasis: true,
             ),
-          if (onOpenNote != null && _openable.isNotEmpty)
+          if (onOpenNote != null && widget._openable.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Wrap(
                 spacing: 8,
                 children: [
-                  for (final path in _openable)
-                    _OpenNoteButton(
-                      path: path,
-                      onOpen: () => onOpenNote!(path),
-                    ),
+                  for (final path in widget._openable)
+                    _OpenNoteButton(path: path, onOpen: () => onOpenNote(path)),
                 ],
               ),
+            ),
+          Semantics(
+            button: true,
+            enabled: true,
+            expanded: _open,
+            label: l10n.housekeepingDetailsFor(time),
+            onTap: () => setState(() => _open = !_open),
+            child: ExcludeSemantics(
+              child: TextButton.icon(
+                onPressed: () => setState(() => _open = !_open),
+                icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
+                label: Text(l10n.housekeepingDetails),
+              ),
+            ),
+          ),
+          if (_open)
+            ScanDetails(
+              scan: scan,
+              devices: widget.devices,
+              onOpenNote: onOpenNote,
             ),
         ],
       ),

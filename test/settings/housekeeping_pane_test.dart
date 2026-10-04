@@ -1457,6 +1457,695 @@ void main() {
       );
     });
   });
+  group('a card\'s Details (the device names design, Decision 5)', () {
+    const self = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const pixel = 'bbbbbbbb-2222-4222-8222-222222222222';
+    const silent = '5c1e09a2-3333-4333-8333-333333333333';
+    const devices = [
+      SeenDevice(peer: self, name: 'jdoe-desktop', isThisDevice: true),
+      SeenDevice(peer: pixel, name: 'jdoe\'s Pixel'),
+      SeenDevice(peer: silent),
+    ];
+
+    NoteLedger ledgerWith(List<SeenDevice> seen) => NoteLedger(
+      peers: seen.length,
+      minted: 0,
+      adopted: 0,
+      unclaimed: 0,
+      tombstoned: 0,
+      devices: seen,
+    );
+
+    /// A local wall-clock time on the card's day, as the details store it:
+    /// UTC. Shown back in local time, so the suite's zone does not matter.
+    DateTime at(int h, int m, int s) => DateTime(2026, 9, 29, h, m, s).toUtc();
+
+    Future<void> show(
+      WidgetTester tester,
+      DriftScanReport report, {
+      List<SeenDevice> seen = devices,
+      DateTime? since,
+      List<int> folded = const [],
+      void Function(String path)? onOpenNote,
+    }) async {
+      // Tall enough that a card's whole Details are built: the pane is a
+      // lazy list, and what is below the fold is not there to find.
+      tester.view.physicalSize = const Size(1200, 4000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final notes = _Notes.named(
+        ledgerValue: ledgerWith(seen),
+        scans: [
+          ScanNotice(
+            id: 9,
+            at: DateTime(2026, 9, 29, 11, 55, 1),
+            since: since,
+            folded: folded,
+            trigger: ScanTrigger.watcher,
+            report: report,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        host(engram: field, notes: notes, onOpenNote: onOpenNote),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> open(WidgetTester tester) async {
+      await tester.tap(find.text('Details'));
+      // One frame, not a settle: the details appear at once, never by
+      // animation — reduced motion and e-ink both rely on it.
+      await tester.pump();
+    }
+
+    testWidgets('are closed by default, and open and close in one frame', (
+      tester,
+    ) async {
+      await show(tester, const DriftScanReport(reconciled: ['a.md']));
+
+      expect(find.text('Details'), findsOneWidget);
+      expect(find.textContaining('Taken in by'), findsNothing);
+
+      await open(tester);
+      expect(
+        find.text('Taken in by jdoe-desktop (this device).'),
+        findsOneWidget,
+      );
+
+      await open(tester);
+      expect(find.textContaining('Taken in by'), findsNothing);
+    });
+
+    testWidgets('the toggle is a button that says what it opens, and whether '
+        'it is open', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, const DriftScanReport(reconciled: ['a.md']));
+
+      final label = 'Details for the scan at Sep 29, 11:55 AM';
+      expect(
+        tester.getSemantics(find.bySemanticsLabel(label)),
+        matchesSemantics(
+          label: label,
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          hasExpandedState: true,
+          isExpanded: false,
+          hasTapAction: true,
+        ),
+      );
+      await open(tester);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel(label)),
+        matchesSemantics(
+          label: label,
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          hasExpandedState: true,
+          isExpanded: true,
+          hasTapAction: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a change found on disk was taken in here, never made here', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const DriftScanReport(
+          reconciled: ['a.md'],
+          created: ['b.md'],
+          moved: {'c.md': 'd.md'},
+          tombstoned: ['e.md'],
+        ),
+      );
+      await open(tester);
+
+      expect(
+        find.text('Taken in by jdoe-desktop (this device).'),
+        findsOneWidget,
+        reason: "once for the card, not once a kind",
+      );
+      expect(find.textContaining('made on'), findsNothing);
+    });
+
+    testWidgets('a card with no change found on disk attributes none', (
+      tester,
+    ) async {
+      await show(tester, const DriftScanReport(adopted: ['p.md']));
+      await open(tester);
+
+      expect(find.textContaining('Taken in by'), findsNothing);
+    });
+
+    testWidgets('moves read from → to, with how they matched', (tester) async {
+      await show(
+        tester,
+        const DriftScanReport(
+          moved: {'old.md': 'new.md', 'a.md': 'b.md', 'x.md': 'y.md'},
+          moveMatches: {
+            'old.md': MoveDetail.identical(),
+            'a.md': MoveDetail.similar(0.824),
+          },
+        ),
+      );
+      await open(tester);
+
+      expect(find.text('old.md → new.md · identical'), findsOneWidget);
+      expect(find.text('a.md → b.md · similar (82%)'), findsOneWidget);
+      expect(find.text('x.md → y.md'), findsOneWidget, reason: 'no detail');
+    });
+
+    testWidgets('a retirement tells the whole story, with nothing lost', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        DriftScanReport(
+          retired: const ['notes/plans.md'],
+          retirements: {
+            'notes/plans.md': Retirement(
+              winner: 'W',
+              winnerMint: Mint(peer: pixel, at: at(11, 54, 22)),
+              loserMintedAt: at(11, 54, 33),
+              loserChanges: 1,
+            ),
+          },
+        ),
+      );
+      await open(tester);
+
+      expect(
+        find.textContaining(
+          RegExp(
+            r"^notes/plans\.md — jdoe's Pixel seeded this note first "
+            r'\(11:54:22\W+AM, 11 seconds earlier\), so this device.s identity '
+            r'for it was retired\.$',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Nothing was lost: it held only its first snapshot, and the file '
+          'is unchanged.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a retirement that cost history says how much', (tester) async {
+      await show(
+        tester,
+        DriftScanReport(
+          retired: const ['a.md'],
+          retirements: {
+            'a.md': Retirement(
+              winner: 'W',
+              winnerMint: Mint(peer: silent, at: at(9, 0, 0)),
+              loserMintedAt: at(8, 0, 0),
+              loserChanges: 14,
+            ),
+          },
+        ),
+      );
+      await open(tester);
+
+      // Seeded later by the clock: the election is by identity, not time.
+      expect(
+        find.textContaining('device 5c1e09a2 also seeded this note'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('14 changes of its history stay with the retired'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an adoption, a conversion elsewhere, and the ceiling each '
+        'say why', (tester) async {
+      await show(
+        tester,
+        DriftScanReport(
+          adopted: const ['p.md'],
+          adoptedFrom: {'p.md': Mint(peer: pixel, at: at(11, 54, 22))},
+          convertedElsewhere: const {'big.md': 3},
+          convertedBy: const {'big.md': pixel},
+          oversized: const ['huge.md'],
+          awaitingDecision: const ['grown.md'],
+          overCeiling: const {
+            'huge.md': OverCeiling(sizeBytes: 200000, ceilingBytes: 131072),
+            'grown.md': OverCeiling(sizeBytes: 140000, ceilingBytes: 131072),
+          },
+          converted: const ['long.md', 'short.md'],
+          dropped: const {'long.md': 40, 'short.md': 1},
+        ),
+      );
+      await open(tester);
+
+      expect(
+        find.textContaining(
+          RegExp(r"^p\.md — took the identity jdoe's Pixel seeded at 11:54:22"),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text("big.md — made a plain file by jdoe's Pixel."),
+        findsOneWidget,
+      );
+      expect(
+        find.text('huge.md — 200,000 bytes, over the 131,072-byte limit.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('grown.md — 140,000 bytes, over the 131,072-byte limit.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('long.md — 40 changes of its history were dropped.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          // Said, not reassured: the file may no longer hold that snapshot.
+          'short.md — its one change, its first snapshot, was dropped.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('how much earlier reads in the largest unit that fits', (
+      tester,
+    ) async {
+      Retirement won(DateTime winner, DateTime loser) => Retirement(
+        winner: 'W',
+        winnerMint: Mint(peer: pixel, at: winner),
+        loserMintedAt: loser,
+        loserChanges: 1,
+      );
+      await show(
+        tester,
+        DriftScanReport(
+          retired: const ['m.md', 'h.md', 'd.md'],
+          retirements: {
+            'm.md': won(at(9, 0, 0), at(9, 3, 0)),
+            'h.md': won(at(7, 0, 0), at(9, 0, 0)),
+            'd.md': won(
+              DateTime(2026, 9, 25, 9).toUtc(),
+              DateTime(2026, 9, 29, 9).toUtc(),
+            ),
+          },
+        ),
+      );
+      await open(tester);
+
+      expect(find.textContaining('3 minutes earlier'), findsOneWidget);
+      expect(find.textContaining('2 hours earlier'), findsOneWidget);
+      expect(find.textContaining('4 days earlier'), findsOneWidget);
+    });
+
+    testWidgets('a retirement with no winner claim, a reconstruction, and a '
+        'failure each list what they have', (tester) async {
+      final opened = <String>[];
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        DriftScanReport(
+          retired: const ['r.md'],
+          retirements: const {
+            'r.md': Retirement(
+              winner: 'W',
+              winnerMint: null,
+              loserMintedAt: null,
+              loserChanges: 3,
+            ),
+          },
+          reconstructed: const {'big.md': 'big (oversized).md'},
+          failed: {'bad.md': const FormatException('not UTF-8')},
+        ),
+        onOpenNote: opened.add,
+      );
+      await open(tester);
+
+      expect(
+        find.text(
+          'r.md — another identity for this note won, so this device\'s was '
+          'retired.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('3 changes of its history stay'),
+        findsOneWidget,
+      );
+      expect(find.text('big.md → big (oversized).md'), findsOneWidget);
+      // A failure is listed under its heading, with nothing to open.
+      expect(find.text('1 failed'), findsWidgets);
+      expect(find.bySemanticsLabel('Open bad.md'), findsNothing);
+      // The reconstructed note's own Open, beside its line in the Details.
+      final opens = find.bySemanticsLabel('Open big.md');
+      await tester.tap(opens.last);
+      expect(opened, ['big.md']);
+      handle.dispose();
+    });
+
+    testWidgets('a screen reader opens and closes the Details', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, const DriftScanReport(reconciled: ['a.md']));
+      tester.semantics.tap(
+        find.semantics.byLabel('Details for the scan at Sep 29, 11:55 AM'),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('Taken in by'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('Open goes where the note is now, as far as the card knows', (
+      tester,
+    ) async {
+      // A folded card: a.md updated, and a.md moved to b.md with nothing
+      // else touching either — certain, so the update opens b.md. g.md
+      // updated and later deleted — gone, so no Open.
+      final opened = <String>[];
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        const DriftScanReport(
+          reconciled: ['a.md', 'g.md'],
+          tombstoned: ['g.md'],
+          moved: {'a.md': 'b.md'},
+        ),
+        onOpenNote: opened.add,
+      );
+      await open(tester);
+
+      expect(find.text('a.md'), findsOneWidget, reason: 'listed as it was');
+      expect(find.bySemanticsLabel('Open a.md'), findsNothing);
+      expect(find.bySemanticsLabel('Open g.md'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Open b.md').first);
+      expect(opened, ['b.md']);
+      handle.dispose();
+    });
+
+    testWidgets('where the order is lost, Open goes to the path as listed', (
+      tester,
+    ) async {
+      // Each of these could have happened in either order, and the card
+      // cannot say which: a chain (a.md → b.md beside b.md → c.md), a swap
+      // (p.md ↔ q.md), and a note created and deleted (x.md).
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        const DriftScanReport(
+          reconciled: ['a.md'],
+          created: ['x.md'],
+          tombstoned: ['x.md'],
+          moved: {
+            'a.md': 'b.md',
+            'b.md': 'c.md',
+            'p.md': 'q.md',
+            'q.md': 'p.md',
+          },
+        ),
+        onOpenNote: (_) {},
+      );
+      await open(tester);
+
+      // Never followed along the chain to c.md from a.md's update.
+      expect(find.bySemanticsLabel('Open a.md'), findsOneWidget);
+      // The a.md → b.md line opens b.md as listed, not c.md beyond it.
+      expect(find.bySemanticsLabel('Open b.md'), findsOneWidget);
+      expect(find.bySemanticsLabel('Open c.md'), findsOneWidget);
+      expect(find.bySemanticsLabel('Open x.md'), findsOneWidget);
+      expect(find.bySemanticsLabel('Open p.md'), findsOneWidget);
+      expect(find.bySemanticsLabel('Open q.md'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('a path a new note took after a rename opens that new note', (
+      tester,
+    ) async {
+      // a.md renamed to b.md, then a different a.md created: the created
+      // line must open a.md, never be sent after the renamed note.
+      final opened = <String>[];
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        const DriftScanReport(created: ['a.md'], moved: {'a.md': 'b.md'}),
+        onOpenNote: opened.add,
+      );
+      await open(tester);
+
+      await tester.tap(find.bySemanticsLabel('Open a.md'));
+      await tester.tap(find.bySemanticsLabel('Open b.md'));
+      expect(opened, ['a.md', 'b.md']);
+      handle.dispose();
+    });
+
+    testWidgets('open Details stay open when a card above is dismissed', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 4000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      ScanNotice card(int id, String path) => ScanNotice(
+        id: id,
+        at: DateTime(2026, 9, 29, 9 + id),
+        trigger: ScanTrigger.resume,
+        report: DriftScanReport(reconciled: [path]),
+      );
+      final notes = _Notes.named(
+        ledgerValue: ledgerWith(devices),
+        scans: [card(3, 'top.md'), card(2, 'middle.md'), card(1, 'low.md')],
+      );
+      await tester.pumpWidget(host(engram: field, notes: notes));
+      await tester.pumpAndSettle();
+
+      // Open the middle card's Details: the second toggle.
+      await tester.tap(find.text('Details').at(1));
+      await tester.pump();
+      expect(find.text('middle.md'), findsOneWidget);
+
+      // Dismiss the card above it; the list reloads around it.
+      await tester.tap(find.text('Dismiss').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('top.md'), findsNothing);
+      expect(
+        find.text('middle.md'),
+        findsOneWidget,
+        reason: 'its Details still open, the card kept by its record',
+      );
+      expect(find.text('low.md'), findsNothing, reason: 'still closed');
+    });
+
+    testWidgets('a kind lists five paths, then how many more', (tester) async {
+      await show(
+        tester,
+        DriftScanReport(reconciled: [for (var i = 0; i < 7; i++) 'n$i.md']),
+      );
+      await open(tester);
+
+      for (var i = 0; i < 5; i++) {
+        expect(find.text('n$i.md'), findsOneWidget);
+      }
+      expect(find.text('n5.md'), findsNothing);
+      expect(find.text('2 more'), findsOneWidget);
+    });
+
+    testWidgets('a folded card says how many changes, to the second', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const DriftScanReport(reconciled: ['a.md']),
+        since: DateTime(2026, 9, 29, 11, 41, 7),
+        folded: [8, 7, 6],
+      );
+      await open(tester);
+
+      expect(
+        find.textContaining(
+          RegExp(r'^4 changes, 11:41:07\W+AM–11:55:01\W+AM$'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a single card gives its time to the second', (tester) async {
+      await show(tester, const DriftScanReport(reconciled: ['a.md']));
+      await open(tester);
+
+      expect(
+        find.textContaining(RegExp(r'^Recorded at 11:55:01\W+AM\.$')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a record from before the details shows its paths', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const DriftScanReport(
+          adopted: ['p.md'],
+          retired: ['r.md'],
+          moved: {'a.md': 'b.md'},
+        ),
+      );
+      await open(tester);
+
+      expect(find.text('p.md'), findsOneWidget);
+      expect(find.text('a.md → b.md'), findsOneWidget);
+      expect(
+        find.text(
+          'r.md — another identity for this note won, so this '
+          'device\'s was retired.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('before the ledger names anyone, nothing is attributed', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        DriftScanReport(
+          adopted: const ['p.md'],
+          adoptedFrom: {'p.md': Mint(peer: pixel, at: at(11, 54, 22))},
+        ),
+        seen: const [],
+      );
+      await open(tester);
+
+      expect(find.textContaining('Taken in by'), findsNothing);
+      expect(find.textContaining('device bbbbbbbb seeded'), findsOneWidget);
+    });
+
+    testWidgets('a path that can be opened has an Open; a deleted one not', (
+      tester,
+    ) async {
+      final opened = <String>[];
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        const DriftScanReport(
+          reconciled: ['a.md'],
+          moved: {'old.md': 'new.md'},
+          tombstoned: ['gone.md'],
+        ),
+        onOpenNote: opened.add,
+      );
+      await open(tester);
+
+      await tester.tap(find.bySemanticsLabel('Open a.md'));
+      await tester.tap(find.bySemanticsLabel('Open new.md'));
+      expect(opened, ['a.md', 'new.md']);
+      expect(find.bySemanticsLabel('Open old.md'), findsNothing);
+      expect(find.bySemanticsLabel('Open gone.md'), findsNothing);
+      handle.dispose();
+    });
+  });
+
+  group(
+    'the ledger names the devices (the device names design, Decision 2)',
+    () {
+      testWidgets('this device first, the unnamed by short ID', (tester) async {
+        final notes = _Notes.named(
+          ledgerValue: const NoteLedger(
+            peers: 3,
+            minted: 0,
+            adopted: 0,
+            unclaimed: 0,
+            tombstoned: 0,
+            devices: [
+              SeenDevice(
+                peer: 'aaaaaaaa-1111-4111-8111-111111111111',
+                name: 'jdoe-desktop',
+                isThisDevice: true,
+              ),
+              SeenDevice(
+                peer: 'bbbbbbbb-2222-4222-8222-222222222222',
+                name: 'jdoe\'s Pixel',
+              ),
+              SeenDevice(peer: '5c1e09a2-3333-4333-8333-333333333333'),
+            ],
+          ),
+        );
+        await tester.pumpWidget(host(engram: field, notes: notes));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            '3 devices have written to this engram, including this one: '
+            'jdoe-desktop (this device), jdoe\'s Pixel and device 5c1e09a2.',
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('past five, the rest are counted', (tester) async {
+        final notes = _Notes.named(
+          ledgerValue: NoteLedger(
+            peers: 7,
+            minted: 0,
+            adopted: 0,
+            unclaimed: 0,
+            tombstoned: 0,
+            devices: [
+              const SeenDevice(peer: 'self', name: 'Here', isThisDevice: true),
+              for (var i = 1; i < 7; i++) SeenDevice(peer: 'p$i', name: 'D$i'),
+            ],
+          ),
+        );
+        await tester.pumpWidget(host(engram: field, notes: notes));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            '7 devices have written to this engram, including this one: '
+            'Here (this device), D1, D2, D3, D4 and 2 more.',
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('one device alone is named too', (tester) async {
+        final notes = _Notes.named(
+          ledgerValue: const NoteLedger(
+            peers: 1,
+            minted: 0,
+            adopted: 0,
+            unclaimed: 0,
+            tombstoned: 0,
+            devices: [
+              SeenDevice(
+                peer: 'self',
+                name: 'jdoe-desktop',
+                isThisDevice: true,
+              ),
+            ],
+          ),
+        );
+        await tester.pumpWidget(host(engram: field, notes: notes));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'One device has written to this engram — this one: '
+            'jdoe-desktop (this device).',
+          ),
+          findsOneWidget,
+        );
+      });
+    },
+  );
 }
 
 class _InertStore extends EngramStore {

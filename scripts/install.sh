@@ -1,216 +1,26 @@
 #!/usr/bin/env bash
 #
-# BrainFrame dev-environment setup / validation.
+# BrainFrame dev-environment setup / validation (Debian/Ubuntu).
 #
-#   scripts/install.sh           set up the environment (install missing
-#                                tooling, wire git hooks)
+#   scripts/install.sh           set up the environment (install packages and
+#                                tooling, wire git hooks, extend PATH)
 #   scripts/install.sh --check   validate only; change nothing; exit non-zero
-#                                if anything is missing (good for CI / a quick
-#                                "am I ready?" check)
+#                                if anything is missing
 #
-# Linux is the supported platform today; it also runs on macOS (bash). Windows
-# is covered by the sibling PowerShell port, scripts/install.ps1, which mirrors
-# the checks below one-for-one — keep the two in step when either changes.
-set -uo pipefail
+# A thin wrapper: the work is done by ansible/dev-environment.yml, and this runs
+# the command written at the top of that playbook. Any other arguments pass
+# straight through to ansible-playbook (e.g. --diff, --skip-tags packages).
+#
+# Windows is covered by the PowerShell port, scripts/install.ps1, which mirrors
+# the playbook's checks — keep the two in step when either changes.
+set -euo pipefail
 
-CHECK_ONLY=0
-[ "${1:-}" = "--check" ] && CHECK_ONLY=1
+cd "$(dirname "$0")/.."
 
-NODE_MIN_MAJOR=20   # markdownlint-cli2 needs Node 20+ (uses the regex /v flag)
-
-# ---- output helpers ------------------------------------------------------
-if [ -t 1 ]; then
-  B=$'\e[1m'; R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; D=$'\e[2m'; X=$'\e[0m'
-else
-  B=""; R=""; G=""; Y=""; D=""; X=""
-fi
-ok()   { printf '  %sok%s   %s\n'   "$G" "$X" "$1"; }
-warn() { printf '  %swarn%s %s\n'   "$Y" "$X" "$1"; }
-fail() { printf '  %sfail%s %s\n'   "$R" "$X" "$1"; }
-hint() { printf '       %s%s%s\n'   "$D" "$1" "$X"; }
-
-PROBLEMS=0
-problem() { PROBLEMS=$((PROBLEMS + 1)); }
-
-# ---- 0. must be inside the repo -----------------------------------------
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  fail "Not inside a git repository — run this from your BrainFrame checkout."
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "ansible-playbook not found. Install Ansible, then re-run:" >&2
+  echo "  sudo apt install ansible" >&2
   exit 1
 fi
-ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT" || exit 1
-printf '%sBrainFrame environment check%s  (%s)\n' "$B" "$X" "$ROOT"
 
-case "$(uname -s)" in
-  Linux)  ;;
-  Darwin) warn "macOS detected — best-effort; Linux is the tested platform." ;;
-  *)      warn "$(uname -s) detected — only Linux is supported right now." ;;
-esac
-
-# ---- 1. Node >= 20 -------------------------------------------------------
-if ! command -v node >/dev/null 2>&1; then
-  fail "node not found."
-  hint "Install Node ${NODE_MIN_MAJOR}+, e.g.  nvm install --lts"
-  problem
-else
-  node_major="$(node -v | sed 's/^v//' | cut -d. -f1)"
-  if [ "${node_major:-0}" -lt "$NODE_MIN_MAJOR" ]; then
-    fail "node $(node -v) is too old — need ${NODE_MIN_MAJOR}+."
-    hint "nvm install --lts && nvm alias default 'lts/*'  (then restart shell)"
-    problem
-  else
-    ok "node $(node -v)"
-  fi
-fi
-
-# ---- 2. Flutter SDK -----------------------------------------------------
-# Flutter can't be auto-installed (it's a large SDK), so we only validate it.
-# The analyze (pre-commit) and coverage (pre-push) git hooks depend on it, and
-# its bundled `dart` is what installs coverde below.
-if command -v flutter >/dev/null 2>&1; then
-  ok "$(flutter --version 2>/dev/null | head -1)"
-else
-  fail "flutter not found — required by the analyze and coverage git hooks."
-  hint "Install Flutter: https://docs.flutter.dev/get-started/install"
-  problem
-fi
-
-# ---- 3. coverde (Dart global) -------------------------------------------
-# The pre-push coverage gate (tool/coverage.sh) uses coverde to filter the
-# trace and enforce the 90% threshold. It installs via `dart pub global
-# activate` into ~/.pub-cache/bin, which must be on PATH for the git hook to
-# find it — so we test that `coverde` actually resolves, not just that it was
-# activated. `dart` ships with Flutter (checked above).
-coverde_version() { dart pub global list 2>/dev/null | awk '$1=="coverde"{print $2}'; }
-if command -v coverde >/dev/null 2>&1; then
-  ver="$(coverde_version)"
-  ok "coverde ${ver:-present}"
-elif [ "$CHECK_ONLY" -eq 1 ]; then
-  fail "coverde not found on PATH — the pre-push coverage gate needs it."
-  hint "dart pub global activate coverde"
-  hint 'and add to your shell profile:  export PATH="$PATH:$HOME/.pub-cache/bin"'
-  problem
-elif command -v dart >/dev/null 2>&1; then
-  warn "coverde missing — installing via dart pub global activate..."
-  if dart pub global activate coverde >/dev/null 2>&1 \
-     && command -v coverde >/dev/null 2>&1; then
-    ok "coverde installed"
-  elif [ -n "$(coverde_version)" ]; then
-    # Activated, but the binary doesn't resolve -> pub-cache bin isn't on PATH.
-    fail "coverde installed but not on PATH."
-    hint 'Add to your shell profile:  export PATH="$PATH:$HOME/.pub-cache/bin"'
-    problem
-  else
-    fail "dart pub global activate coverde failed — install it manually."
-    problem
-  fi
-else
-  fail "coverde missing and dart not found to install it — install Flutter."
-  problem
-fi
-
-# ---- 4. markdownlint-cli2 ------------------------------------------------
-if command -v markdownlint-cli2 >/dev/null 2>&1 \
-   && markdownlint-cli2 --version >/dev/null 2>&1; then
-  ver="$(markdownlint-cli2 --version 2>/dev/null | grep -oE 'v[0-9.]+' | head -1)"
-  ok "markdownlint-cli2 ${ver:-present}"
-elif [ "$CHECK_ONLY" -eq 1 ]; then
-  fail "markdownlint-cli2 not available."
-  hint "npm install -g markdownlint-cli2"
-  problem
-elif command -v npm >/dev/null 2>&1; then
-  warn "markdownlint-cli2 missing — installing via npm..."
-  if npm install -g markdownlint-cli2 >/dev/null 2>&1; then
-    ok "markdownlint-cli2 installed"
-  else
-    fail "npm install of markdownlint-cli2 failed — install it manually."
-    problem
-  fi
-else
-  fail "markdownlint-cli2 missing and npm not found to install it."
-  problem
-fi
-
-# ---- 5. pre-commit -------------------------------------------------------
-install_precommit() {
-  if   command -v uv   >/dev/null 2>&1; then uv tool install pre-commit  >/dev/null 2>&1
-  elif command -v pipx >/dev/null 2>&1; then pipx install pre-commit     >/dev/null 2>&1
-  elif command -v pip  >/dev/null 2>&1; then pip install --user pre-commit >/dev/null 2>&1
-  else return 1
-  fi
-}
-if command -v pre-commit >/dev/null 2>&1; then
-  ok "pre-commit $(pre-commit --version | awk '{print $2}')"
-elif [ "$CHECK_ONLY" -eq 1 ]; then
-  fail "pre-commit not installed."
-  hint "uv tool install pre-commit   (or: pipx install pre-commit)"
-  problem
-else
-  warn "pre-commit missing — installing..."
-  if install_precommit && command -v pre-commit >/dev/null 2>&1; then
-    ok "pre-commit installed"
-  else
-    fail "could not install pre-commit automatically."
-    hint "Install it, then re-run: uv tool install pre-commit"
-    problem
-  fi
-fi
-
-# ---- 6. repo config files ------------------------------------------------
-for f in .pre-commit-config.yaml .markdownlint-cli2.jsonc; do
-  if [ -f "$f" ]; then ok "found $f"; else fail "missing $f"; problem; fi
-done
-
-# ---- 7. wire the git hooks ----------------------------------------------
-# pre-commit stage: markdownlint, dart format, flutter analyze, the l10n gate.
-# pre-push stage: the coverage gate (flutter test --coverage + coverde 90%
-# threshold).
-# Resolve the real hooks dir: honor core.hooksPath if set, else the git-common
-# dir — `git rev-parse` gets this right inside a worktree, where .git is a file
-# rather than a directory and a literal ".git/hooks" path would not resolve.
-HOOKS_DIR="$(git config --get core.hooksPath 2>/dev/null || git rev-parse --git-path hooks)"
-if command -v pre-commit >/dev/null 2>&1; then
-  if [ "$CHECK_ONLY" -eq 1 ]; then
-    for hook in pre-commit pre-push; do
-      if grep -q "pre-commit" "$HOOKS_DIR/$hook" 2>/dev/null; then
-        ok "git $hook hook installed"
-      else
-        fail "git $hook hook not installed."
-        hint "pre-commit install --hook-type pre-commit --hook-type pre-push"
-        problem
-      fi
-    done
-  elif pre-commit install --hook-type pre-commit --hook-type pre-push \
-       >/dev/null 2>&1; then
-    ok "git pre-commit and pre-push hooks installed"
-  else
-    fail "pre-commit install failed."
-    problem
-  fi
-fi
-
-# ---- 8. blame skips bulk reformats --------------------------------------
-# .git-blame-ignore-revs lists formatting-only commits. GitHub honors it on
-# its own; local `git blame` needs this per-clone setting. A warning rather
-# than a problem: blame without it is noisier, not wrong.
-if [ "$(git config --get blame.ignoreRevsFile 2>/dev/null)" = ".git-blame-ignore-revs" ]; then
-  ok "git blame skips the commits in .git-blame-ignore-revs"
-elif [ "$CHECK_ONLY" -eq 1 ]; then
-  warn "git blame does not skip bulk reformats."
-  hint "git config blame.ignoreRevsFile .git-blame-ignore-revs"
-elif git config blame.ignoreRevsFile .git-blame-ignore-revs; then
-  ok "git blame set to skip the commits in .git-blame-ignore-revs"
-else
-  warn "could not set blame.ignoreRevsFile."
-  hint "git config blame.ignoreRevsFile .git-blame-ignore-revs"
-fi
-
-# ---- summary -------------------------------------------------------------
-echo
-if [ "$PROBLEMS" -eq 0 ]; then
-  printf '%sEnvironment ready.%s Lint + analyze on commit, tests + coverage gate on push.\n' "$G$B" "$X"
-  hint "Lint everything now:  pre-commit run --all-files"
-  exit 0
-fi
-printf '%s%d issue(s) need attention%s — see the fixes above.\n' "$R$B" "$PROBLEMS" "$X"
-exit 1
+exec ansible-playbook -K -i localhost, ansible/dev-environment.yml "$@"

@@ -71,10 +71,24 @@ engram cannot appear in a capture.
 ## Development
 
 Contributions flow through the worktree → branch → pull request workflow
-described in `.claude/rules/git-workflow.md`. Run `scripts/install.sh` (Linux /
-macOS) or `scripts/install.ps1` (Windows PowerShell) to set up the markdown lint
-and pre-commit tooling. Add `--check` / `-Check` to validate without changing
-anything.
+described in `.claude/rules/git-workflow.md`.
+
+On Debian or Ubuntu, the dev environment is an Ansible playbook,
+`ansible/dev-environment.yml`. It installs the system packages (Flutter's Linux
+build dependencies, AppImage packaging, and the `tool/appshot.sh` visual
+verification stack), the user-level tooling (uv, pre-commit, markdownlint-cli2,
+coverde), wires the git hooks, and adds the tool directories to your PATH in
+`~/.profile`. Install Flutter yourself first; the playbook checks for it but
+does not install it. Then, from the repo root:
+
+```bash
+sudo apt install ansible
+ansible-playbook -K -i localhost, ansible/dev-environment.yml
+```
+
+`scripts/install.sh` runs the same command. Add `--check` to either to validate
+without changing anything. macOS is not covered yet. On Windows, run
+`scripts/install.ps1` (add `-Check` to validate only).
 
 On Windows, PowerShell's default execution policy blocks unsigned scripts. Run
 the installer once with a bypass:

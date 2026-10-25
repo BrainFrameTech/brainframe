@@ -1,6 +1,9 @@
 # Pre-commit hooks for BrainFrame.
 #
-# One-time setup after cloning:
+# One-time setup after cloning (Debian/Ubuntu), from the repo root:
+#   ansible-playbook -K -i localhost, ansible/dev-environment.yml
+# It installs pre-commit, markdownlint-cli2 and coverde, wires these hooks
+# (pre-commit and pre-push stages), and puts the tools on PATH. By hand:
 #   uv tool install pre-commit   # (or: pipx install pre-commit)
 #   pre-commit install --hook-type pre-commit --hook-type pre-push
 #   dart pub global activate coverde        # coverage filter + threshold gate

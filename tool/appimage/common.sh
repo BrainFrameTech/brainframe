@@ -29,14 +29,14 @@ RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continu
 # in the result and is pinned for every *target*, which is why it alone has an
 # armhf row.
 declare -A SHA256=(
-  [linuxdeploy:x86_64]="36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62"
-  [linuxdeploy:aarch64]="556ab80baa98e600aa80f0dcedfb70bca0e1ce7e9f147fb345be3fcc3e91b2b1"
+  [linuxdeploy:x86_64]="8aea8da0f7f7039d2a2cecb14657d752a222a5e1d3825caeef186c82f751cdd1"
+  [linuxdeploy:aarch64]="5c1fddf96066891e829831cac0d84424690f3b22846c7f8f1bb9990a5c6c73f4"
   [linuxdeploy-gtk:any]="b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171"
-  [appimagetool:x86_64]="a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"
-  [appimagetool:aarch64]="1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe"
-  [runtime:x86_64]="1cc49bcf1e2ccd593c379adb17c9f85a36d619088296504de95b1d06215aebbf"
-  [runtime:aarch64]="7d5d772b7c32f0c84caf0a452a3072a5709027d7eac5856feb89a7a7a8881372"
-  [runtime:armhf]="6b4bc2d4f9b027f5389fbd180abf5c29ea84dd59d1e80c8e8087d2258f6ab9c8"
+  [appimagetool:x86_64]="95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6"
+  [appimagetool:aarch64]="a595ea34cd6136c7f595e9dcbb16f3e9725d7610efb9e43b38c3c6e86cafc270"
+  [runtime:x86_64]="617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46"
+  [runtime:aarch64]="9a72a744d221576c9347ec074243acc5c3c7568896b12714e0e82e9f0bf47900"
+  [runtime:armhf]="acc940e0b091453490861ca7341135c7cbe6182d4aa7336c67fa5f51b0e77fcc"
 )
 
 # The host architecture in AppImage spelling. `arm64` is what some kernels and

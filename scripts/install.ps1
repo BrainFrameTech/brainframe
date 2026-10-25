@@ -3,8 +3,9 @@
     BrainFrame dev-environment setup / validation (Windows / PowerShell port).
 
 .DESCRIPTION
-    The Windows counterpart to scripts/install.sh. Same seven checks, same
-    exit contract:
+    The Windows counterpart to the Debian/Ubuntu playbook,
+    ansible/dev-environment.yml (which scripts/install.sh runs). Same tool
+    checks, same exit contract:
 
         scripts\install.ps1            set up the environment (install missing
                                        tooling, wire git hooks)
@@ -12,8 +13,8 @@
                                        non-zero if anything is missing (good
                                        for CI / a quick "am I ready?" check)
 
-    Runs on Windows PowerShell 5.1 and PowerShell 7+. The bash script stays the
-    tested path on Linux/macOS; this file keeps the two in step on Windows.
+    Runs on Windows PowerShell 5.1 and PowerShell 7+. The playbook is the
+    tested path on Linux; this file keeps the two in step on Windows.
 #>
 [CmdletBinding()]
 param(

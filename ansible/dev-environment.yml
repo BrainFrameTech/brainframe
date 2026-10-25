@@ -1,0 +1,278 @@
+---
+# BrainFrame dev environment (Debian/Ubuntu).
+#
+# Run from the repo root:
+#
+#   ansible-playbook -K -i localhost, ansible/dev-environment.yml
+#
+# -K asks for your sudo password (the package step needs it). The trailing
+# comma in `-i localhost,` makes it an inline host list rather than a file
+# name. Add --check to see what would change without changing anything; in
+# check mode the play fails at the end if anything is missing, so it doubles as
+# an "am I ready?" check. scripts/install.sh runs this same command.
+#
+# Flutter is the one prerequisite this does not install: it is a large SDK
+# pinned in pubspec.yaml (environment.flutter), and the play stops early if
+# `flutter` is not on PATH. Windows is covered by scripts/install.ps1; macOS is
+# not covered yet.
+
+- name: BrainFrame dev environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ansible_python_interpreter: auto_silent
+    node_min_major: 20 # markdownlint-cli2 needs Node 20+ (uses the regex /v flag)
+    repo_root: "{{ playbook_dir | dirname }}"
+    home: "{{ lookup('env', 'HOME') }}"
+    local_bin: "{{ home }}/.local/bin"
+    pub_cache_bin: "{{ lookup('env', 'PUB_CACHE') | default(home + '/.pub-cache', true) }}/bin"
+    # Check mode cannot evaluate a step whose tool the package step would only
+    # have installed; such steps are skipped and reported in the summary.
+    packages_pending: "{{ ansible_check_mode and packages is defined and packages is changed }}"
+
+  # So steps later in the play find the user-level tools installed earlier in
+  # it, before ~/.profile has been re-read.
+  environment:
+    PATH: "{{ local_bin }}:{{ pub_cache_bin }}:{{ lookup('env', 'PATH') }}"
+
+  tasks:
+    # ---- 1. system packages ------------------------------------------------
+    - name: Install system packages
+      become: true
+      tags: [packages]
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        name:
+          # Base
+          - git
+          - curl
+          - unzip
+          # Node and Python tooling (markdownlint-cli2; uv and pre-commit)
+          - nodejs
+          - npm
+          - pipx
+          # Flutter Linux desktop build
+          - clang
+          - cmake
+          - ninja-build
+          - pkg-config
+          - libgtk-3-dev
+          # AppImage packaging (tool/appimage/build-appimage.sh); it downloads
+          # linuxdeploy and appimagetool itself
+          - patchelf
+          - desktop-file-utils
+          - file
+          # Visual verification (tool/appshot.sh)
+          - xvfb
+          - x11-utils
+          - xdotool
+          - maim
+          - openbox
+          - x11vnc
+          - remmina
+      register: packages
+
+    # uv is not packaged in apt, so it comes from pipx (installed just above)
+    # rather than a curl-piped installer.
+    - name: Install uv
+      ansible.builtin.command: pipx install uv
+      args:
+        creates: "{{ local_bin }}/uv"
+      register: uv
+
+    # ---- 2. preflight ------------------------------------------------------
+    - name: Probe the git repository
+      ansible.builtin.command: git rev-parse --path-format=absolute --git-path hooks
+      args:
+        chdir: "{{ repo_root }}"
+      register: hooks_dir
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Check this playbook is inside a BrainFrame checkout
+      ansible.builtin.assert:
+        that: hooks_dir.rc == 0
+        fail_msg: "{{ repo_root }} is not a git checkout — run this from your BrainFrame clone."
+        quiet: true
+
+    - name: Check the repo config files exist
+      ansible.builtin.stat:
+        path: "{{ repo_root }}/{{ item }}"
+      loop:
+        - .pre-commit-config.yaml
+        - .markdownlint-cli2.jsonc
+      register: config_files
+      failed_when: not config_files.stat.exists
+
+    - name: Probe Node
+      ansible.builtin.command: node --version
+      register: node
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: not packages_pending
+
+    - name: Check Node is new enough
+      ansible.builtin.assert:
+        that:
+          - node.rc == 0
+          - node.stdout | regex_replace('^v', '') | split('.') | first | int >= node_min_major
+        fail_msg: >-
+          Need Node {{ node_min_major }}+ (found: {{ node.stdout | default('none', true) }}).
+          This distribution's nodejs package is too old; install a newer Node,
+          e.g. from NodeSource or nvm, then re-run.
+        quiet: true
+      when: not packages_pending
+
+    # Flutter cannot be installed from here (see the header). The analyze
+    # (pre-commit) and coverage (pre-push) hooks need it, and its bundled
+    # `dart` installs coverde below.
+    - name: Probe Flutter
+      ansible.builtin.shell: command -v flutter && command -v dart
+      register: flutter
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Check Flutter is installed
+      ansible.builtin.assert:
+        that: flutter.rc == 0
+        fail_msg: >-
+          flutter (and its bundled dart) not found on PATH. Install Flutter
+          (https://docs.flutter.dev/get-started/install/linux), put its bin/
+          directory on PATH, then re-run.
+        quiet: true
+
+    # ---- 3. user-level tools -----------------------------------------------
+    - name: Install pre-commit
+      ansible.builtin.command: uv tool install pre-commit
+      args:
+        creates: "{{ local_bin }}/pre-commit"
+      register: precommit
+
+    # npm's default global prefix is /usr/local, which needs root; ~/.local
+    # keeps the install per-user and puts the binary next to uv's.
+    - name: Install markdownlint-cli2
+      ansible.builtin.command: npm install --global markdownlint-cli2
+      args:
+        creates: "{{ local_bin }}/markdownlint-cli2"
+      environment:
+        NPM_CONFIG_PREFIX: "{{ home }}/.local"
+      register: markdownlint
+
+    # The pre-push coverage gate (tool/coverage.sh) uses coverde to filter the
+    # trace and enforce the 90% threshold.
+    - name: Install coverde
+      ansible.builtin.command: dart pub global activate coverde
+      args:
+        creates: "{{ pub_cache_bin }}/coverde"
+      register: coverde
+
+    # ---- 4. git ------------------------------------------------------------
+    # pre-commit stage: markdownlint, dart format, flutter analyze, the l10n
+    # gate. pre-push stage: the coverage gate. The hooks dir comes from git, so
+    # it honors core.hooksPath and resolves inside a worktree, where .git is a
+    # file rather than a directory.
+    - name: Probe the git hooks
+      ansible.builtin.command: grep -q pre-commit pre-commit pre-push
+      args:
+        chdir: "{{ hooks_dir.stdout }}"
+      register: hooks
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Install the git pre-commit and pre-push hooks
+      ansible.builtin.command: pre-commit install --hook-type pre-commit --hook-type pre-push
+      args:
+        chdir: "{{ repo_root }}"
+      when: hooks.rc != 0
+      changed_when: true
+
+    # .git-blame-ignore-revs lists formatting-only commits. GitHub honors it on
+    # its own; local `git blame` needs this per-clone setting. Plain git rather
+    # than community.general.git_config, so the play needs only ansible-core
+    # (the builtin git module clones; it cannot set config, hence the noqa).
+    - name: Probe the git blame setting
+      ansible.builtin.command: git config --local --get blame.ignoreRevsFile # noqa: command-instead-of-module
+      args:
+        chdir: "{{ repo_root }}"
+      register: blame_setting
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Make git blame skip bulk reformats
+      ansible.builtin.command: git config --local blame.ignoreRevsFile .git-blame-ignore-revs # noqa: command-instead-of-module
+      args:
+        chdir: "{{ repo_root }}"
+      when: blame_setting.stdout != '.git-blame-ignore-revs'
+      changed_when: true
+
+    # ---- 5. PATH -----------------------------------------------------------
+    - name: Put the user-level tool directories on PATH in ~/.profile
+      ansible.builtin.blockinfile:
+        path: "{{ home }}/.profile"
+        create: true
+        mode: "0644"
+        marker: "# {mark} BrainFrame dev tools (ansible/dev-environment.yml)"
+        block: |
+          # uv, pre-commit and markdownlint-cli2 live in ~/.local/bin; coverde
+          # (dart pub global) in the pub cache.
+          for d in "{{ local_bin }}" "{{ pub_cache_bin }}"; do
+            case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac
+          done
+          export PATH
+      register: profile
+
+    # bash reads only the first of ~/.bash_profile, ~/.bash_login, ~/.profile,
+    # so either of the first two hides the block above from login shells.
+    - name: Look for login files that shadow ~/.profile
+      ansible.builtin.stat:
+        path: "{{ home }}/{{ item }}"
+      loop:
+        - .bash_profile
+        - .bash_login
+      register: shadowing
+
+    # ---- summary -----------------------------------------------------------
+    - name: Collect what changed
+      ansible.builtin.set_fact:
+        pending: >-
+          {{
+            ([packages | default({}), uv, precommit, markdownlint, coverde, profile]
+             | select('changed') | length > 0)
+            or hooks.rc != 0
+            or blame_setting.stdout != '.git-blame-ignore-revs'
+          }}
+        shadowed_by: "{{ shadowing.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+
+    - name: Warn about login files that shadow ~/.profile
+      ansible.builtin.debug:
+        msg: >-
+          {{ shadowed_by | join(' and ') }} exists, so bash login shells skip
+          ~/.profile and will not see the PATH block. Source ~/.profile from it,
+          or copy the block across.
+      when: shadowed_by | length > 0
+
+    - name: Fail the check when the environment is not ready
+      ansible.builtin.fail:
+        msg: >-
+          Not ready: the tasks reported as changed above are what a real run
+          would do.
+          {{ 'Missing packages kept check mode from evaluating Node; re-run the check after installing them.' if packages_pending else '' }}
+          Run without --check to apply.
+      when: ansible_check_mode and pending
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            ['Environment ready. Lint + analyze on commit, tests + coverage gate on push.']
+            + (['Open a new login shell (or run: . ~/.profile) to pick up the PATH change.'] if profile is changed else [])
+            + ['Lint everything now:  pre-commit run --all-files']
+          }}

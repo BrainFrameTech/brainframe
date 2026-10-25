@@ -67,9 +67,10 @@ sudo apt install xvfb x11-utils xdotool maim openbox x11vnc remmina
 ```
 
 Plus the Flutter Linux desktop toolchain (already needed to build the app).
-`tool/appshot.sh deps` checks all of them and prints exactly that line for
-whatever is missing — worth running first on an unfamiliar machine, because
-these fail in ways that each look like a different problem.
+`ansible/dev-environment.yml` installs all of these along with the rest of the
+dev environment. `tool/appshot.sh deps` checks all of them and prints exactly
+that line for whatever is missing — worth running first on an unfamiliar
+machine, because these fail in ways that each look like a different problem.
 
 The window manager and viewer are only required when switched on, so a headless
 run (`APPSHOT_WM=none APPSHOT_VIEW=0`) needs neither. No graphical session is

@@ -49,6 +49,8 @@ as its only stdout line; all logging goes to stderr. It needs `curl`,
 sudo apt install patchelf desktop-file-utils file
 ```
 
+The dev-environment playbook (`ansible/dev-environment.yml`) installs them too.
+
 ## Raspberry Pi (aarch64)
 
 The same script produces the AppImage for a Raspberry Pi — one **aarch64**

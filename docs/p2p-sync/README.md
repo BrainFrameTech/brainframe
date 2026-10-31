@@ -169,7 +169,12 @@ uses them the same way.
   - **Removed peer**: a peer that has been removed from membership in the
     ensemble. It keeps its copy and everything it has already received, but does
     not receive anything new.
-- **Service**: a blind peer that offers hosting of multiple keepers' engrams.
+  - **UI peer**: a peer with an interface that allows direct access to the
+    managed content. It can be a reading peer or a writing peer, but it cannot
+    be a *blind* peer. This is the only fixed pairing between peer types: a
+    headless peer can be reading, writing, or blind.
+- **Service**: an application that runs many blind peers for multiple keepers'
+  engrams. Every peer it runs is headless.
 - **Snapshot**: the complete state of a given document as of a given point in
   time as seen across all peers for the engram. Saved so that entries before
   this point in time can be safely discarded locally on the current peer.

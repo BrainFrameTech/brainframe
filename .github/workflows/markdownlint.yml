@@ -1,0 +1,30 @@
+# Markdown lint gate: the same markdownlint-cli2 run the pre-commit hook does,
+# reading its rules and file globs from .markdownlint-cli2.jsonc. It catches a
+# commit made without hooks, and it is the check a documentation-only PR
+# actually needs, now that the Flutter checks skip those (docs-only.yml).
+#
+# The version is pinned so a new markdownlint release can't fail PRs that
+# passed locally. ansible/dev-environment.yml installs the latest release, so
+# bump this pin when a local `markdownlint-cli2` reports a newer version.
+#
+# Path-filtered, which is fine while this check is not required. If it is ever
+# made a required check, drop the filter (see docs-only.yml for why).
+name: markdownlint
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '**/*.markdown'
+      - '.markdownlint-cli2.jsonc'
+permissions:
+  contents: read
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # markdownlint-cli2 needs Node 20+
+      - name: Markdown passes lint
+        run: npx --yes markdownlint-cli2@0.24.0

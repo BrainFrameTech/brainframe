@@ -27,6 +27,8 @@
 # suite with coverage and blocks the push if honest coverage drops below 90%.
 # It runs on push rather than commit so routine commits stay fast; the same
 # pipeline is the authoritative gate in CI (.github/workflows/coverage.yml).
+# A push that changes only documentation the suite never reads skips it; the
+# rule for what counts lives in tool/docs_only.sh, shared with CI.
 #
 # Each hook sets `stages:` explicitly — a hook with no stages runs in every
 # stage, which would make the commit-stage hooks also fire on push.
@@ -88,11 +90,15 @@ repos:
         # See the flutter-analyze note: without_git_env.js strips the git-hook
         # environment so Flutter can detect its own SDK version, and on Windows
         # also puts Git's bundled `bash` on PATH so this entry resolves.
-        # tool/coverage.sh runs the full suite with coverage, filters documented
-        # exclusions, and fails the push under 90%. Needs `coverde` on PATH
-        # (see setup notes above).
-        entry: node tool/without_git_env.js bash tool/coverage.sh
-        # Run the whole pipeline on every push, regardless of which files changed.
+        # tool/push_gate.sh runs tool/coverage.sh — the full suite with
+        # coverage, documented exclusions filtered, failing the push under 90%
+        # — unless the pushed range is documentation only (tool/docs_only.sh).
+        # Needs `coverde` on PATH (see setup notes above).
+        entry: node tool/without_git_env.js bash tool/push_gate.sh
+        # Always invoked, and the script decides from the pushed range itself.
+        # pre-commit's own file filter can't make this call: it drops deleted
+        # files before matching, so a push that deletes a .dart file and edits
+        # a doc would look documentation-only to it.
         always_run: true
         pass_filenames: false
         require_serial: true

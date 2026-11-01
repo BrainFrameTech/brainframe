@@ -3,12 +3,18 @@
 # without hooks. The formatter's output depends on the SDK version, so this
 # runs the Flutter pinned in pubspec.yaml, and the local toolchain must match
 # it — a mismatch shows up as a PR that fails here while passing locally.
+#
+# A PR that changes only documentation skips the job (see docs-only.yml).
 name: format
 on: pull_request
 permissions:
   contents: read
 jobs:
+  scope:
+    uses: ./.github/workflows/docs-only.yml
   format:
+    needs: scope
+    if: needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

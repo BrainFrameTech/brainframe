@@ -1,0 +1,38 @@
+# Is this pull request documentation only? Called by the checks that run the
+# Flutter toolchain (coverage, l10n, format), which skip their real job when
+# the answer is yes. The rule itself is tool/docs_only.sh, the same script the
+# pre-push hook asks, so a push and its PR never disagree.
+#
+# Why a called job and not `on.pull_request.paths-ignore`. coverage and l10n
+# are required checks on main. A workflow skipped by a path filter never
+# reports at all, so a required check would sit at "Expected — waiting" and
+# block the merge forever. A *job* skipped by its `if:` reports success
+# instead, which satisfies the requirement.
+name: docs-only
+on:
+  workflow_call:
+    outputs:
+      docs_only:
+        description: "'true' when every changed file is documentation the suite never reads"
+        value: ${{ jobs.check.outputs.docs_only }}
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.check.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the base branch too, to diff the whole PR against it
+      - name: Documentation only?
+        id: check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if bash tool/docs_only.sh "origin/$BASE_REF"; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi

@@ -320,6 +320,45 @@ The dominant factor here is that a snapshot is destructive of history, and a
 malicious actor could easily force that snapshot and propagation. Need to
 determine a method for dealing with those actions.
 
+### How to define useful file size limits, record size limits, etc?
+
+Harmful edits are just one avenue of attack. An engram under attack can be asked
+to receive very large files (multiple gigabytes), that only some machines could
+actually open successfully, while the e-Ink device that is being planned might
+never be able to open them under any circumstances. A single PDF that is
+deliberately malformed and consumes several gigabytes of storage might only be
+possible to open on a high end desktop, or not at all. And an attacker could
+simply have the goal of rendering the engram useless.
+
+Fortunately, recovery from the worst part of such an attack is usually
+relatively easy (delete the `.brainframe` folder, delete the offending files if
+they got written, re-adopt the folder using the application, have the other
+peers join the new ensemble). However, that recovery should be a last resort,
+not a standard "Oops, that sucks" response.
+
+Relevancy is increased in the event of an already trusted peer being
+compromised: a UI peer with writing permission could be compromised and generate
+conflict records that could overwhelm devices with malicious edits.
+
+Limits on total quantity of records need to be implemented. A compromised device
+could generate millions of small edits that could bring down the ensemble. A
+single document, for example, could insert the letter `a` 10,000 times (each in
+their own edit), and then delete each of them, and repeat that process
+100,000,000 times before trying to synchronize with the ensemble. This would
+likely bring down even the most powerful desktops running BrainFrame.
+
+Transmission of files as a whole must also be guarded. For example, on Linux, a
+symbolic link to /dev/zero would result in a file that has unlimited size. Files
+will need to be strictly regular files (no sockets, no symbolic links, no pipes,
+etc), with their maximum size small enough to be usable on the eInk device, and
+streamed rather than received whole. The maximum size must work for *all*
+platforms, from the e-Ink device all the way up to the desktop, so the maximum
+size is actually a constant across all peers.
+
+We need to define useful limits that won't prevent people from storing the files
+that they want to store in the engram, but also will not overwhelm the smallest
+devices and only be usable on the most powerful desktops.
+
 ### What about reading members?
 
 We need enforcement mechanisms. A blind peer can't enforce reading membership,
@@ -479,6 +518,33 @@ notification arrives. Some consequences of this decision:
       such an edit operation, it must discard that edit operation entirely. It
       is unusable, as the DAG it is attempting to modify no longer exists. It
       cannot even be presented to a keeper in a meaningful way.
+  - A removed peer must not be able to exploit this loophole: By communicating
+    with a detached peer that has not yet received the updated membership list,
+    a removed peer can submit edits to the ensemble. To prevent this, the
+    following rules are followed:
+    - When the detached peer receives the updated membership list, it checks
+      edits that have not yet been committed to a snapshot. Any edits that come
+      after the peer was removed are deleted and will not be passed along. The
+      "after" uses the same checks defined for [edit
+      histories](#edit-histories-and-other-records).
+    - When edits are deleted, any dependent edits from the deleted edits will
+      also be deleted. These are considered invalid edits, as they rely on edits
+      that come from a removed peer. If the edit is not a dependent edit, but
+      just sits next to a removed edit, it needs to be re-anchored to the
+      nearest surviving text. If that cannot be accomplished, then a conflict
+      record needs to be raised to allow the keeper to fix the edit.
+    - The above two rules are applied by every writing peer, just in case an
+      edit somehow gets through to non-detached peers. Reading peers are unable
+      to re-anchor, as that is a write of its own. Instead, they have to wait
+      for a writing peer to address the dependent edits.
+    - The local document on the detached peer is rebuilt from the adjusted edit
+      history (where applicable, blind peers for instance will be unable to
+      rebuild the document), and then any valid edits are passed along to the
+      other peers.
+    - The above is possible because a removed peer must never be able to cause a
+      snapshot after its removal. As a result, the edit history from before the
+      invalid edits is still present, and allows the document to be properly
+      rebuilt.
 
 ### What's encrypted?
 
@@ -546,23 +612,6 @@ references survive edits. Remove an item once it is addressed.
 
 ### Decisions still to make
 
-- [ ] **N10. Bounds on conflict records.** For files that are not Markdown,
-  "The whole file gets distributed to the ensemble as a conflict record". A
-  record can now carry a large PDF, and a rejoining peer, possibly a stolen
-  one, decides how many records it raises. On the smallest peer, about 448 MB
-  for the whole app, that is a way to exhaust memory or storage. State that
-  conflict records fall under the harmful-edit rule and the existing size
-  limits, that file contents in them are streamed rather than held whole, and
-  that the number of pending records from one peer is capped.
-- [ ] **N12. Edits a removed peer slips in during the window.** "Key
-  management" now says that until every peer has rotated keys, "it is possible
-  for a removed peer to synchronize with a peer that has not been informed of
-  the peer removal". Through that peer, the removed peer's new edits can reach
-  the ensemble. Once the removal reaches everyone, every peer must treat those
-  edits the same way, or some keep them and others do not, and the ensemble
-  diverges. Decide the rule; a simple one is that any edit by the removed peer
-  that does not come causally *before* the removal record is refused by every
-  peer.
 - [ ] **N13. What a blind peer's metadata reveals.** "Key management" ends
   "This specific attack area must be mitigated", but no open question tracks
   it. [Who is out of scope?](#who-is-out-of-scope) lists what a blind peer
@@ -579,6 +628,48 @@ references survive edits. Remove an item once it is addressed.
   a keeper's edits so they never reach the other peers. Add an open question
   on how peers notice records going missing, for example by comparing what
   they hold with each other directly rather than only through the blind peer.
+- [ ] **N18. Define "at the time of" without clocks.** "Edit histories and
+  other records" validates every record "against membership listings at the
+  time of the edit", and the removed-peer rules under "Removed peers" now
+  defer to it ("The 'after' uses the same checks defined for edit
+  histories"). So one definition decides both, and the doc does not give it
+  yet. Two ways to get it wrong:
+  - **Clocks.** Edit timestamps are set by the peer that makes the edit. A
+    removed peer that knows when it was removed can stamp new edits as
+    earlier, and hand them to a detached peer.
+  - **The edit's own claimed history.** An edit names the history it builds
+    on, and an attacker can understate it so the edit looks older, or
+    concurrent with the removal. A removed peer that never received its
+    removal makes edits that are concurrent with it anyway, and "after" alone
+    lets those through.
+
+  The decision has to rest on the membership record, which the keeper's
+  writing UI peer signs and the attacker cannot change.
+
+  **Proposed answer (agreed in review; not yet in the doc's own text).** Each
+  membership record that removes a peer names a **cut-off**: the last edit ID
+  from that peer that the ensemble accepts.
+  - Edit IDs are a peerID plus a counter that never repeats ("When a peer
+    rejoins an ensemble, any edit IDs it submits must never repeat"), so any
+    edit from the removed peer with a counter above the cut-off is refused,
+    whatever its timestamp or claimed history says.
+  - Every peer can check this, blind peers included, because edit IDs are
+    visible metadata. No clock is consulted anywhere.
+  - An edit that reuses an ID at or below the cut-off with different content
+    is already refused under the duplicate-edit-ID rule.
+  - "At the time of the edit", in "Edit histories and other records", then
+    means "at or below the cut-off named in the membership record", and the
+    removed-peer rules inherit that meaning through their link.
+  - The cost: edits the peer made while still a member, but had not synced
+    before the removal (a phone offline for a day before it is reported
+    lost), are refused too. Nobody can vouch for them, and they are recovered
+    only if the device rejoins and its history passes the keeper's review, so
+    nothing honest is lost for good.
+
+  Related: last writer wins for files that are not Markdown also trusts the
+  writer's timestamp. Between current members that gains an attacker
+  nothing, since a member can overwrite the file anyway, but say so, so that
+  no later document treats those timestamps as trustworthy.
 
 ### Glossary (README)
 
@@ -643,9 +734,6 @@ references survive edits. Remove an item once it is addressed.
 - [ ] **F1.** The status line still says "nothing is decided yet".
 - [ ] **F2.** "This rule is almost absolute": name the exception or drop
   "almost".
-- [ ] **F3.** The open-question titles "A blind peer that can't read the data…"
-  and "A blind peer outside snapshotting…" have no closing punctuation, and the
-  second splits its bold across two spans.
 - [ ] **F4.** Typos: "terabyts", "keepers's", and "Explicitly In Scope" (should
   be "in scope").
 - [ ] **F5.** The scoping decisions [Who shares an

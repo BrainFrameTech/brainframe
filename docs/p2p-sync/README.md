@@ -133,6 +133,9 @@ uses them the same way.
 - **CRDT**: Conflict-free Replicated Data Type. A type of data built to allow
   automatic merging of potentially conflicting updates from multiple peers that
   may not be in constant communication with each other.
+- **Dependent edit**: An edit that depends on the existence of another edit. For
+  instance, correcting the typo "teh" to "the" would be a dependent edit. Merely
+  adding text before or after is not a dependent edit.
 - **Edit history**: the history of edits made to a given document since the last
   snapshot across all peers. It consists of CRDT operations.
 - **Engram**: a collection of files being maintained by BrainFrame. This will
@@ -155,6 +158,12 @@ uses them the same way.
     cannot read. It cannot check what it carries. Since this is otherwise a full
     peer, it can also cause problems with snapshots. Peers performing snapshots
     must take blind peers into account accordingly.
+  - **Detached peer**: a peer that is unable to communicate with at least some
+    other members of the ensemble (directly or through other peers). Possible
+    reasons include airplane mode, dead batteries, missing Wi-Fi password, some
+    peers hidden behind a VPN, etc. During the time the peer is detached, the
+    rest of the ensemble continues working as normal except for snapshots. Until
+    the detached peer reconnects or is removed, no snapshots are possible.
   - **Headless peer**: a peer with no user interface. It has no interface to the
     managed content; it is only run and managed as a background process. Whether
     it is reading, writing, or blind is a separate question.

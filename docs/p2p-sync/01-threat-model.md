@@ -256,128 +256,286 @@ A summary table, then one subsection per threat with the details.
 
 Questions raised during review that are not settled yet.
 
-- **Should some actions require a person to be physically present?** For
-  example: pairing a new device, removing one, or changing who can read an
-  engram, authorized by a tap on a hardware key rather than by anything a
-  compromised device could do alone. An OpenPGP smart card (such as a
-  YubiKey) is one way to do it; FIDO2 is another, with wider support on
-  phones. This is a mechanism, so it is chosen in
-  [document 6](06-brainframe-protocol.md). Here the question is only whether
-  the threat model asks for the property, and for which actions.
-- **A blind peer that can't read the data can't validate it either** This means
-  that an attacker can submit something that creates problematic history, to the
-  point of potentially preventing successful startup of BrainFrame. This must be
-  guarded against somehow. The mechanism to do so is unknown, but must be
-  defined. See the question "How to define a harmful edit?" below.
-- **A blind peer outside snapshotting can keep history much longer than an**
-  **otherwise active peer** If the blind peer can't validate the data, then a
-  safe mechanism must be provided to allow the blind peer to discard edit
-  history after new snapshots get made. This mechanism is not yet defined, but
-  must be.
-- **How to define a harmful edit?**: An edit is harmful under a number of
-  different circumstances, with the most obvious one being the case where a
-  future restart will actually be prevented due to the system running out of
-  memory or taking too long to consume the edit and produce a meaningful result.
-  Further research is needed to define the harmful edit cases, and then provide
-  the actual defense against them. Note that the same definition of harmful edit
-  must be applied to *all* peers, whether they are running on a server with
-  multiple terabyts of RAM or a single Raspberry Pi Zero 2W with 512MB of RAM.
-  If the rules are allowed to differ based on the specs of the machine running
-  the rules, then divergent CRDT trees become possible, and that is an
-  unacceptable state.
-- **How to validate snapshots?** The blind peer, with no knowledge of the data,
-  provides an attack vector that has not been considered: If a device is stolen,
-  then the attacker can force a new snapshot of an empty document, effectively
-  destroying the document. Other variations include ransomware scenarios, as
-  well as simply global search and replace across the engram. How do we prevent
-  these bad actor edits from infecting the entire engram?
-- **How to protect against stolen devices taking over?** We need to have a
-  mechanism to prevent a stolen device from taking over an ensemble. Right now,
-  as stated, any writing peer can remove any other device. We should provide
-  options to the user to manage this, including the idea of requiring something
-  like a YubiKey or a passkey or a Fido2 key.
-- **What about reading members?** We need enforcement mechanisms. A blind peer
-  can't enforce reading membership, and will carry forged edits. This is also
-  part of the data validation problem described above.
+### Should some actions require a person to be physically present?
+
+For example: pairing a new device, removing one, or changing who can read an
+engram, authorized by a tap on a hardware key rather than by anything a
+compromised device could do alone. An OpenPGP smart card (such as a YubiKey) is
+one way to do it; FIDO2 is another, with wider support on phones. This is a
+mechanism, so it is chosen in [document 6](06-brainframe-protocol.md). Here the
+question is only whether the threat model asks for the property, and for which
+actions.
+
+### A blind peer that can't read the data can't validate it either
+
+This means that an attacker can submit something that creates problematic
+history, to the point of potentially preventing successful startup of
+BrainFrame. This must be guarded against somehow. The mechanism to do so is
+unknown, but must be defined. See the question "How to define a harmful edit?"
+below.
+
+### A blind peer outside snapshotting keeps history longer
+
+If the blind peer can't validate the data, then a safe mechanism must be
+provided to allow the blind peer to discard edit history after new snapshots get
+made. This mechanism is not yet defined, but must be.
+
+### How to define a harmful edit?
+
+An edit is harmful under a number of different circumstances, with the most
+obvious one being the case where a future restart will actually be prevented due
+to the system running out of memory or taking too long to consume the edit and
+produce a meaningful result. Further research is needed to define the harmful
+edit cases, and then provide the actual defense against them. Note that the same
+definition of harmful edit must be applied to *all* peers, whether they are
+running on a server with multiple terabyts of RAM or a single Raspberry Pi Zero
+2W with 512MB of RAM. If the rules are allowed to differ based on the specs of
+the machine running the rules, then divergent CRDT trees become possible, and
+that is an unacceptable state.
+
+### How to validate snapshots?
+
+The blind peer, with no knowledge of the data, provides an attack vector that
+has not been considered: If a device is stolen, then the attacker can force a
+new snapshot of an empty document, effectively destroying the document. Other
+variations include ransomware scenarios, as well as simply global search and
+replace across the engram. How do we prevent these bad actor edits from
+infecting the entire engram?
+
+### How to protect against stolen devices taking over?
+
+We need to have a mechanism to prevent a stolen device from taking over an
+ensemble. Right now, as stated, any writing peer can remove any other device. We
+should provide options to the user to manage this, including the idea of
+requiring something like a YubiKey or a passkey or a Fido2 key. Additionally,
+removal and rejoining needs to be protected somehow.
+
+### How to deal with a malicious actor forcing snapshots across the ensemble?
+
+A malicious actor, stealing a peer device, can take over and do a number of
+things to destroy the ensemble. The most obvious is to empty out every note,
+force a snapshot, and propagate that snapshot. Other malicious edits would
+involve encrypting the data, and pushing that encrypted data out as a snapshot.
+The dominant factor here is that a snapshot is destructive of history, and a
+malicious actor could easily force that snapshot and propagation. Need to
+determine a method for dealing with those actions.
+
+### What about reading members?
+
+We need enforcement mechanisms. A blind peer can't enforce reading membership,
+and will carry forged edits. This is also part of the data validation problem
+described above.
 
 ## Settled in review
 
 Decisions made in review, with the reasoning, so they are not argued again.
 
-- **Removed Peers**: The keeper must be able to tell BrainFrame that a peer is
-  removed from the ensemble (lost, stolen, reformatted, whatever the reason), so
-  that it will stop tracking the peer, and therefore allow snapshots to occur
-  without the peer. This removed peer status must be able to travel to other
-  participants in the engram as well, so that other devices (or even users) will
-  stop tracking when that notification arrives. Some consequences of this
-  decision:
-  - Any writing peer can declare another peer removed. Reading peers are not
-    given this same permission.
-  - On peer removal and rejoining:
-    - A peer may get removed from the ensemble (lost/stolen device, dispute
-      between keepers, etc).
-    - A peer may join again after having been removed from participating in
-      the ensemble.
-    - The local edit history on the rejoining peer can experience data loss at
-      this stage. The data loss possibility is not merely cosmetic: CRDT
-      operations can be rejected by the ensemble, and those rejections can cause
-      the rejoining device to lose some of the rendered content when new edits
-      or snapshots come to the rejoining peer. The data loss possibility is real
-      and material to the keeper of the device that is rejoining the ensemble.
-    - The keeper will have to decide how to handle this scenario, on a
-      file-by-file basis. Either new documents have to be made, or local edit
-      history is lost. From a user experience perspective, this is less than
-      ideal. However, it is still better than having indefinite edit history
-      growth.
-    - At time of rejoining, the existing peer ID will be allowed back into the
-      ensemble, and the peer will rejoin as if it was brand new, while still
-      using the same peerID that it used before removal. Edit history is then
-      possible to bring in from the rejoining peer, minimizing data loss/new
-      document scenarios where possible. Permissions (reading vs writing) have
-      to be re-established at the time of joining, and the current keys have to
-      be given to the rejoining peer.
-  - The rendered notes are not kept encrypted at rest on keepers's device. The
-    files will be kept as plain, unencrypted data outside of the `.brainframe`
-    folder. This is the desired state of the system, and allows us to hit our
-    goal of making the data usable for the next 50 years. Encryption is only in
-    place where it is needed to protect the user's privacy. For example, a
-    service (as defined in the [README](README.md#glossary)) keeps every
-    engram's content and edit history encrypted.
-    - Data inside of the `.brainframe` folder will not be encrypted, *except* in
-      the case of a blind peer. A blind peer, as defined in the
-      [README](README.md#glossary), is expected to keep as much data as possible
-      encrypted in the `.brainframe` folder. The membership list can't be kept
-      encrypted and still validate membership in the ensemble. For other data
-      that can't be kept encrypted, see this [Scoping
-      Decision](#who-is-out-of-scope).
-    - The third location for data contains this peer's copy of the global edit
-      history for the engram across the ensemble back to the last snapshot, and
-      this location is not part of either the keeper's data *or* part of the
-      `.brainframe` folder. On reading and writing peers, encrypting this data
-      does not make sense. An attacker who has access to the keeper's account
-      also has the ability to access the decryption keys, resulting in a trivial
-      attack to get that edit history. On blind peers, the data for this
-      location will be encrypted, preventing an attacker from gaining anything
-      more than the encrypted copy.
-  - The most painful consequence of this decision: Key management is now
-    confirmed to be in scope. When a peer gets removed, every remaining reading
-    or writing peer must now get a new key for receiving the data and decrypting
-    it; blind peers never receive a decryption key. This also means that, once a
-    peer is removed, it is not able to get the new key *nor* is it able to
-    receive new data from the engram. An attacker who gains OS level access to a
-    blind peer (or the service) will be unable to read the data, but will still
-    be able to review (and possibly modify) the metadata. This specific attack
-    area must be mitigated.
-- **Peers must defend against pathological edit history** Any individual peer
-  must have a way to reject edits that are harmful to peers that are in the
-  ensemble. See the open questions for this one: "How to define a harmful edit".
-  This rule is almost absolute. To clarify it:
-  - Any reading peer that will render the output of the edit history must reject
-    pathological edits.
-  - Any blind peer that is unable to read the contents of the edit history must
-    not drop edits for being unreadable until a peer provides a new snapshot
-    that allows it to discard edit history. It cannot provide defense for the
-    other peers.
+### Membership listings
+
+Any UI peer with writing permission is able to update the membership, either to
+remove or add a peer. When it does so, it submits a membership record to the
+ensemble recording it. *Only* the UI peer that actually performs the
+admission/removal submits this record, never the peer being added or removed.
+The intent is that a keeper with the correct permissions is always the
+membership updater, and never a possibly stolen device or malicious actor.
+
+Note: A compromised writing peer can still submit a membership record. This is a
+[known gap](#should-some-actions-require-a-person-to-be-physically-present).
+
+Membership listings must be verified as coming from writing peers that were
+present in the ensemble at the time of the membership listing or update.
+
+### Edit histories and other records
+
+All records that are coming into a given peer are validated against membership
+listings at the time of the edit. This includes edit histories, membership
+updates, file data, and anything else that can possibly travel between peers. If
+an edit or membership change or a snapshot was not generated by a writing peer
+that was considered a writing peer at the time of the record generation, then it
+must be rejected and never stored on the receiving peer. It is not stored, and
+not examined beyond that check. Other records are accepted from any current
+member.
+
+### Removed peers
+
+The keeper must be able to tell BrainFrame that a peer is removed from the
+ensemble (lost, stolen, reformatted, whatever the reason), so that it will stop
+tracking the peer, and therefore allow snapshots to occur without the peer. This
+removed peer status must be able to travel to other participants in the engram
+as well, so that other devices (or even users) will stop tracking when that
+notification arrives. Some consequences of this decision:
+
+- A keeper may remove a peer from the ensemble using a UI peer with writing
+  permission. This prevents the use of a headless peer to remove another peer.
+- On peer removal and rejoining:
+  - A peer may get removed from the ensemble (lost/stolen device, dispute
+    between keepers, etc).
+    - Side effect: One keeper can remove another keeper from the ensemble
+      entirely, and deliberately. The primary data, from the keeper's
+      perspective, is unencrypted and unmanaged by BrainFrame. Deleting the
+      `.brainframe` folder and re-adopting it from inside of BrainFrame will
+      create a new engram, and allows the creation of a new ensemble without the
+      other keeper being able to participate in any way. The original ensemble
+      will still be intact, and a new ensemble with the same content (but with
+      different document and peer IDs) will now exist. Because any keeper can
+      always fork in this way, protecting a keeper from removal would not
+      prevent one keeper from excluding another. It would only change which one
+      of them forks. It is therefore not worth the complexity.
+  - A peer may join again after having been removed from participating in the
+    ensemble. It will be permitted to rejoin the ensemble by any writing peer.
+    As this will require a keeper and UI to permit the rejoin, a headless peer
+    has no technical ability to permit the rejoin. Only a UI peer can permit
+    the rejoin.
+  - The local edit history on the rejoining peer can experience data loss at
+    this stage. The data loss possibility is not merely cosmetic: CRDT
+    operations can be rejected by the ensemble, and those rejections can cause
+    the rejoining device to lose some of the rendered content when new edits
+    or snapshots come to the rejoining peer. The data loss possibility is real
+    and material to the keeper of the device that is rejoining the ensemble.
+  - The protections against this are provided via the UI: when a peer rejoins,
+    if a conflict would cause data loss, then the following will happen:
+    - After the rejoining peer is readmitted to the ensemble, a conflict record
+      is created and transmitted to the ensemble.
+    - A UI peer with the writing permission (reading peers cannot do this)
+      resolves the conflict, and transmits the result back to the engram as a
+      new edit record that contains the resolution of the conflict. Until all
+      members of the ensemble accept this new edit, a snapshot cannot be
+      established.
+    - A rejoining headless peer has no UI, and is therefore unable to manage
+      the conflicts. Instead, it will create and propagate the conflict
+      records, allowing a UI peer with the writing permission to handle
+      resolution of the conflicts.
+    - If multiple UI peers with the writing permission resolve the conflict
+      differently, then this is an ordinary conflict at this point that CRDTs
+      handle and propagate to the ensemble. BrainFrame is already using
+      crdt_lf to manage CRDTs, and the FugueText mechanism to avoid
+      interleaved edits. Once the edits converge from the ensemble, any keeper
+      running a writing peer can then do any final cleanup that is required to
+      resolve all of the conflicts.
+    - Until the conflict records for the local document are resolved, the
+      rejoining peer will keep its local copy of the document intact and
+      refuse to overwrite it with any version of the edits that have come in.
+    - If the file is *not* a markdown file (PDF, ePUB, JPG, GIF, PNG, etc),
+      then the rules change, but only slightly. The rejoining peer has
+      introduced an edit that *may* be a conflict. The whole file gets
+      distributed to the ensemble as a conflict record, and a UI peer with
+      writing permission decides whether to accept or reject the new file.
+      Once that decision is recorded, the rejoining peer will be expected to
+      honor it, and the file again returns to last writer wins across the
+      ensemble.
+  - The keeper will have to decide how to handle this scenario, on a
+    file-by-file basis. Either new documents have to be made, or local edit
+    history is lost. From a user experience perspective, this is less than
+    ideal. However, it is still better than having indefinite edit history
+    growth.
+  - At time of rejoining, the existing peer ID will be allowed back into the
+    ensemble, and the peer will normally rejoin as if it was brand new, while
+    still using the same peerID that it used before removal (under some
+    circumstances, reuse of the peer ID may not be possible, such as a
+    reformat). Edit history is then possible to bring in from the rejoining
+    peer, minimizing data loss/new document scenarios where possible.
+    Permissions (reading vs writing) have to be re-established at the time of
+    joining, and the current keys have to be given to the rejoining peer.
+    Finally, a rejoining peer must present its edit history to a keeper on a UI
+    peer with writing permission. This process occurs outside of the normal
+    process, to prevent potentially invalid or malicious data making it out to
+    the ensemble. That keeper then gets the option to either accept or revert
+    the edit history *before* the rejoining peer returns to the ensemble. Doing
+    this makes sure that a peer which is not being manipulated by a malicious
+    actor will pass around clean edits to all the other peers.
+  - If edits are actually rejected by the keeper performing the readmission,
+    then the IDs of those edits must travel to other peers in the ensemble. No
+    other peer in the ensemble is allowed to accept the new peer until a
+    complete list of rejected edit IDs has been received by that peer. The
+    list can be empty, indicating the rejoining peer did not make any known
+    malicious edits, but the list must be present on the rejoining record. Any
+    edit IDs rejected by this mechanism are permanently retired, and *no* peer
+    is allowed to apply them, ever. Doing this prevents a malicious actor from
+    gaining a device, producing malicious edits, and then rejoining an
+    ensemble (thereby corrupting or even destroying data across the ensemble).
+    - This does *not* prevent a malicious actor from waiting until gaining
+      membership to the ensemble and *then* performing the malicious edits, and
+      it cannot. It only prevents making this edits *before* rejoining the
+      ensemble. The ultimate security gate here is always having a keeper verify
+      the status of the peer before admitting it to the ensemble.
+  - A stolen device cannot be allowed to pollute the ensemble. When a peer is
+    removed, the keeper doing the removal will be presented with the
+    un-snapshotted history from that peer in a human readable form. The keeper
+    will have the option to revert those edits from the peer, and propagate
+    those reversions to the ensemble.
+  - When a peer rejoins an ensemble, any edit IDs it submits must never repeat
+    previously used edit IDs. If the rejoining peer is unable to determine where
+    it left off, it is required to join an ensemble with a new peer ID.
+    - If a receiver receives a duplicate edit ID (but with different content),
+      it must generate a conflict record to the ensemble (instead of trying to
+      apply it). The conflict record should only be raised if no other conflict
+      record can be found for it locally. If a conflict record for this edit ID
+      has already been received, then do not make a duplicate of it. A peer that
+      receives such a conflict record and can act on it (eg: a UI peer), must
+      assist the keeper in taking actions to resolve the record.
+    - It is possible, especially for a malicious actor, to create an edit
+      operation that would appear to come before a snapshot, and submit that
+      record to the ensemble *after* a snapshot is taken. If a peer receives
+      such an edit operation, it must discard that edit operation entirely. It
+      is unusable, as the DAG it is attempting to modify no longer exists. It
+      cannot even be presented to a keeper in a meaningful way.
+
+### What's encrypted?
+
+The rendered notes are not kept encrypted at rest on keepers's device. The files
+will be kept as plain, unencrypted data outside of the `.brainframe` folder.
+This is the desired state of the system, and allows us to hit our goal of making
+the data usable for the next 50 years. Encryption is only in place where it is
+needed to protect the user's privacy. For example, a service (as defined in the
+[README](README.md#glossary)) keeps every engram's content and edit history
+encrypted.
+
+Data inside of the `.brainframe` folder will not be encrypted, *except* in the
+case of a blind peer. A blind peer, as defined in the
+[README](README.md#glossary), is expected to keep as much data as possible
+encrypted in the `.brainframe` folder. The membership list can't be kept
+encrypted and still validate membership in the ensemble. For other data that
+can't be kept encrypted, see this [Scoping Decision](#who-is-out-of-scope).
+
+The third location for data contains this peer's copy of the global edit history
+for the engram across the ensemble back to the last snapshot, and this location
+is not part of either the keeper's data *or* part of the `.brainframe` folder.
+On reading and writing peers, encrypting this data does not make sense. An
+attacker who has access to the keeper's account also has the ability to access
+the decryption keys, resulting in a trivial attack to get that edit history. On
+blind peers, the data for this location will be encrypted, preventing an
+attacker from gaining anything more than the encrypted copy.
+
+### Key management
+
+The most painful consequence of having peer removal: Key management is now
+confirmed to be in scope. When a peer gets removed, every remaining reading or
+writing peer must now get a new key for receiving the data and decrypting it;
+blind peers never receive a decryption key. This also means that, once a peer is
+removed, it is not able to get the new key *nor* is it able to receive new data
+from the engram.
+
+The loss of access is only true after every peer has performed key rotation once
+a peer is removed from the ensemble. Until that time, it is possible for a
+removed peer to synchronize with a peer that has not been informed of the peer
+removal.
+
+An attacker who gains OS level access to a blind peer (or the service) will be
+unable to read the data, but will still be able to review (and possibly modify)
+the metadata. This specific attack area must be mitigated.
+
+### Peers must defend against pathological edit history
+
+Any individual peer must have a way to reject edits that are harmful to peers
+that are in the ensemble. See the open questions for this one: "How to define a
+harmful edit". This rule is almost absolute. To clarify it:
+
+- Any reading or writing peer that will render the output of the edit history
+  must reject pathological edits.
+- Any blind peer that is unable to read the contents of the edit history must
+  not drop edits for being unreadable until a peer provides a new snapshot
+  that allows it to discard edit history. It cannot provide defense for the
+  other peers.
 
 ## Open Issues Identified by Claude
 
@@ -386,60 +544,41 @@ references survive edits. Remove an item once it is addressed.
 
 ### Contradictions
 
-- [ ] **A12. Rejoining can lose notes before the keeper chooses.** The rejoin
-  bullet under "Removed Peers" says rejected operations "can cause the
-  rejoining device to lose some of the rendered content when new edits or
-  snapshots come to the rejoining peer", and the next bullet says "the keeper
-  will have to decide… on a file-by-file basis". If incoming snapshots can
-  change the rejoining peer's files before that decision, BrainFrame removes a
-  keeper's notes without asking, which [What happens when a device is lost or
-  stolen?](#what-happens-when-a-device-is-lost-or-stolen) calls "an
-  unacceptable risk". State the order: the keeper's per-file choice happens
-  before anything incoming overwrites a local file.
-- [ ] **A13. Writing peers also render.** The settled rule "Peers must defend
-  against pathological edit history" says "Any reading peer that will render
-  the output of the edit history must reject pathological edits". By the
-  glossary, a writing peer is not a reading peer, so as written the rule does
-  not cover writing peers. "Any reading or writing peer" closes it.
-
 ### Decisions still to make
 
-- [ ] **N5. Who authorizes a rejoin?** The rejoin bullet under "Removed Peers"
-  now answers two parts of this: the peer keeps its old peerID, and it gets the
-  current keys only at rejoin. What is left: "the existing peer ID will be
-  allowed back" does not say by whom. A removed peer that rejoins is, from the
-  ensemble's side, indistinguishable from a stolen one being handed back. State
-  that rejoining needs the same authorization as adding a new peer, and widen
-  the open question "How to protect against stolen devices taking over?" to
-  cover adding and rejoining, not only removal.
-- [ ] **N6. Edits brought back by a rejoining peer are untrusted.** The rejoin
-  bullet says "Edit history is then possible to bring in from the rejoining
-  peer". A peer is removed most often because it was lost or stolen, so
-  whatever it wrote while away may be the thief's. Its signatures do not help:
-  they were made with a key that was valid until removal, and its own clock can
-  claim any edit came before then. Decide whether edits from a rejoining peer
-  are merged automatically, shown to the keeper first, or kept apart as new
-  documents (the existing file-by-file choice).
-- [ ] **N7. Reusing a peerID must never reuse an operation ID.** The rejoin
-  bullet keeps the old peerID. CRDT operations are identified by peerID plus a
-  counter. If a rejoining peer restarts from a snapshot with its counter reset,
-  its new operations can carry the same IDs as ones it made before removal, and
-  peers holding both will diverge. State that a returning peer's operation IDs
-  always continue past every one it used before.
-- [ ] **N8. Can one keeper remove another keeper's peers?** "Removed Peers"
-  lists "dispute between keepers" as a reason, and says "Any writing peer can
-  declare another peer removed". In a shared engram, that lets either keeper
-  cut the other out entirely, key rotation included. Decide whether that is
-  intended, or whether a keeper may only remove their own peers and removing
-  another keeper is a separate, gated action.
-- [ ] **N9. Peers that miss a removal.** The key-rotation bullet under "Removed
-  Peers" says every remaining reading or writing peer "must now get a new key".
-  A peer that is offline when the removal happens learns of it, and gets the
-  new key, only later. Until then it may keep syncing with the removed peer.
-  Decide what the goal promises: that a removed peer receives nothing new
-  "after every remaining member has learned of the removal", or something
-  stronger, such as peers refusing to sync until they have heard from the
-  ensemble recently.
+- [ ] **N10. Bounds on conflict records.** For files that are not Markdown,
+  "The whole file gets distributed to the ensemble as a conflict record". A
+  record can now carry a large PDF, and a rejoining peer, possibly a stolen
+  one, decides how many records it raises. On the smallest peer, about 448 MB
+  for the whole app, that is a way to exhaust memory or storage. State that
+  conflict records fall under the harmful-edit rule and the existing size
+  limits, that file contents in them are streamed rather than held whole, and
+  that the number of pending records from one peer is capped.
+- [ ] **N12. Edits a removed peer slips in during the window.** "Key
+  management" now says that until every peer has rotated keys, "it is possible
+  for a removed peer to synchronize with a peer that has not been informed of
+  the peer removal". Through that peer, the removed peer's new edits can reach
+  the ensemble. Once the removal reaches everyone, every peer must treat those
+  edits the same way, or some keep them and others do not, and the ensemble
+  diverges. Decide the rule; a simple one is that any edit by the removed peer
+  that does not come causally *before* the removal record is refused by every
+  peer.
+- [ ] **N13. What a blind peer's metadata reveals.** "Key management" ends
+  "This specific attack area must be mitigated", but no open question tracks
+  it. [Who is out of scope?](#who-is-out-of-scope) lists what a blind peer
+  sees: the membership list, number of devices, peerIDs, IP addresses, arrival
+  times and sizes of edits, and their order relative to snapshots. Timing and
+  sizes alone show when and how much a keeper writes. Add an open question on
+  how much of this can be hidden, padded, or batched, and what is accepted as
+  residual risk. This is the LINDDUN pass the README plans.
+- [ ] **N14. A blind peer withholding records.** The same sentence says an
+  attacker on a blind peer can "possibly modify" the metadata. Signatures
+  already catch forged *changes* to membership records and edits. What a
+  compromised blind peer, or the service, can still do is withhold, delay, or
+  delete records: hold back a removal so a removed peer keeps syncing, or drop
+  a keeper's edits so they never reach the other peers. Add an open question
+  on how peers notice records going missing, for example by comparing what
+  they hold with each other directly rather than only through the blind peer.
 
 ### Glossary (README)
 
@@ -487,12 +626,17 @@ references survive edits. Remove an item once it is addressed.
   and "How to protect against stolen devices taking over?" ask the same thing.
   Merge them, or have one point to the other. N5 adds rejoining to what they
   cover.
-- [ ] **E2.** "A blind peer outside snapshotting can keep history much longer"
-  is mostly answered by the settled rule for blind peers. What is left belongs
+- [ ] **E2.** "A blind peer outside snapshotting keeps history longer" is
+  mostly answered by the settled rule for blind peers. What is left belongs
   with "How to validate snapshots?".
 - [ ] **E3.** "A blind peer that can't read the data can't validate it either"
   and "What about reading members?" overlap. After C1, little of the second is
   left. The second also still says "read-only membership" in its body.
+- [ ] **E4.** "How to validate snapshots?" and "How to deal with a malicious
+  actor forcing snapshots across the ensemble?" describe the same attack: a
+  stolen peer empties or encrypts notes and forces a snapshot. The newer one
+  states the root cause better ("a snapshot is destructive of history"). Merge
+  them into one question.
 
 ### Housekeeping
 
@@ -514,10 +658,8 @@ references survive edits. Remove an item once it is addressed.
   remembers what was deleted" bullet still say history is kept indefinitely.
   The glossary's *Edit history* entry gives the fix: deleted text stays until
   the next snapshot.
-- [ ] **F8.** Under "On peer ejection and rejoining", the first two bullets
-  ("If peers get ejected…" and "A peer may be found again…") say the same
-  thing. Merging them would also be the place to say *what* is lost: edits the
-  returning peer made that the ensemble never received. Its plain files stay,
-  as [What happens when a device is lost or
-  stolen?](#what-happens-when-a-device-is-lost-or-stolen) promises; "local edit
-  history" could be read as more than that.
+- [ ] **F11.** Wording in *Settled in review*: "a keeper with the correct
+  permissions is always the membership updated" (perhaps "is always the one
+  who updates the membership"), and "It only prevents making this edits"
+  ("these edits"). The heading "Membership Listings" could match the glossary
+  term, **membership list**.

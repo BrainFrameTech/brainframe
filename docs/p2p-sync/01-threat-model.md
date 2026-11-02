@@ -365,9 +365,161 @@ We need enforcement mechanisms. A blind peer can't enforce reading membership,
 and will carry forged edits. This is also part of the data validation problem
 described above.
 
+### What about purging history on blind peers?
+
+An attacker must not be able to read the encrypted snapshots. It also must not
+be able to read the contents of individual edits (which are also encrypted).
+
+In order for the blind peer to be able to tell what data it can purge, it *must*
+be able to read enough data to determine that an edit belongs to a specific
+document, and that a new snapshot for that document has arrived, allowing it to
+remove the edit history from before that snapshot. A consequence of this is that
+the ensemble must carry enough information about the snapshot to prove that
+every peer has actually moved to this point in the edit history. Without those
+guarantees, a malicious actor using a stolen writing peer could submit a
+snapshot to a blind peer that claims the current state of a document is empty,
+and all other peers would accept that edit as being valid even if they have
+outstanding edits against a document.
+
+This question is about the balance: How do we provide enough data for a blind
+peer to safely delete no longer relevant history without giving an attacker the
+ability to destroy the ensemble?
+
+### What about metadata on blind peers?
+
+With key management being in scope, and blind peers being a requirement, the
+exposed metadata on a blind peer (especially as it relates to the service)
+leaves attack surface, specifically the area of traffic analysis.
+
+Related to the history, we need to list the metadata that is needed for blind
+peers to function. A partial list of all metadata includes the following:
+
+- membership list
+- device count
+- peerIDs
+- document IDs
+- links between edits and snapshots
+- the timing of edits
+- timing of arrivals of edits
+- last seen edit ids from a given peer
+- sizes of edits
+- IP addresses of peers
+
+This is only a partial list. When this question is resolved, the full list of
+metadata must be known, and the list of what metadata is required for a
+blind peer to function must also be known. Once the full list is known, we must
+limit the usability of the metadata for an attacker. Potential mitigations
+include:
+
+- Padding edit sizes to always be a fixed size, and grouping edits into buckets
+  with each at a fixed size to allow large edits.
+- Batching or delaying distribution of edits to prevent arrival times revealing
+  more than required
+- Not exposing IP addresses to the blind peer for instance via relaying
+
+Closing out this question requires knowing the full list of metadata, the full
+list of metadata required for the blind peer, and mitigation strategies to
+reduce the risks of exposure from a blind peer. It also requires having the list
+of residual risk, including definitions of the risk and why this risk must
+remain.
+
+### What about history attacks against blind peers?
+
+A blind peer can't modify existing data, since the edit history must all be
+signed to prevent that attack. However, an attacker could otherwise attack the
+history: deleting edits, delaying edits, or refusing to pass them along. Peers
+in an ensemble with a blind peer need to have extra checks to verify that the
+blind peer is behaving correctly. The strongest of these checks will be
+communicating with more peers than the blind peer. Ideally, peers should not
+rely on a single peer in the ensemble.
+
+This check might not be sufficient, or it might not be feasible. For instance, a
+single peer kept behind a VPN may have only the blind peer accessible. Even with
+that case, this question must answer how a given peer can trust that the peers
+it is communicating with are actively giving it *all* of the updates it is
+supposed to receive on the cadence it is supposed to receive them. Once that
+mechanism is determined, this question can be closed.
+
+The worst case: An attacker could cause a blind peer to delay (or entirely
+withhold) the removal record for a peer. The result would be a peer that does
+not know about the removal of another peer, causing the removed peer to still be
+able to participate in the ensemble.
+
+A *possible* mitigation would be to use the edit IDs for the membership list.
+Using a pure CRDT implementation would likely preclude this, as the edit ID
+becomes the peerid+HLC+counter. It also would not provide protection when the
+membership updates infrequently. For example, if a peer is removed, and no other
+membership changes occur for months, then the removed peer could remain part of
+the ensemble due to detached peers. The idea makes for a good starting point
+though, and should be explored.
+
+### What about wildly skewed clocks?
+
+The Hybrid Logical Clock is used for ordering edits, as discussed in [Clocks
+cannot be trusted](#clocks-cannot-be-trusted). The crdt_lf sync package encodes
+the counter portion of the HLC as a 16 bit integer.
+
+Scenario: An attacker could set their local clock to the year 3000, and then
+make a single edit in every file in the engram (adding a blank line at the end,
+for example). Getting this edit distributed to the ensemble would then pull
+every document's HLC to that timestamp, and rely on the counter portion of the
+HLC to order edits. When the HLC is encoded by crdt_lf, it encodes the counter
+as a 16 bit integer.
+
+With only a 16 bit integer, the ensemble could easily generate repeating IDs,
+resulting in documents that can no longer be rendered reliably.
+
+Two options exist for handling this:
+
+- Bound the drift. We could place a limit on how far off the edits are allowed
+  to be. This could result in detached peers being unable to synchronize with
+  the ensemble. Consider a Raspberry Pi that is unable to reach a time server
+  quickly. Any incoming edits will look like they come from the future
+  (potentially a far future), outside the drift boundary. If we go with this
+  option, then incoming edits can't be applied, but do have to be accepted and
+  stored until they can be confirmed. Quarantine might be the right answer for
+  that.
+- Don't use crdt_lf's synchronization, and instead encode the HLC ourselves.
+  This could result in us being stuck on an older version of crdt_lf, but it
+  does remove the detached peer/divergent document condition entirely.
+
+Other options may exist, and should be explored before closing this question.
+
+This question can be closed when a mechanism for handling this scenario has been
+solidified and does *not* produce divergence amongst the ensemble.
+
 ## Settled in review
 
 Decisions made in review, with the reasoning, so they are not argued again.
+
+### Clocks cannot be trusted
+
+No peer's clock may be used to form the basis of a trust decision. Attackers can
+manipulate their local clock, or submit edits where the hybrid logical clock
+references timestamps that were not actually accurate. Most Raspberry Pi devices
+do not have a hardware clock, and can become out of sync with internet clocks
+easily. A desktop or laptop can get time from an untrusted source. Mobile
+devices can have their time be manipulated by the owner manually changing it, or
+even just due to a misconfigured time server.
+
+Clock times are not reliable, and cannot be used to determine an actual trust
+relationship in any way. This has direct impacts on how to determine if a
+removed peer has the ability to submit an edit to the ensemble, and is therefore
+called out here.
+
+For non-trust based choices, clocks are acceptable.
+
+- CRDTs use Hybrid Logical Clocks. These are susceptible to attacks based on
+  concurrent edits, but the risk here is that one device will always win in a
+  truly conflicting edit. A consequence of this is that a wildly skewed peer
+  (decades ahead, for example) drags all other peers forward, effectively
+  forcing the entire ensemble to use the new time for the HLC until everything
+  catches up. This will devolve into using the counter portion of the HLC until
+  the ensemble catches up. The risk of dragging is accepted *except* for counter
+  exhaustion, which is described in the [open
+  question](#what-about-wildly-skewed-clocks).
+- Last writer wins for non-markdown files (PDF, JPG, etc). The same risk is true
+  as for CRDTs, and this is known and accepted.
 
 ### Membership listings
 
@@ -387,13 +539,51 @@ present in the ensemble at the time of the membership listing or update.
 ### Edit histories and other records
 
 All records that are coming into a given peer are validated against membership
-listings at the time of the edit. This includes edit histories, membership
-updates, file data, and anything else that can possibly travel between peers. If
-an edit or membership change or a snapshot was not generated by a writing peer
-that was considered a writing peer at the time of the record generation, then it
-must be rejected and never stored on the receiving peer. It is not stored, and
-not examined beyond that check. Other records are accepted from any current
-member.
+listings. This includes edit histories, membership updates, file data, and
+anything else that can possibly travel between peers. If an edit or membership
+change or a snapshot was not generated by a writing peer that was considered a
+writing peer at the time of the record generation, then it must be rejected and
+never stored on the receiving peer. It is not stored, and not examined beyond
+that check. Other records are accepted from any current member. The two
+boundaries for a given peer are when it joined the ensemble, and when it left
+the ensemble.
+
+Edits from before the join are identical to the edits under [Removed
+peers](#removed-peers) discussion of what happens to edits while a peer is not a
+member of the ensemble, including raising conflict records.
+
+Edits while it is already a member are considered valid.
+
+Edits from the point of removal are not valid without an existing keeper's
+approval, and that keeper must be operating a writing peer. The scenario for
+these edits is as follows:
+
+- The removed peer's membership removal record is captured by the peer
+  performing the removal.
+- The edit history of the removed peer is captured as a set of edit ids.
+- The set of edit IDs is signed by the peer which performed the removal, *not*
+  by the removed peer.
+  - When multiple peers issue a peer removal concurrently, the list of edit IDs
+    that they generate may be disjoint. Under such circumstances, their list of
+    edit IDs is to be brought together as a union, and any edit ID in *either*
+    set is considered valid.
+- That set of edit IDs is distributed to the ensemble, along with the membership
+  removal record.
+- All members of the ensemble reject new incoming connections from the removed
+  peer from the moment their membership list is updated, preventing new edits
+  from coming into the ensemble at all.
+- Any edits received from the removed peer that are not in the set of edit IDs
+  are handled differently depending on the peer type:
+  - UI peer, with writing permission: quarantined locally, not propagated.
+    Dependent edits are also quarantined, even when a different member made
+    those dependent edits. They are presented to a keeper to accept or reject.
+    If accepted, the edits (and any dependent edits) are re-prepared as coming
+    from this peer, and then propagated to the network.
+  - UI peer, read only: dropped entirely.
+  - Headless peer or Blind peer: dropped entirely.
+  - This provides an option to preserve the data, without providing a way to
+    damage the ensemble. Only specific detached UI peers can be harmed, and that
+    risk is preferable to the risk of losing valid data.
 
 ### Removed peers
 
@@ -524,15 +714,16 @@ notification arrives. Some consequences of this decision:
     following rules are followed:
     - When the detached peer receives the updated membership list, it checks
       edits that have not yet been committed to a snapshot. Any edits that come
-      after the peer was removed are deleted and will not be passed along. The
-      "after" uses the same checks defined for [edit
-      histories](#edit-histories-and-other-records).
-    - When edits are deleted, any dependent edits from the deleted edits will
-      also be deleted. These are considered invalid edits, as they rely on edits
-      that come from a removed peer. If the edit is not a dependent edit, but
-      just sits next to a removed edit, it needs to be re-anchored to the
-      nearest surviving text. If that cannot be accomplished, then a conflict
-      record needs to be raised to allow the keeper to fix the edit.
+      after the peer was removed are quarantined locally, as described under
+      [edit histories](#edit-histories-and-other-records).
+    - When edits are quarantined or deleted, any dependent edits will receive
+      the same treatment. Deleted edits will see dependent edits deleted, while
+      quarantined edits will see their dependent edits quarantined. These are
+      considered invalid edits, as they rely on edits that come from a removed
+      peer. If the edit is not a dependent edit, but just sits next to a removed
+      edit, it needs to be re-anchored to the nearest surviving text. If that
+      cannot be accomplished, then a conflict record needs to be raised to allow
+      the keeper to fix the edit.
     - The above two rules are applied by every writing peer, just in case an
       edit somehow gets through to non-detached peers. Reading peers are unable
       to re-anchor, as that is a write of its own. Instead, they have to wait
@@ -545,6 +736,15 @@ notification arrives. Some consequences of this decision:
       snapshot after its removal. As a result, the edit history from before the
       invalid edits is still present, and allows the document to be properly
       rebuilt.
+
+### Edits must form a DAG
+
+CRDTs already enforce this property, but the new requirements under the [edit
+histories](#edit-histories-and-other-records) show the need for even stronger
+guarantees: Each edit must be signed, and each edit's signature must have a
+signed and hashed link back to the previous edit in the DAG. Doing this ensures
+that we can reject (or raise conflict records for) edits received from removed
+peers.
 
 ### What's encrypted?
 
@@ -611,65 +811,6 @@ references survive edits. Remove an item once it is addressed.
 ### Contradictions
 
 ### Decisions still to make
-
-- [ ] **N13. What a blind peer's metadata reveals.** "Key management" ends
-  "This specific attack area must be mitigated", but no open question tracks
-  it. [Who is out of scope?](#who-is-out-of-scope) lists what a blind peer
-  sees: the membership list, number of devices, peerIDs, IP addresses, arrival
-  times and sizes of edits, and their order relative to snapshots. Timing and
-  sizes alone show when and how much a keeper writes. Add an open question on
-  how much of this can be hidden, padded, or batched, and what is accepted as
-  residual risk. This is the LINDDUN pass the README plans.
-- [ ] **N14. A blind peer withholding records.** The same sentence says an
-  attacker on a blind peer can "possibly modify" the metadata. Signatures
-  already catch forged *changes* to membership records and edits. What a
-  compromised blind peer, or the service, can still do is withhold, delay, or
-  delete records: hold back a removal so a removed peer keeps syncing, or drop
-  a keeper's edits so they never reach the other peers. Add an open question
-  on how peers notice records going missing, for example by comparing what
-  they hold with each other directly rather than only through the blind peer.
-- [ ] **N18. Define "at the time of" without clocks.** "Edit histories and
-  other records" validates every record "against membership listings at the
-  time of the edit", and the removed-peer rules under "Removed peers" now
-  defer to it ("The 'after' uses the same checks defined for edit
-  histories"). So one definition decides both, and the doc does not give it
-  yet. Two ways to get it wrong:
-  - **Clocks.** Edit timestamps are set by the peer that makes the edit. A
-    removed peer that knows when it was removed can stamp new edits as
-    earlier, and hand them to a detached peer.
-  - **The edit's own claimed history.** An edit names the history it builds
-    on, and an attacker can understate it so the edit looks older, or
-    concurrent with the removal. A removed peer that never received its
-    removal makes edits that are concurrent with it anyway, and "after" alone
-    lets those through.
-
-  The decision has to rest on the membership record, which the keeper's
-  writing UI peer signs and the attacker cannot change.
-
-  **Proposed answer (agreed in review; not yet in the doc's own text).** Each
-  membership record that removes a peer names a **cut-off**: the last edit ID
-  from that peer that the ensemble accepts.
-  - Edit IDs are a peerID plus a counter that never repeats ("When a peer
-    rejoins an ensemble, any edit IDs it submits must never repeat"), so any
-    edit from the removed peer with a counter above the cut-off is refused,
-    whatever its timestamp or claimed history says.
-  - Every peer can check this, blind peers included, because edit IDs are
-    visible metadata. No clock is consulted anywhere.
-  - An edit that reuses an ID at or below the cut-off with different content
-    is already refused under the duplicate-edit-ID rule.
-  - "At the time of the edit", in "Edit histories and other records", then
-    means "at or below the cut-off named in the membership record", and the
-    removed-peer rules inherit that meaning through their link.
-  - The cost: edits the peer made while still a member, but had not synced
-    before the removal (a phone offline for a day before it is reported
-    lost), are refused too. Nobody can vouch for them, and they are recovered
-    only if the device rejoins and its history passes the keeper's review, so
-    nothing honest is lost for good.
-
-  Related: last writer wins for files that are not Markdown also trusts the
-  writer's timestamp. Between current members that gains an attacker
-  nothing, since a member can overwrite the file anyway, but say so, so that
-  no later document treats those timestamps as trustworthy.
 
 ### Glossary (README)
 

@@ -809,6 +809,21 @@ references survive edits. Remove an item once it is addressed.
 
 ### Contradictions
 
+- [ ] **A29. The duplicate-edit-ID rule lets a removed peer flood the
+  ensemble.** Under "Removed peers", a duplicate edit ID with different
+  content makes the receiver "generate a conflict record to the ensemble".
+  But "Edit histories and other records" settled that a removed peer's edits
+  must never reach the ensemble, not even as conflict records. The two meet
+  here: the removal set lists edit *IDs*, and a removed peer still holds its
+  own private key, so it can sign *new content under an ID that is in the
+  set*. The signature is valid and the ID is in the set, so the edit passes
+  the membership check and hits the duplicate-ID rule, which sends a conflict
+  record to every keeper. Two changes close it: the removal set commits to
+  each edit's ID *and* a hash of its content, so a changed edit is simply
+  outside the set (and quarantined like any other); and the duplicate-ID rule
+  applies only to edits that have already passed the membership and set
+  checks.
+
 ### Decisions still to make
 
 - [ ] **N20. Who may ask the service to delete an engram?** The stolen-device
@@ -848,6 +863,62 @@ references survive edits. Remove an item once it is addressed.
   same *device*, from shared IP addresses and timing, and so link that
   keeper's engrams together (linkability, in LINDDUN terms). Keep both items
   in the list.
+- [ ] **N24. A file-sync tool running alongside BrainFrame sync bypasses
+  every membership rule.** "What sync does" says built-in sync "replaces that
+  tool for the people who want it", but nothing says the two may not run at
+  once. If a keeper leaves the engram in Dropbox, iCloud Drive, or Syncthing
+  *and* turns on BrainFrame sync, the file-sync tool becomes a second channel
+  that no membership list, signature, or removal governs:
+  - **It launders a removed peer's edits.** A stolen laptop that is still
+    signed in to Dropbox writes changed files into the shared folder. On each
+    honest device, BrainFrame sees a file change on disk, treats it as a local
+    edit, and signs it as that device's own. The removed peer's edit is now a
+    valid edit from a current member, past every rule in "Edit histories and
+    other records".
+  - **It duplicates edits.** One change, delivered both by BrainFrame sync and
+    by the file-sync tool, can be turned into CRDT operations twice, once on
+    each device that sees the file change.
+  - **It carries `.brainframe/`.** The membership list and device names travel
+    to wherever the file-sync tool copies the folder ("What BrainFrame Is":
+    "it will travel with the engram wherever the rest of the files go").
+
+  Decide whether BrainFrame detects a file-sync tool and refuses to turn sync
+  on, warns and lets the keeper accept the risk, or treats file changes it did
+  not see being made as untrusted.
+- [ ] **N25. Local-network discovery is a metadata leak with no question.**
+  [Where does sync reach?](#where-does-sync-reach) says sync works "for local
+  network first". Finding peers on a local network usually means announcing
+  them (mDNS or a broadcast), and anyone on the same café or hotel Wi-Fi then
+  sees that a BrainFrame peer is present, and possibly its device name (the
+  identity map already publishes device names) and peerID. That is
+  identifiability and detectability in LINDDUN terms. "What about metadata on
+  blind peers?" covers only what a blind peer sees, so nothing covers what the
+  network sees. Add it there, or as its own question.
+- [ ] **N26. Nothing bounds history growth while a member is detached.** By
+  the README's *Detached peer* entry, "no snapshots are possible" until a
+  detached peer reconnects or is removed. A phone left in a drawer for six
+  months therefore stops every peer from discarding history for six months.
+  On the smallest device, about 448 MB for the whole app, that history can
+  outgrow what the device can hold. Decide whether a long-detached member is
+  flagged to a keeper for removal after some period, whether history is
+  bounded some other way, or whether the growth is accepted as residual risk.
+- [ ] **N27. How does a new peer trust what it receives when it joins?** A
+  new peer starts from a snapshot and a membership list handed to it by the
+  peer that admits it. It cannot check the history before that snapshot, and
+  it has no earlier membership list to check signatures against. So a
+  compromised admitting peer could give it a false snapshot or a false list.
+  This is trust on first use, usually settled at pairing (a code or QR
+  compared by a person, as with Signal's safety numbers). State what a new
+  peer must verify at join, and what it must take on trust.
+- [ ] **N28. Changing a peer's kind is not covered.** "Membership listings"
+  covers adding and removing a peer, but not changing what kind a member is:
+  promoting a reading peer to writing, or demoting a writing peer to reading.
+  The first is as sensitive as adding a writer; the second is like a removal
+  of writing rights, and under "Edit histories and other records" it needs the
+  same two bounds (edits signed as a writer are valid only up to the
+  downgrade, by the same signed set). State that kind changes follow the same
+  rules as membership changes, and that a downgrade commits to the set of
+  writing edits it accepts.
 
 ### Glossary (README)
 
@@ -855,54 +926,115 @@ references survive edits. Remove an item once it is addressed.
 
 ### Overlapping open questions
 
-- [ ] **E1.** "Should some actions require a person to be physically present?"
-  and "How to protect against stolen devices taking over?" ask the same thing.
-  Merge them, or have one point to the other. N5 adds rejoining to what they
-  cover.
-- [ ] **E2.** "A blind peer outside snapshotting keeps history longer" is
-  mostly answered by the settled rule for blind peers. What is left belongs
-  with "How to validate snapshots?".
-- [ ] **E3.** "A blind peer that can't read the data can't validate it either"
-  and "What about reading members?" overlap. After C1, little of the second is
-  left. The second also still says "read-only membership" in its body.
-- [ ] **E4.** "How to validate snapshots?" and "How to deal with a malicious
-  actor forcing snapshots across the ensemble?" describe the same attack: a
-  stolen peer empties or encrypts notes and forces a snapshot. The newer one
-  states the root cause better ("a snapshot is destructive of history"). Merge
-  them into one question.
-- [ ] **E5. "What about reading members?" is now answered.** It says "A blind
-  peer can't enforce reading membership, and will carry forged edits". The
-  README's new *Signature* entry makes that untrue: a blind peer cannot read
-  content, but it can read the signature and the membership list, so it can
-  refuse an edit signed by a reading peer. The question can move to *Settled
-  in review*, with that as its answer. Once it does, E3 goes too, since E3 is
-  the overlap between this question and the next.
+Brought up to date on 2026-11-03 against the questions and settled sections as
+they now stand.
+
+- [ ] **E1. Physical presence and stolen-peer takeover are one question.**
+  "Should some actions require a person to be physically present?" and "How to
+  protect against stolen peers taking over?" still ask the same thing. Since
+  they were written, "Membership listings" settled that only a writing UI peer
+  changes membership, and its note names the gap that remains ("A compromise
+  writing peer can still submit a membership record"), linking to the first
+  question. So what is left is a single question: whether membership changes
+  (adding, removing, and readmitting a peer) need something only a person
+  holds. Merge the second into the first, and keep the first's heading, since
+  the "known gap" link already points at it. N20 (who may ask the service to
+  delete an engram) belongs in the same discussion.
+- [ ] **E2. "A blind peer outside snapshotting keeps history longer" is now
+  part of the purging question.** It asks for "a safe mechanism… to allow the
+  blind peer to discard edit history after new snapshots get made", which is
+  exactly what "What about purging history on blind peers?" now asks in more
+  detail. Fold it into that question and remove it. (This replaces the earlier
+  advice to move it under "How to validate snapshots?", which predates the
+  purging question.)
+- [ ] **E3. Superseded by E5.** Its overlap disappears once "What about
+  reading members?" moves to *Settled in review*. It can be removed.
+- [ ] **E4. Three questions now cover forced snapshots, and settled rules
+  answer part of each.** "How to validate snapshots?", "How to deal with a
+  malicious actor forcing snapshots across the ensemble?", and the second half
+  of "What about purging history on blind peers?" (the stolen writing peer
+  sending a blind peer an empty snapshot) all describe a peer forcing
+  destruction through a snapshot. Since they were written, the doc settled:
+  - snapshots must come from a peer that was a writing peer at the time
+    ("Edit histories and other records");
+  - a snapshot is a point "as seen across the ensemble" (README *Snapshot*),
+    so every member must have reached it;
+  - a removed peer can never cause a snapshot after its removal ("Removed
+    peers").
+
+  So a *forged* snapshot is already refused. What remains is narrower, and
+  worth one merged question: a stolen peer that is still a writing member
+  makes ordinary vandalising edits (emptying or encrypting notes), the
+  ensemble then agrees a legitimate snapshot, and the vandalism becomes
+  permanent before any keeper notices and reverts it. That is a question of
+  how long history is kept before a snapshot may discard it, so a keeper has
+  time to catch damage, and of what a blind peer must see to purge safely.
+  Merge the first two into one question on that, and leave the purging
+  question to cover only what a blind peer needs to know.
+- [ ] **E5. "What about reading members?" is answered.** It still says "A
+  blind peer can't enforce reading membership, and will carry forged edits".
+  The README's *Signature* and *Membership list* entries make that untrue: a
+  blind peer cannot read content, but it can check the signature against the
+  membership list, so it refuses an edit signed by a reading peer. Move the
+  question to *Settled in review* with that as its answer.
 - [ ] **E6. "A blind peer that can't read the data can't validate it
-  either" is now half answered.** With signatures, a blind peer validates
-  *who* sent a record (signature and membership), but still not *what* it
-  contains, such as a malformed or oversized edit. Narrowing the question to
-  that second half, and pointing it at "How to define a harmful edit?", keeps
-  it from implying blind peers check nothing.
+  either" is half answered.** With signatures, a blind peer validates *who*
+  sent a record, but still not *what* it contains, such as a malformed or
+  oversized edit. The settled rule "Peers must defend against pathological
+  edit history" already says a blind peer "cannot provide defense for the
+  other peers". Narrow the question to that content half, or close it by
+  pointing at that settled rule and at "How to define a harmful edit?".
+- [ ] **E7. Harmful edits and size limits are two halves of one rule.**
+  "How to define a harmful edit?" and "How to define useful file size
+  limits, record size limits, etc?" both require that the limit be "applied
+  to *all* peers" and be "a constant across all peers", for the same reason
+  (anything else diverges). They are not duplicates: one is about edits that
+  are expensive to apply, the other about records and files that are too big
+  or too many. A sentence in each pointing at the other keeps whoever answers
+  them from setting two inconsistent limits.
 
 ### Housekeeping
 
-- [ ] **F1.** The status line still says "nothing is decided yet".
-- [ ] **F2.** "This rule is almost absolute": name the exception or drop
-  "almost".
-- [ ] **F4.** Typos: "terabyts", "keepers's", and "Explicitly In Scope" (should
-  be "in scope").
-- [ ] **F5.** The scoping decisions [Who shares an
-  engram?](#who-shares-an-engram), [Is there a server?](#is-there-a-server),
-  [Is there a service that can handle multiple keepers'
-  engrams?](#is-there-a-service-that-can-handle-multiple-keepers-engrams), and
-  [Where does sync reach?](#where-does-sync-reach) give answers but no
-  reasoning; *Settled in review* promises the why.
-- [ ] **F6.** "What sync does" ("exchanges the edit history") and the "It
-  remembers what was deleted" bullet still say history is kept indefinitely.
-  The glossary's *Edit history* entry gives the fix: deleted text stays until
-  the next snapshot.
-- [ ] **F11.** Wording in *Settled in review*: "a keeper with the correct
-  permissions is always the membership updated" (perhaps "is always the one
-  who updates the membership"), and "It only prevents making this edits"
-  ("these edits"). The heading "Membership Listings" could match the glossary
-  term, **membership list**.
+Brought up to date on 2026-11-03. Line numbers are as of that date, and the
+quoted text is the reliable way to find each spot.
+
+- [ ] **F1. The status line is out of date.** `:3` still says "what
+  BrainFrame does and why it is worth protecting are written; nothing is
+  decided yet". Since then, all six scoping decisions are answered and
+  *Settled in review* holds a dozen decisions. Something like "draft — scope
+  and the settled decisions are written; the tables (assets, adversaries,
+  threats, goals) and the open questions remain" says where the doc stands.
+- [ ] **F2.** `:796`, "Peers must defend against pathological edit history":
+  "This rule is almost absolute". Name the exception, or drop "almost".
+- [ ] **F4. Two typos left.** "terabyts" (`:290`), and "Explicitly In Scope"
+  (`:190`, should be "in scope"). "keepers's" is fixed.
+- [ ] **F5. Scoping decisions still give answers without reasons.** [Who
+  shares an engram?](#who-shares-an-engram), [Is there a
+  server?](#is-there-a-server), [Is there a service that can handle multiple
+  keepers' engrams?](#is-there-a-service-that-can-handle-multiple-keepers-engrams),
+  and [Where does sync reach?](#where-does-sync-reach) each state a decision
+  but not why; *Settled in review* promises the reasoning so decisions are not
+  argued again. Much of it now exists elsewhere in the doc and only needs a
+  sentence each. For example, "Is there a server?" follows from the blind
+  peer and "Who is out of scope?" (a server that is just another peer, and
+  cannot read, is what makes the service safe to offer).
+- [ ] **F6. One sentence still says deleted text stays forever.** `:117`, "It
+  remembers what was deleted": "Text a person deleted… is still in that
+  history". Since the README's *Edit history* entry, history runs only back to
+  the last snapshot, so deleted text stays until the next snapshot discards
+  it. ("What sync does", "exchanges the edit history", at `:92` is accurate
+  as it is; the earlier version of this entry listed it too.)
+- [ ] **F11. Two wording points left.** `:686`, under "Removed peers": "It
+  only prevents making this edits" ("these edits"). And the heading at `:523`
+  is "Membership listings", while the glossary's term is **membership list**;
+  "Membership list" would match. ("Membership updater" is fixed.)
+- [ ] **F12. "Edits must form a DAG" says "the previous edit" again.** `:744`:
+  "a signed and hashed link back to the previous edit in the DAG". An edit in
+  a DAG can build on several edits at once, and an earlier version of this
+  sentence said "the parent edits". "To each edit it builds on" is the exact
+  form.
+- [ ] **F13. "Key management" ends on an attack with no pointer.** `:790`:
+  "This specific attack area must be mitigated". The open questions "What
+  about metadata on blind peers?" and "What about history attacks against
+  blind peers?" now cover it; linking to them says where the mitigation is
+  being worked out.

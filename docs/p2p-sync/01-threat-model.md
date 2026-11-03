@@ -26,14 +26,14 @@ themselves. This allows people to retain not just their knowledge, but also
 where they learned it, thus helping them find the connections they've lost over
 time.
 
-Something unique about BrainFrame: The data the user maintains should be usable
-in 50 years. All the files should still be visible, and readable. The internal
-data (the sqlite databases, the metadata, the CRDT layers) may or may not be
-usable within years, but the user's data should still be perfectly usable. This
-means limiting support to file formats that will survive for that long. Without
-any other information, the supported formats are chosen based on how long they
-have already survived. If podcasts and video formats stabilize, then BrainFrame
-will likely need to support them in future as well.
+Something unique about BrainFrame: The data the keeper maintains should be
+usable in 50 years. All the files should still be visible, and readable. The
+internal data (the sqlite databases, the metadata, the CRDT layers) may or may
+not be usable within years, but the keeper's data should still be perfectly
+usable. This means limiting support to file formats that will survive for that
+long. Without any other information, the supported formats are chosen based on
+how long they have already survived. If podcasts and video formats stabilize,
+then BrainFrame will likely need to support them in future as well.
 
 ### What BrainFrame Is
 
@@ -55,12 +55,12 @@ Raspberry Pi Zero 2W and an e-Ink display.
 On platforms that can support it, pen and handwriting support will be provided.
 This is likely to be restricted to Android tablets, iPads, and the e-Ink based
 platform. These annotations will also need to be part of the CRDT layer, and
-properly synced to multiple devices.
+properly synced to multiple peers.
 
 The application will provide peer to peer synchronization over the local
 network, while also providing the ability for a headless peer to live outside
 the local network. This functionality is the basis for keeping one engram in
-sync across all of the devices participating in the engram.
+sync across all of the peers in the ensemble.
 
 The collection of files that are maintained and visible inside of BrainFrame are
 called an engram. The primary file type is Markdown, and editing support for
@@ -71,19 +71,19 @@ highlight, and annotation support, while only Markdown will have full edit
 support.
 
 BrainFrame also maintains a private folder inside the engram, named
-`.brainframe`. This folder holds the data about the peers participating in this
-engram, as well as engram level metadata. As it is part of the engram, it will
-travel with the engram wherever the rest of the files go.
+`.brainframe`. This folder holds the data about the peers in this ensemble, as
+well as engram level metadata. As it is part of the engram, it will travel with
+the engram wherever the rest of the files go.
 
 Finally, there is a database that lives outside of the engram that contains the
 information for the conflict-free replicated data types that enable the merge
-across devices to be automatic.
+across peers to be automatic.
 
 ### What sync does
 
-Sync keeps one engram the same on every device that holds it. An edit made on
-one device reaches the others, and edits made on two devices at the same time
-are merged rather than one overwriting the other.
+Sync keeps one engram the same on every peer that holds it. An edit made on one
+peer reaches the others, and edits made on two peers at the same time are merged
+rather than one overwriting the other.
 
 BrainFrame does not have sync yet. Today, a person who wants an engram on two
 devices puts the folder in a file-sync tool of their own (iCloud Drive,
@@ -91,20 +91,20 @@ Dropbox, Syncthing, git), and BrainFrame notices the files that change. Sync
 built into BrainFrame replaces that tool for the people who want it, and it
 exchanges the edit history, which a file-sync tool cannot do.
 
-To do that, sync has to move between devices:
+To do that, sync has to move between peers:
 
 - the **notes** themselves, as CRDT operations;
 - the **documents** a person reads, as files;
 - their **markup**: highlights, annotations, and handwriting;
 - the **structure** of the engram: which notes exist, their paths, and what
   links to what;
-- the **identity map**: the id of each note, and the name of each device.
+- the **identity map**: the id of each note, and the name of each peer.
+- the **public key**: the public key of each peer in the engram
 
 ### Why it is worth protecting
 
-A second brain is a record of how one person thinks. That makes it worth
-more to an attacker, and its loss worse for its owner, than most collections
-of files:
+A second brain is a record of how one person thinks. That makes it worth more to
+an attacker, and its loss worse for its keeper, than most collections of files:
 
 - **It is personal by design.** People write in it what they write nowhere
   else: journals, health, money, relationships, half-formed ideas, work they
@@ -113,16 +113,16 @@ of files:
   and the folder names map what a person cares about and how the parts of
   their life connect. Someone who reads none of the notes, but sees only
   their titles and links, still learns a great deal.
-- **It remembers what was deleted.** The edit history is kept so that edits
-  can be merged. Text a person deleted, because they regretted writing it,
-  is still in that history, and sync carries the history to every device.
+- **It remembers what was deleted.** The edit history is kept so that edits can
+  be merged. Text a person deleted, because they regretted writing it, is still
+  in that history, and sync carries the history to every peer.
 - **What someone reads, and what they mark, is revealing too.** The
   documents in an engram, and the passages highlighted in them, say what a
   person is studying, worried about, or planning.
-- **Its owner relies on it as memory.** A note that was silently changed is
+- **Its keeper relies on it as memory.** A note that was silently changed is
   worse than one that was lost, because the person trusts it and acts on it.
 - **Sync spreads mistakes.** Without sync, a corrupted or deleted note is
-  lost on one device. With sync, it can be lost on every device at once,
+  lost on one peer. With sync, it can be lost on every peer at once,
   including the one that would have been the backup. Sync therefore has to
   protect against damage as well as against reading.
 
@@ -132,13 +132,13 @@ These have to be settled first. Every later section depends on the answers.
 
 #### Who shares an engram?
 
-An engram starts its existence on a single machine for a single user. Over its
+An engram starts its existence on a single machine for a single keeper. Over its
 lifetime, it is expected to grow to be shared on multiple devices owned by a
-single user. The ultimate expansion is for the user to allow other users (and
-their devices) to join the engram. The initial scope is small, but the ultimate
-scope is to allow the user to share with others. BrainFrame does not guarantee
-the ability to remove the engrams from devices, only to stop sharing new edits
-with specific peers.
+single keeper. The ultimate expansion is for the keeper to allow other keepers
+(and their peers) to join the engram. The initial scope is small, but the
+ultimate scope is to allow the keeper to share with others. BrainFrame does not
+guarantee the ability to remove the engrams from devices, only to stop sharing
+new edits with specific peers.
 
 #### Is there a server?
 
@@ -160,11 +160,10 @@ that peer.
 
 #### What happens when a device is lost or stolen?
 
-The device can be removed from the list of peers that participate in the engram.
-This does not remove the copy of the engram from that device. It only prevents
-getting new history onto the device. Removing existing history and notes would
-create the risk of losing all of a user's notes, and that is an unacceptable
-risk.
+The peer can be removed from the membership list of the ensemble. This does not
+remove the copy of the engram from that device. It only prevents getting new
+history onto the peer. Removing existing history and notes would create the risk
+of losing all of a keeper's notes, and that is an unacceptable risk.
 
 #### Who is out of scope?
 
@@ -183,28 +182,28 @@ risk.
   attackers, for decades. Potential attackers can gain access by gaining access
   to the underlying infrastructure, and the defense must be robust enough to
   prevent those attackers from learning about the documents being stored on
-  behalf of the user. Some data will still be exposed, including the membership
-  list, number of devices, their peerIDs, potentially their IP addresses,
-  arrival times and sizes of edits, and how they're ordered relative to each
-  other and any snapshots. Where possible, we need to reduce the risk of data
-  exposure.
+  behalf of the keeper. Some data will still be exposed, including the
+  membership list, number of peers, their peerIDs, potentially their IP
+  addresses, arrival times and sizes of edits, and how they're ordered relative
+  to each other and any snapshots. Where possible, we need to reduce the risk of
+  data exposure.
 - Explicitly In Scope: Using a stolen device to manipulate an engram before the
-  proper owner can remove the stolen device from that engram. This has a race
-  condition, and the race exists *unless* membership changes are gated:
+  proper keeper can remove the peer on the stolen device from that engram. This
+  has a race condition, and the race exists *unless* membership changes are
+  gated:
   - Attacker steals a device
-  - Before the owner of the device realizes the theft has occurred, the attacker
-    removes all other devices from the engram.
-  - When this happens, the proper owner is locked out of the engram. On a
+  - Before the keeper of the device realizes the theft has occurred, the
+    attacker removes all other peers from the engram.
+  - When this happens, the proper keeper is locked out of the engram. On a
     self-hosted headless peer (regardless of type: reading, writing, or blind),
-    the owner can delete the peer's data from disk and create a new headless
+    the keeper can delete the peer's data from disk and create a new headless
     peer and engram set.
     - On a self-hosted blind peer, the plaintext of the keeper's files was never
-      present, so deleting and recreating loses nothing from the keeper's
-      devices.
+      present, so deleting and recreating loses nothing from the keeper's peers.
     - On the service, tools must exist to allow administrators to delete an
-      entire engram so the correct owner can recreate it.
+      entire engram so the correct keeper can recreate it.
     - Additional side effect: Service administrators/operators are now an attack
-      vector, and could cause an engram owner to be forced to recreate their
+      vector, and could cause an engram keeper to be forced to recreate their
       engram on the service. The attack models must account for this.
 
 ### Scope
@@ -213,7 +212,7 @@ What this threat model covers, and what it leaves to other documents.
 
 ### Data-flow diagram
 
-A Mermaid diagram of the devices, any server, the data stores, and the
+A Mermaid diagram of the peers, any server, the data stores, and the
 connections between them, with trust boundaries drawn as subgraphs.
 
 ### Assets
@@ -258,9 +257,9 @@ Questions raised during review that are not settled yet.
 
 ### Should some actions require a person to be physically present?
 
-For example: pairing a new device, removing one, or changing who can read an
+For example: pairing a new peer, removing one, or changing who can read an
 engram, authorized by a tap on a hardware key rather than by anything a
-compromised device could do alone. An OpenPGP smart card (such as a YubiKey) is
+compromised peer could do alone. An OpenPGP smart card (such as a YubiKey) is
 one way to do it; FIDO2 is another, with wider support on phones. This is a
 mechanism, so it is chosen in [document 6](06-brainframe-protocol.md). Here the
 question is only whether the threat model asks for the property, and for which
@@ -302,21 +301,21 @@ variations include ransomware scenarios, as well as simply global search and
 replace across the engram. How do we prevent these bad actor edits from
 infecting the entire engram?
 
-### How to protect against stolen devices taking over?
+### How to protect against stolen peers taking over?
 
-We need to have a mechanism to prevent a stolen device from taking over an
-ensemble. Right now, as stated, any writing peer can remove any other device. We
-should provide options to the user to manage this, including the idea of
+We need to have a mechanism to prevent a stolen peer from taking over an
+ensemble. Right now, as stated, any writing peer can remove any other peer. We
+should provide options to the keeper to manage this, including the idea of
 requiring something like a YubiKey or a passkey or a Fido2 key. Additionally,
 removal and rejoining needs to be protected somehow.
 
 ### How to deal with a malicious actor forcing snapshots across the ensemble?
 
-A malicious actor, stealing a peer device, can take over and do a number of
-things to destroy the ensemble. The most obvious is to empty out every note,
-force a snapshot, and propagate that snapshot. Other malicious edits would
-involve encrypting the data, and pushing that encrypted data out as a snapshot.
-The dominant factor here is that a snapshot is destructive of history, and a
+A malicious actor, stealing a peer, can take over and do a number of things to
+destroy the ensemble. The most obvious is to empty out every note, force a
+snapshot, and propagate that snapshot. Other malicious edits would involve
+encrypting the data, and pushing that encrypted data out as a snapshot. The
+dominant factor here is that a snapshot is destructive of history, and a
 malicious actor could easily force that snapshot and propagation. Need to
 determine a method for dealing with those actions.
 
@@ -338,9 +337,9 @@ not a standard "Oops, that sucks" response.
 
 Relevancy is increased in the event of an already trusted peer being
 compromised: a UI peer with writing permission could be compromised and generate
-conflict records that could overwhelm devices with malicious edits.
+conflict records that could overwhelm peers with malicious edits.
 
-Limits on total quantity of records need to be implemented. A compromised device
+Limits on total quantity of records need to be implemented. A compromised peer
 could generate millions of small edits that could bring down the ensemble. A
 single document, for example, could insert the letter `a` 10,000 times (each in
 their own edit), and then delete each of them, and repeat that process
@@ -350,7 +349,7 @@ likely bring down even the most powerful desktops running BrainFrame.
 Transmission of files as a whole must also be guarded. For example, on Linux, a
 symbolic link to /dev/zero would result in a file that has unlimited size. Files
 will need to be strictly regular files (no sockets, no symbolic links, no pipes,
-etc), with their maximum size small enough to be usable on the eInk device, and
+etc), with their maximum size small enough to be usable on the e-Ink device, and
 streamed rather than received whole. The maximum size must work for *all*
 platforms, from the e-Ink device all the way up to the desktop, so the maximum
 size is actually a constant across all peers.
@@ -395,7 +394,7 @@ Related to the history, we need to list the metadata that is needed for blind
 peers to function. A partial list of all metadata includes the following:
 
 - membership list
-- device count
+- peer count
 - peerIDs
 - document IDs
 - links between edits and snapshots
@@ -494,13 +493,13 @@ Decisions made in review, with the reasoning, so they are not argued again.
 
 ### Clocks cannot be trusted
 
-No peer's clock may be used to form the basis of a trust decision. Attackers can
-manipulate their local clock, or submit edits where the hybrid logical clock
+No device's clock may be used to form the basis of a trust decision. Attackers
+can manipulate their local clock, or submit edits where the hybrid logical clock
 references timestamps that were not actually accurate. Most Raspberry Pi devices
 do not have a hardware clock, and can become out of sync with internet clocks
 easily. A desktop or laptop can get time from an untrusted source. Mobile
-devices can have their time be manipulated by the owner manually changing it, or
-even just due to a misconfigured time server.
+devices can have their time be manipulated by the keeper manually changing it,
+or even just due to a misconfigured time server.
 
 Clock times are not reliable, and cannot be used to determine an actual trust
 relationship in any way. This has direct impacts on how to determine if a
@@ -510,7 +509,7 @@ called out here.
 For non-trust based choices, clocks are acceptable.
 
 - CRDTs use Hybrid Logical Clocks. These are susceptible to attacks based on
-  concurrent edits, but the risk here is that one device will always win in a
+  concurrent edits, but the risk here is that one peer will always win in a
   truly conflicting edit. A consequence of this is that a wildly skewed peer
   (decades ahead, for example) drags all other peers forward, effectively
   forcing the entire ensemble to use the new time for the HLC until everything
@@ -528,7 +527,7 @@ remove or add a peer. When it does so, it submits a membership record to the
 ensemble recording it. *Only* the UI peer that actually performs the
 admission/removal submits this record, never the peer being added or removed.
 The intent is that a keeper with the correct permissions is always the
-membership updater, and never a possibly stolen device or malicious actor.
+membership updater, and never a possibly stolen peer or malicious actor.
 
 Note: A compromised writing peer can still submit a membership record. This is a
 [known gap](#should-some-actions-require-a-person-to-be-physically-present).
@@ -590,9 +589,9 @@ these edits is as follows:
 The keeper must be able to tell BrainFrame that a peer is removed from the
 ensemble (lost, stolen, reformatted, whatever the reason), so that it will stop
 tracking the peer, and therefore allow snapshots to occur without the peer. This
-removed peer status must be able to travel to other participants in the engram
-as well, so that other devices (or even users) will stop tracking when that
-notification arrives. Some consequences of this decision:
+removed peer status must be able to travel to the rest of the ensemble as well,
+so that other peers (or even keepers) will stop tracking when that notification
+arrives. Some consequences of this decision:
 
 - A keeper may remove a peer from the ensemble using a UI peer with writing
   permission. This prevents the use of a headless peer to remove another peer.
@@ -618,9 +617,9 @@ notification arrives. Some consequences of this decision:
   - The local edit history on the rejoining peer can experience data loss at
     this stage. The data loss possibility is not merely cosmetic: CRDT
     operations can be rejected by the ensemble, and those rejections can cause
-    the rejoining device to lose some of the rendered content when new edits
+    the rejoining peer to lose some of the rendered content when new edits
     or snapshots come to the rejoining peer. The data loss possibility is real
-    and material to the keeper of the device that is rejoining the ensemble.
+    and material to the keeper of the peer that is rejoining the ensemble.
   - The protections against this are provided via the UI: when a peer rejoins,
     if a conflict would cause data loss, then the following will happen:
     - After the rejoining peer is readmitted to the ensemble, a conflict record
@@ -675,13 +674,13 @@ notification arrives. Some consequences of this decision:
   - If edits are actually rejected by the keeper performing the readmission,
     then the IDs of those edits must travel to other peers in the ensemble. No
     other peer in the ensemble is allowed to accept the new peer until a
-    complete list of rejected edit IDs has been received by that peer. The
-    list can be empty, indicating the rejoining peer did not make any known
-    malicious edits, but the list must be present on the rejoining record. Any
-    edit IDs rejected by this mechanism are permanently retired, and *no* peer
-    is allowed to apply them, ever. Doing this prevents a malicious actor from
-    gaining a device, producing malicious edits, and then rejoining an
-    ensemble (thereby corrupting or even destroying data across the ensemble).
+    complete list of rejected edit IDs has been received by that peer. The list
+    can be empty, indicating the rejoining peer did not make any known malicious
+    edits, but the list must be present on the rejoining record. Any edit IDs
+    rejected by this mechanism are permanently retired, and *no* peer is allowed
+    to apply them, ever. Doing this prevents a malicious actor from gaining a
+    device, producing malicious edits, and then rejoining an ensemble (thereby
+    corrupting or even destroying data across the ensemble).
     - This does *not* prevent a malicious actor from waiting until gaining
       membership to the ensemble and *then* performing the malicious edits, and
       it cannot. It only prevents making this edits *before* rejoining the
@@ -748,13 +747,13 @@ peers.
 
 ### What's encrypted?
 
-The rendered notes are not kept encrypted at rest on keepers's device. The files
-will be kept as plain, unencrypted data outside of the `.brainframe` folder.
-This is the desired state of the system, and allows us to hit our goal of making
-the data usable for the next 50 years. Encryption is only in place where it is
-needed to protect the user's privacy. For example, a service (as defined in the
-[README](README.md#glossary)) keeps every engram's content and edit history
-encrypted.
+The rendered notes are not kept encrypted at rest on the keeper's device. The
+files will be kept as plain, unencrypted data outside of the `.brainframe`
+folder. This is the desired state of the system, and allows us to hit our goal
+of making the data usable for the next 50 years. Encryption is only in place
+where it is needed to protect the keeper's privacy. For example, a service (as
+defined in the [README](README.md#glossary)) keeps every engram's content and
+edit history encrypted.
 
 Data inside of the `.brainframe` folder will not be encrypted, *except* in the
 case of a blind peer. A blind peer, as defined in the
@@ -812,45 +811,47 @@ references survive edits. Remove an item once it is addressed.
 
 ### Decisions still to make
 
+- [ ] **N20. Who may ask the service to delete an engram?** The stolen-device
+  race under [Who is out of scope?](#who-is-out-of-scope) says "tools must
+  exist to allow administrators to delete an entire engram so the correct
+  keeper can recreate it". Before D1 this read "the correct owner", and
+  "owner" implied one person the engram belonged to. The doc has since
+  settled that keepers are equals: any writing keeper can remove another, and
+  either can fork. So there is no owner for a service administrator to
+  recognise. If any keeper may ask for deletion, a hostile keeper can wipe the
+  shared copy on the service; if one designated keeper may, that reintroduces
+  an owner the rest of the design does not have. Decide which, and add the
+  service operator, and anyone who can talk them into acting, to the
+  Adversaries table.
+- [ ] **N21. "Other keepers" before they join.** [Who shares an
+  engram?](#who-shares-an-engram) now says "for the keeper to allow other
+  keepers (and their devices) to join the engram". By the glossary, a keeper
+  is someone who accesses the ensemble, so people are not keepers until they
+  join. "To allow other people to join the engram as keepers" keeps the term
+  exact. Two smaller wording points from the same pass: "other devices (or
+  even keepers) will stop tracking" reads better as "including other keepers'
+  peers", since peers track, not people; and "on behalf of the keeper", for
+  the service, could be plural, since a service holds many keepers' engrams.
+- [ ] **N22. Former members' public keys must be kept.** "What sync does" now
+  lists "the public key of each peer in the engram" among what sync moves, and
+  the README's *Membership list* holds each *current* member's key. Under
+  "Edit histories and other records", a removed peer's edits inside its
+  removal set stay valid, and so do edits from any peer made while it was a
+  member. Checking their signatures needs that peer's public key long after it
+  has left the membership list. Say where former members' keys are kept (for
+  example, carried in the removal record itself), and that sync moves them
+  too.
+- [ ] **N23. Device count and peer count are separate leaks.** The list in
+  "What about metadata on blind peers?" changed "device count" to "peer
+  count". Within one ensemble a blind peer sees peers, but a service hosting
+  several engrams for the same keeper can also tell which peers sit on the
+  same *device*, from shared IP addresses and timing, and so link that
+  keeper's engrams together (linkability, in LINDDUN terms). Keep both items
+  in the list.
+
 ### Glossary (README)
 
-- [ ] **C1. Read-only needs signatures, not just keys.** A reading peer holds
-  the decryption key, so if writing is gated only by the key, a reader can forge
-  edits. If edits carry a writing peer's signature, every peer can check it,
-  blind peers included, without decrypting anything. That changes the open
-  questions "A blind peer that can't read the data can't validate it either"
-  and "What about reading members?". The threat model states the property, for
-  example "an edit not signed by a current writing peer is rejected by every
-  peer"; document 6 picks the mechanism.
-- [ ] **C2.** *Blind peer*: "Since this is otherwise a full peer" contradicts
-  "cannot read". "An otherwise ordinary member" fits.
-- [ ] **C4.** *Engram*: "a folder somewhere in the user's file system" is not
-  true on a blind peer, and "user" should be "keeper".
-- [ ] **C5.** *Snapshot* ("as seen across all peers for the engram") and *Edit
-  history* ("since the last snapshot across all peers"): "all peers" should be
-  "the ensemble".
-
 ### Terminology sweep
-
-- [ ] **D1. user / owner → keeper.** Still in: "What BrainFrame Solves" ("the
-  data the user maintains", "the user's data"); [Who shares an
-  engram?](#who-shares-an-engram) throughout; [What happens when a device is
-  lost or stolen?](#what-happens-when-a-device-is-lost-or-stolen) ("a user's
-  notes"); [Who is out of scope?](#who-is-out-of-scope) ("on behalf of the
-  user", and "owner" throughout the stolen-device race); the open question on
-  stolen devices ("options to the user"); and "Removed Peers" ("or even
-  users", "the user's privacy").
-- [ ] **D2. device → peer** wherever a copy of the engram is meant; keep
-  "device" for hardware. Mainly "What BrainFrame Is", "What sync does", [What
-  happens when a device is lost or
-  stolen?](#what-happens-when-a-device-is-lost-or-stolen), the stolen-device
-  race under [Who is out of scope?](#who-is-out-of-scope), the open questions
-  on hardware keys and stolen devices, and "Removed Peers" ("other devices").
-- [ ] **D4. participants → members, and the membership list.** "Removed Peers"
-  says "travel to other participants in the engram"; [What happens when a
-  device is lost or stolen?](#what-happens-when-a-device-is-lost-or-stolen)
-  says "the list of peers that participate in the engram", which is the
-  **membership list**.
 
 ### Overlapping open questions
 
@@ -869,6 +870,19 @@ references survive edits. Remove an item once it is addressed.
   stolen peer empties or encrypts notes and forces a snapshot. The newer one
   states the root cause better ("a snapshot is destructive of history"). Merge
   them into one question.
+- [ ] **E5. "What about reading members?" is now answered.** It says "A blind
+  peer can't enforce reading membership, and will carry forged edits". The
+  README's new *Signature* entry makes that untrue: a blind peer cannot read
+  content, but it can read the signature and the membership list, so it can
+  refuse an edit signed by a reading peer. The question can move to *Settled
+  in review*, with that as its answer. Once it does, E3 goes too, since E3 is
+  the overlap between this question and the next.
+- [ ] **E6. "A blind peer that can't read the data can't validate it
+  either" is now half answered.** With signatures, a blind peer validates
+  *who* sent a record (signature and membership), but still not *what* it
+  contains, such as a malformed or oversized edit. Narrowing the question to
+  that second half, and pointing it at "How to define a harmful edit?", keeps
+  it from implying blind peers check nothing.
 
 ### Housekeeping
 

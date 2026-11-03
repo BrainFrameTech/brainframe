@@ -137,15 +137,20 @@ uses them the same way.
   instance, correcting the typo "teh" to "the" would be a dependent edit. Merely
   adding text before or after is not a dependent edit.
 - **Edit history**: the history of edits made to a given document since the last
-  snapshot across all peers. It consists of CRDT operations.
-- **Engram**: a collection of files being maintained by BrainFrame. This will
-  correspond with the top level of a folder somewhere in the user's file system.
+  snapshot across the ensemble. It consists of CRDT operations.
+- **Engram**: a keeper's collection of notes and documents, along with
+  BrainFrame's internal data about them (edit history, snapshots, and metadata).
+  On a reading or writing peer, this corresponds to a folder on the keeper's
+  file system. A blind peer holds an encrypted copy (along with unencrypted
+  metadata) which it can pass along and store, but never turn into the original
+  notes and documents.
 - **Ensemble**: the name for the group of peers participating in one engram.
   All the peers that read or replicate this engram, together, make up one
   ensemble. Removed peers are not considered part of the ensemble.
 - **Keeper**: a single human who accesses the ensemble using one or more peers.
 - **Membership list**: the list of peers that are currently participating in an
-  ensemble, along with what kind each member is: reading, writing, or blind.
+  ensemble, along with each member's public key and what kind each member is:
+  reading, writing, or blind.
 - **Peer**: one copy of one engram, kept by a program that speaks the BrainFrame
   sync protocol, known to other peers by its own peerID. Every peer stores the
   edit history at least as far back as the most recent snapshot, and exchanges
@@ -155,9 +160,9 @@ uses them the same way.
   types of operations it can perform: that is left to the definitions of the
   types of peers.
   - **Blind peer**: a peer that receives, stores, and passes on history it
-    cannot read. It cannot check what it carries. Since this is otherwise a full
-    peer, it can also cause problems with snapshots. Peers performing snapshots
-    must take blind peers into account accordingly.
+    cannot read. It cannot check what it carries. Since this is otherwise an
+    ordinary peer, it can also cause problems with snapshots. Peers performing
+    snapshots must take blind peers into account accordingly.
   - **Detached peer**: a peer that is unable to communicate with at least some
     other members of the ensemble (directly or through other peers). Possible
     reasons include airplane mode, dead batteries, missing Wi-Fi password, some
@@ -172,9 +177,10 @@ uses them the same way.
     writing peer, or a blind peer.
   - **Reading peer** or **writing peer**: a peer that holds the decryption keys,
     so it can check the history and turn the content back into plain files. A
-    reading peer is unable to create edits to send back to the ensemble, while a
-    writing peer can make new edits and send updates to the rest of the
-    ensemble.
+    reading peer is unable to create edits to send back to the ensemble (its
+    edits are refused based on its public key/signature and membership list
+    status), while a writing peer can make new edits and send updates to the
+    rest of the ensemble.
   - **Removed peer**: a peer that has been removed from membership in the
     ensemble. It keeps its copy and everything it has already received, but does
     not receive anything new.
@@ -184,6 +190,10 @@ uses them the same way.
     headless peer can be reading, writing, or blind.
 - **Service**: an application that runs many blind peers for multiple keepers'
   engrams. Every peer it runs is headless.
+- **Signature**: Every peer provides a public key to the ensemble, and signs
+  every operation it performs. Using that signature, along with the membership
+  list, allows each receiving peer to determine the validity of the operations
+  being performed by other peers *before* accepting those operations.
 - **Snapshot**: the complete state of a given document as of a given point in
-  time as seen across all peers for the engram. Saved so that entries before
-  this point in time can be safely discarded locally on the current peer.
+  history as seen across the ensemble. Saved so that entries before this point
+  in history can be safely discarded locally on the current peer.

@@ -133,11 +133,11 @@ These have to be settled first. Every later section depends on the answers.
 
 An engram starts its existence on a single machine for a single keeper. Over its
 lifetime, it is expected to grow to be shared on multiple devices owned by a
-single keeper. The ultimate expansion is for the keeper to allow other keepers
-(and their peers) to join the engram. The initial scope is small, but the
-ultimate scope is to allow the keeper to share with others. BrainFrame does not
-guarantee the ability to remove the engrams from devices, only to stop sharing
-new edits with specific peers.
+single keeper. The ultimate expansion is for the keeper to allow other people
+(and their devices) to join the engram as keepers and peers. The initial scope
+is small, but the ultimate scope is to allow the keeper to share with others.
+BrainFrame does not guarantee the ability to remove the engrams from devices,
+only to stop sharing new edits with specific peers.
 
 #### Is there a server?
 
@@ -149,6 +149,18 @@ be a headless peer, but it is not a server in the traditional sense of the word.
 
 Eventually, yes. This is as close to an actual server as BrainFrame will ever
 provide. This is also likely to be a paid service when it happens.
+
+Notes about the service:
+
+Ownership of an engram in the service is defined by an account identifier, such
+as a GMail account or billing information. Any actions to be taken by an
+administrator of the service must confirm ownership of that engram before
+proceeding.
+
+Ownership of an engram *outside* of the service is not a recognizable concept.
+Every keeper effectively owns the copy of the engram stored on their devices. No
+keeper is allowed to reach into another keeper's devices and remove the engram
+from the other keeper.
 
 #### Where does sync reach?
 
@@ -181,7 +193,7 @@ of losing all of a keeper's notes, and that is an unacceptable risk.
   attackers, for decades. Potential attackers can gain access by gaining access
   to the underlying infrastructure, and the defense must be robust enough to
   prevent those attackers from learning about the documents being stored on
-  behalf of the keeper. Some data will still be exposed, including the
+  behalf of the keeper(s). Some data will still be exposed, including the
   membership list, number of peers, their peerIDs, potentially their IP
   addresses, arrival times and sizes of edits, and how they're ordered relative
   to each other and any snapshots. Where possible, we need to reduce the risk of
@@ -200,7 +212,7 @@ of losing all of a keeper's notes, and that is an unacceptable risk.
     - On a self-hosted blind peer, the plaintext of the keeper's files was never
       present, so deleting and recreating loses nothing from the keeper's peers.
     - On the service, tools must exist to allow administrators to delete an
-      entire engram so the correct keeper can recreate it.
+      entire engram so the account owner can recreate it.
     - Additional side effect: Service administrators/operators are now an attack
       vector, and could cause an engram keeper to be forced to recreate their
       engram on the service. The attack models must account for this.
@@ -566,6 +578,15 @@ Note: A compromised writing peer can still submit a membership record. This is a
 Membership listings must be verified as coming from writing peers that were
 present in the ensemble at the time of the membership listing or update.
 
+Membership listings are the exception to the snapshot rules. They must be kept
+indefinitely, as they determine what edits are valid, when they are valid, and
+which peers are allowed to make the edits. As such, it is important to keep the
+membership records as small as possible, while still keeping them complete. This
+is the one record we cannot afford to lose from BrainFrame's internal data.
+Because we cannot keep thousands (or more) edit IDs forever without consuming
+unreasonable amounts of storage space, we should store the public keys and
+associated peer IDs in a separate table.
+
 ### Read Only Membership
 
 The membership list, coupled with key distribution and signatures, covers the
@@ -620,6 +641,10 @@ that check. Other records are accepted from any current member. The two
 boundaries for a given peer are when it joined the ensemble, and when it left
 the ensemble.
 
+Note that the public key of a peer must remain with that peer's membership
+records, both admission and removal. It is required to validate incoming records
+from that peer.
+
 Edits from before the join are identical to the edits under [Removed
 peers](#removed-peers) discussion of what happens to edits while a peer is not a
 member of the ensemble, including raising conflict records.
@@ -632,20 +657,38 @@ these edits is as follows:
 
 - The removed peer's membership removal record is captured by the peer
   performing the removal.
-- The edit history of the removed peer is captured as a set of edit ids.
-- The set of edit IDs is signed by the peer which performed the removal, *not*
-  by the removed peer.
+- The edit history (and the content hashes of those edits) of the removed peer
+  is captured as a set of edit ids.
+- The set of edit IDs and content hashes is *not* signed by the removed peer.
   - When multiple peers issue a peer removal concurrently, the list of edit IDs
-    that they generate may be disjoint. Under such circumstances, their list of
-    edit IDs is to be brought together as a union, and any edit ID in *either*
-    set is considered valid.
+    and content hashes that they generate may be disjoint. Under such
+    circumstances, their list of edit IDs and content hashes is to be brought
+    together as a union, and any edit ID + content hash pair in *either* set is
+    considered valid.
+    - Exception: If a duplicate ID arrives with a *different* hash, then all
+      edits with that ID are quarantined until a keeper can resolve which one is
+      valid.
+- The removal record gets a unique ID and the full set of edit IDs and content
+  hashes, and generates a set of document removal records for the ensemble,
+  with each record having the following entries:
+  - The document ID
+  - The set of edit IDs and content hashes attached to that document ID
+  - The peer ID of the removed peer
+  - The peer ID of the removing peer
+  - The unique ID of the membership removal record
+  - A signature from the removing peer that signs the contents of the whole
+    record.
+- The removal record also gets a signed set of the hashes of the document
+  removal records. The links run one way by ID and the other by hash, since two
+  records cannot each contain the other's hash.
 - That set of edit IDs is distributed to the ensemble, along with the membership
   removal record.
 - All members of the ensemble reject new incoming connections from the removed
   peer from the moment their membership list is updated, preventing new edits
   from coming into the ensemble at all.
 - Any edits received from the removed peer that are not in the set of edit IDs
-  are handled differently depending on the peer type:
+  (including the content hashes for those edit IDs) are handled differently
+  depending on the peer type:
   - UI peer, with writing permission: quarantined locally, not propagated.
     Dependent edits are also quarantined, even when a different member made
     those dependent edits. They are presented to a keeper to accept or reject.
@@ -656,6 +699,10 @@ these edits is as follows:
   - This provides an option to preserve the data, without providing a way to
     damage the ensemble. Only specific detached UI peers can be harmed, and that
     risk is preferable to the risk of losing valid data.
+- After a new snapshot has been generated for a given document, the set of edit
+  IDs + content hashes from before that snapshot can be dropped. Those edit IDs
+  are now rejected by the earlier rules causing such edits to be rejected as
+  invalid, since they have no valid place in the DAG.
 
 ### Removed peers
 
@@ -663,8 +710,8 @@ The keeper must be able to tell BrainFrame that a peer is removed from the
 ensemble (lost, stolen, reformatted, whatever the reason), so that it will stop
 tracking the peer, and therefore allow snapshots to occur without the peer. This
 removed peer status must be able to travel to the rest of the ensemble as well,
-so that other peers (or even keepers) will stop tracking when that notification
-arrives. Some consequences of this decision:
+so that other peers (including other keepers) will stop tracking when that
+notification arrives. Some consequences of this decision:
 
 - A keeper may remove a peer from the ensemble using a UI peer with writing
   permission. This prevents the use of a headless peer to remove another peer.
@@ -774,6 +821,12 @@ arrives. Some consequences of this decision:
       has already been received, then do not make a duplicate of it. A peer that
       receives such a conflict record and can act on it (eg: a UI peer), must
       assist the keeper in taking actions to resolve the record.
+    - Each edit must include a hash of its content, with the hash being part of
+      the content that is verified by the signature on the edit. A removed peer
+      submitting an edit record to the ensemble that is a duplicate id but with
+      a different hash gets the record rejected outright: the record is never
+      stored, and never forwarded to the ensemble. Otherwise, the normal
+      duplicate edit rule applies from above.
     - It is possible, especially for a malicious actor, to create an edit
       operation that would appear to come before a snapshot, and submit that
       record to the ensemble *after* a snapshot is taken. If a peer receives
@@ -929,53 +982,8 @@ a stolen writing peer against Tampering and Elevation of privilege.
 
 ### Contradictions
 
-- [ ] **A29. The duplicate-edit-ID rule lets a removed peer flood the
-  ensemble.** Under "Removed peers", a duplicate edit ID with different
-  content makes the receiver "generate a conflict record to the ensemble".
-  But "Edit histories and other records" settled that a removed peer's edits
-  must never reach the ensemble, not even as conflict records. The two meet
-  here: the removal set lists edit *IDs*, and a removed peer still holds its
-  own private key, so it can sign *new content under an ID that is in the
-  set*. The signature is valid and the ID is in the set, so the edit passes
-  the membership check and hits the duplicate-ID rule, which sends a conflict
-  record to every keeper. Two changes close it: the removal set commits to
-  each edit's ID *and* a hash of its content, so a changed edit is simply
-  outside the set (and quarantined like any other); and the duplicate-ID rule
-  applies only to edits that have already passed the membership and set
-  checks.
-
 ### Decisions still to make
 
-- [ ] **N20. Who may ask the service to delete an engram?** The stolen-device
-  race under [Who is out of scope?](#who-is-out-of-scope) says "tools must
-  exist to allow administrators to delete an entire engram so the correct
-  keeper can recreate it". Before D1 this read "the correct owner", and
-  "owner" implied one person the engram belonged to. The doc has since
-  settled that keepers are equals: any writing keeper can remove another, and
-  either can fork. So there is no owner for a service administrator to
-  recognise. If any keeper may ask for deletion, a hostile keeper can wipe the
-  shared copy on the service; if one designated keeper may, that reintroduces
-  an owner the rest of the design does not have. Decide which, and add the
-  service operator, and anyone who can talk them into acting, to the
-  Adversaries table.
-- [ ] **N21. "Other keepers" before they join.** [Who shares an
-  engram?](#who-shares-an-engram) now says "for the keeper to allow other
-  keepers (and their devices) to join the engram". By the glossary, a keeper
-  is someone who accesses the ensemble, so people are not keepers until they
-  join. "To allow other people to join the engram as keepers" keeps the term
-  exact. Two smaller wording points from the same pass: "other devices (or
-  even keepers) will stop tracking" reads better as "including other keepers'
-  peers", since peers track, not people; and "on behalf of the keeper", for
-  the service, could be plural, since a service holds many keepers' engrams.
-- [ ] **N22. Former members' public keys must be kept.** "What sync does" now
-  lists "the public key of each peer in the engram" among what sync moves, and
-  the README's *Membership list* holds each *current* member's key. Under
-  "Edit histories and other records", a removed peer's edits inside its
-  removal set stay valid, and so do edits from any peer made while it was a
-  member. Checking their signatures needs that peer's public key long after it
-  has left the membership list. Say where former members' keys are kept (for
-  example, carried in the removal record itself), and that sync moves them
-  too.
 - [ ] **N23. Device count and peer count are separate leaks.** The list in
   "What about metadata on blind peers?" changed "device count" to "peer
   count". Within one ensemble a blind peer sees peers, but a service hosting
@@ -1067,6 +1075,21 @@ a stolen writing peer against Tampering and Elevation of privilege.
   conflict to resolve inside one. Joining means naming that hash, which pairing
   has to convey anyway. What remains is the fork case: two ensembles for the
   same folder, which is the outcome "Removed peers" already accepts.
+- [ ] **N32. The service account links a real identity to an engram.** [Who is
+  out of scope?](#who-is-out-of-scope) now defines ownership on the service by
+  "an account identifier, such as a GMail account or billing information". Two
+  consequences to record:
+  - **It is metadata, and the most identifying item yet.** The next bullet sets
+    the goal of "minimal knowledge" for blind peers, and "What about metadata
+    on blind peers?" does not list account details. A service that knows whose
+    account holds an engram can tie every other item on that list (timing,
+    sizes, IP addresses) to a named person. Add it to the list, with the
+    mitigation question: how little identity can the service hold, and can
+    billing be separated from the engrams it pays for?
+  - **The account is now an attack path.** Whoever takes over that account, or
+    talks support into believing they own it, can have the engram deleted from
+    the service. The keepers' local copies survive, so the harm is limited,
+    but it belongs in the Adversaries table with the service operator.
 
 ### Overlapping open questions
 
@@ -1167,3 +1190,12 @@ quoted text is the reliable way to find each spot.
   residual risk.
 - [ ] **F18.** Two typos in "A blind peer can validate membership" (`:607–608`):
   "a harmful actions" and "currnt".
+- [ ] **F22. The two links cannot both be hashes.** The document edit records
+  carry "a link to the membership removal record", and the removal record gets
+  "a signed set of links to the document removal records". If both are hashes,
+  each record's hash depends on the other, and neither can be computed. N36
+  suggested a hash in both directions; that was wrong. One direction has to be
+  an identifier: give the removal a unique ID first, have each document record
+  name that ID, and have the removal record list the document records' hashes.
+  The text also calls them both "document edit records" and "document removal
+  records"; one name is enough.

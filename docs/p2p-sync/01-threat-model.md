@@ -1,7 +1,6 @@
 # Sync threat model
 
-- **Status:** draft — what BrainFrame does and why it is worth protecting
-  are written; nothing is decided yet
+- **Status:** draft
 - **Author:** Michael J. Pedersen, assisted by Claude
 - **Date:** 2026-10-19
 - **Part of:** the [P2P sync sequence](README.md), document 1 of 7
@@ -187,7 +186,7 @@ of losing all of a keeper's notes, and that is an unacceptable risk.
   addresses, arrival times and sizes of edits, and how they're ordered relative
   to each other and any snapshots. Where possible, we need to reduce the risk of
   data exposure.
-- Explicitly In Scope: Using a stolen device to manipulate an engram before the
+- Explicitly in scope: Using a stolen device to manipulate an engram before the
   proper keeper can remove the peer on the stolen device from that engram. This
   has a race condition, and the race exists *unless* membership changes are
   gated:
@@ -336,7 +335,7 @@ to the system running out of memory or taking too long to consume the edit and
 produce a meaningful result. Further research is needed to define the harmful
 edit cases, and then provide the actual defense against them. Note that the same
 definition of harmful edit must be applied to *all* peers, whether they are
-running on a server with multiple terabyts of RAM or a single Raspberry Pi Zero
+running on a server with multiple terabytes of RAM or a single Raspberry Pi Zero
 2W with 512MB of RAM. If the rules are allowed to differ based on the specs of
 the machine running the rules, then divergent CRDT trees become possible, and
 that is an unacceptable state.
@@ -867,7 +866,7 @@ the metadata. This specific attack area must be mitigated.
 
 Any individual peer must have a way to reject edits that are harmful to peers
 that are in the ensemble. See the open questions for this one: "How to define a
-harmful edit". This rule is almost absolute. To clarify it:
+harmful edit". To clarify it:
 
 - Any reading or writing peer that will render the output of the edit history
   must reject pathological edits.
@@ -1032,7 +1031,10 @@ a stolen writing peer against Tampering and Elevation of privilege.
   compromised admitting peer could give it a false snapshot or a false list.
   This is trust on first use, usually settled at pairing (a code or QR
   compared by a person, as with Signal's safety numbers). State what a new
-  peer must verify at join, and what it must take on trust.
+  peer must verify at join, and what it must take on trust. "Read Only
+  Membership" now answers part of this: a new peer can walk the membership
+  chain back to the bootstrapping record, so what is left to trust is that
+  record (see E8).
 - [ ] **N28. Changing a peer's kind is not covered.** "Membership listings"
   covers adding and removing a peer, but not changing what kind a member is:
   promoting a reading peer to writing, or demoting a writing peer to reading.
@@ -1065,10 +1067,6 @@ a stolen writing peer against Tampering and Elevation of privilege.
   conflict to resolve inside one. Joining means naming that hash, which pairing
   has to convey anyway. What remains is the fork case: two ensembles for the
   same folder, which is the outcome "Removed peers" already accepts.
-
-### Glossary (README)
-
-### Terminology sweep
 
 ### Overlapping open questions
 
@@ -1111,19 +1109,9 @@ Brought up to date on 2026-11-04, after E1, E2, E3, and E5 were closed.
 
 ### Housekeeping
 
-Brought up to date on 2026-11-03. Line numbers are as of that date, and the
+Brought up to date on 2026-11-04. Line numbers are as of that date, and the
 quoted text is the reliable way to find each spot.
 
-- [ ] **F1. The status line is out of date.** `:3` still says "what
-  BrainFrame does and why it is worth protecting are written; nothing is
-  decided yet". Since then, all six scoping decisions are answered and
-  *Settled in review* holds a dozen decisions. Something like "draft — scope
-  and the settled decisions are written; the tables (assets, adversaries,
-  threats, goals) and the open questions remain" says where the doc stands.
-- [ ] **F2.** `:796`, "Peers must defend against pathological edit history":
-  "This rule is almost absolute". Name the exception, or drop "almost".
-- [ ] **F4. Two typos left.** "terabyts" (`:290`), and "Explicitly In Scope"
-  (`:190`, should be "in scope"). "keepers's" is fixed.
 - [ ] **F5. Scoping decisions still give answers without reasons.** [Who
   shares an engram?](#who-shares-an-engram), [Is there a
   server?](#is-there-a-server), [Is there a service that can handle multiple
@@ -1134,33 +1122,33 @@ quoted text is the reliable way to find each spot.
   sentence each. For example, "Is there a server?" follows from the blind
   peer and "Who is out of scope?" (a server that is just another peer, and
   cannot read, is what makes the service safe to offer).
-- [ ] **F6. One sentence still says deleted text stays forever.** `:117`, "It
+- [ ] **F6. One sentence still says deleted text stays forever.** `:116`, "It
   remembers what was deleted": "Text a person deleted… is still in that
   history". Since the README's *Edit history* entry, history runs only back to
   the last snapshot, so deleted text stays until the next snapshot discards
-  it. ("What sync does", "exchanges the edit history", at `:92` is accurate
+  it. ("What sync does", "exchanges the edit history", at `:91` is accurate
   as it is; the earlier version of this entry listed it too.)
-- [ ] **F11. Two wording points left.** `:686`, under "Removed peers": "It
-  only prevents making this edits" ("these edits"). And the heading at `:523`
+- [ ] **F11. Two wording points left.** `:759`, under "Removed peers": "It
+  only prevents making this edits" ("these edits"). And the heading at `:554`
   is "Membership listings", while the glossary's term is **membership list**;
   "Membership list" would match. ("Membership updater" is fixed.)
-- [ ] **F12. "Edits must form a DAG" says "the previous edit" again.** `:744`:
+- [ ] **F12. "Edits must form a DAG" says "the previous edit" again.** `:817`:
   "a signed and hashed link back to the previous edit in the DAG". An edit in
   a DAG can build on several edits at once, and an earlier version of this
   sentence said "the parent edits". "To each edit it builds on" is the exact
   form.
-- [ ] **F13. "Key management" ends on an attack with no pointer.** `:790`:
+- [ ] **F13. "Key management" ends on an attack with no pointer.** `:863`:
   "This specific attack area must be mitigated". The open questions "What
   about metadata on blind peers?" and "What about history attacks against
   blind peers?" now cover it; linking to them says where the mitigation is
   being worked out.
 - [ ] **F14. The merged physical-presence question has one stale phrase.** Its
-  second paragraph says "any writing peer can remove any other peer".
+  second paragraph (`:268`) says "any writing peer can remove any other peer".
   "Membership listings" and "Removed peers" limit that to a writing *UI* peer.
   The real gap is narrower: a compromised writing peer can still submit a
   membership record, because a receiver cannot tell a UI peer from a headless
   one.
-- [ ] **F15. "Read Only Membership" wording.**
+- [ ] **F15. "Read Only Membership" wording** (`:569`).
   - The heading and text say "read only" and "read or write". The glossary's
     terms are **reading peer** and **writing peer**.
   - "Read only members, whether UI, headless, or blind": a blind peer is its
@@ -1168,7 +1156,7 @@ quoted text is the reliable way to find each spot.
     reading, writing, or blind, so the section's rule covers all three.
   - Lint: the bullet starting "As a result, the first record" is one 220-column
     line (MD013) and will block a commit.
-- [ ] **F17. "Attacks on a blind peer" needs two touches.** It opens "Blind
+- [ ] **F17. "Attacks on a blind peer" needs two touches.** `:303` opens "Blind
   peers are susceptible to attacks that other peers are not", but only two on
   its list are unique to them: undecryptable garbage and forced divergence,
   which follow from being unable to read. The others hit any peer and are worse
@@ -1177,5 +1165,5 @@ quoted text is the reliable way to find each spot.
   also has no closing condition, which the other recent questions do: for
   example, closed once each listed attack has a defence, or is accepted as
   residual risk.
-- [ ] **F18.** Two typos in "A blind peer can validate membership": "a harmful
-  actions" and "currnt".
+- [ ] **F18.** Two typos in "A blind peer can validate membership" (`:607–608`):
+  "a harmful actions" and "currnt".

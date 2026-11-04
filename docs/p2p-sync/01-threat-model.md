@@ -265,13 +265,11 @@ mechanism, so it is chosen in [document 6](06-brainframe-protocol.md). Here the
 question is only whether the threat model asks for the property, and for which
 actions.
 
-### A blind peer that can't read the data can't validate it either
-
-This means that an attacker can submit something that creates problematic
-history, to the point of potentially preventing successful startup of
-BrainFrame. This must be guarded against somehow. The mechanism to do so is
-unknown, but must be defined. See the question "How to define a harmful edit?"
-below.
+We need to have a mechanism to prevent a stolen peer from taking over an
+ensemble. Right now, as stated, any writing peer can remove any other peer. We
+should provide options to the keeper to manage this, including the idea of
+requiring something like a YubiKey or a passkey or a Fido2 key. Additionally,
+removal and rejoining needs to be protected somehow.
 
 ### A blind peer outside snapshotting keeps history longer
 
@@ -279,7 +277,58 @@ If the blind peer can't validate the data, then a safe mechanism must be
 provided to allow the blind peer to discard edit history after new snapshots get
 made. This mechanism is not yet defined, but must be.
 
+An attacker must not be able to read the encrypted snapshots. It also must not
+be able to read the contents of individual edits (which are also encrypted).
+
+In order for the blind peer to be able to tell what data it can purge, it *must*
+be able to read enough data to determine that an edit belongs to a specific
+document, and that a new snapshot for that document has arrived, allowing it to
+remove the edit history from before that snapshot. A consequence of this is that
+the ensemble must carry enough information about the snapshot to prove that
+every peer has actually moved to this point in the edit history. Without those
+guarantees, a malicious actor using a stolen writing peer could submit a
+snapshot to a blind peer that claims the current state of a document is empty,
+and all other peers would accept that edit as being valid even if they have
+outstanding edits against a document.
+
+This question is about the balance: How do we provide enough data for a blind
+peer to safely delete no longer relevant history without giving an attacker the
+ability to destroy the ensemble?
+
+### Attacks on a blind peer
+
+- Related [open question](#how-to-define-a-harmful-edit)
+- Related [open
+  question](#how-to-define-useful-file-size-limits-record-size-limits-etc)
+
+Blind peers are susceptible to attacks that other peers are not, and the
+consequences of those attacks can be more harmful to the ensemble. Possible
+attacks include:
+
+- Sending in extremely large individual edits
+- Sending in millions of small edits
+- Undecryptable garbage - an edit that provides everything *except* a valid
+  payload
+- Forced divergence - sending a blind peer one edit, while sending other peers a
+  different edit with the same ID
+- DDOS variant - opening connections and never completing signature
+  verification, burning CPU cycles before letting the peer close the connection
+- Eclipse - causing the blind peer to become a detached peer, and coercing
+  communication only with the malicious actor
+- Replay - re-sending an existing record (especially a membership record), and
+  causing the blind peer to accept it and add it to the ensemble.
+- Cross-ensemble replay - taking a record for one ensemble and submitting it to
+  another ensemble.
+- Noisy neighbor - One engram exhausts bandwith or storage on a shared system
+- Free hosting - A keeper uses the encrypted storage to host illegal data (such
+  as CSAM), which carries legal implications
+
 ### How to define a harmful edit?
+
+Related [open
+question](#how-to-define-useful-file-size-limits-record-size-limits-etc).
+
+Also related: [attacks on blind peers](#attacks-on-a-blind-peer).
 
 An edit is harmful under a number of different circumstances, with the most
 obvious one being the case where a future restart will actually be prevented due
@@ -301,14 +350,6 @@ variations include ransomware scenarios, as well as simply global search and
 replace across the engram. How do we prevent these bad actor edits from
 infecting the entire engram?
 
-### How to protect against stolen peers taking over?
-
-We need to have a mechanism to prevent a stolen peer from taking over an
-ensemble. Right now, as stated, any writing peer can remove any other peer. We
-should provide options to the keeper to manage this, including the idea of
-requiring something like a YubiKey or a passkey or a Fido2 key. Additionally,
-removal and rejoining needs to be protected somehow.
-
 ### How to deal with a malicious actor forcing snapshots across the ensemble?
 
 A malicious actor, stealing a peer, can take over and do a number of things to
@@ -320,6 +361,10 @@ malicious actor could easily force that snapshot and propagation. Need to
 determine a method for dealing with those actions.
 
 ### How to define useful file size limits, record size limits, etc?
+
+Related [open question](#how-to-define-a-harmful-edit).
+
+Also related: [attacks on blind peers](#attacks-on-a-blind-peer).
 
 Harmful edits are just one avenue of attack. An engram under attack can be asked
 to receive very large files (multiple gigabytes), that only some machines could
@@ -357,32 +402,6 @@ size is actually a constant across all peers.
 We need to define useful limits that won't prevent people from storing the files
 that they want to store in the engram, but also will not overwhelm the smallest
 devices and only be usable on the most powerful desktops.
-
-### What about reading members?
-
-We need enforcement mechanisms. A blind peer can't enforce reading membership,
-and will carry forged edits. This is also part of the data validation problem
-described above.
-
-### What about purging history on blind peers?
-
-An attacker must not be able to read the encrypted snapshots. It also must not
-be able to read the contents of individual edits (which are also encrypted).
-
-In order for the blind peer to be able to tell what data it can purge, it *must*
-be able to read enough data to determine that an edit belongs to a specific
-document, and that a new snapshot for that document has arrived, allowing it to
-remove the edit history from before that snapshot. A consequence of this is that
-the ensemble must carry enough information about the snapshot to prove that
-every peer has actually moved to this point in the edit history. Without those
-guarantees, a malicious actor using a stolen writing peer could submit a
-snapshot to a blind peer that claims the current state of a document is empty,
-and all other peers would accept that edit as being valid even if they have
-outstanding edits against a document.
-
-This question is about the balance: How do we provide enough data for a blind
-peer to safely delete no longer relevant history without giving an attacker the
-ability to destroy the ensemble?
 
 ### What about metadata on blind peers?
 
@@ -487,6 +506,19 @@ Other options may exist, and should be explored before closing this question.
 This question can be closed when a mechanism for handling this scenario has been
 solidified and does *not* produce divergence amongst the ensemble.
 
+### What about conflicting bootstrapping records?
+
+An ensemble needs a bootstrapping record for the first peer in an ensemble. If
+multiple peers claim to bootstrap the ensemble, then the last one(s) to join the
+ensemble are rejected, and must drop their bootstrapping record to join the
+ensemble.
+
+The question here is how to establish that bootstrapping record properly, so
+that only one peer in the ensemble can actually claim it.
+
+This question can be closed once the mechanism for guaranteeing the
+bootstrapping record will only exist once per ensemble has been defined.
+
 ## Settled in review
 
 Decisions made in review, with the reasoning, so they are not argued again.
@@ -534,6 +566,48 @@ Note: A compromised writing peer can still submit a membership record. This is a
 
 Membership listings must be verified as coming from writing peers that were
 present in the ensemble at the time of the membership listing or update.
+
+### Read Only Membership
+
+The membership list, coupled with key distribution and signatures, covers the
+scenarios for read only members, whether UI, headless, or blind.
+
+A given peer publishes a public key to the ensemble, and everything it does is
+signed before it gets sent to another peer. Any unsigned items are rejected
+during the synchronization process, protecting the receiving peer (and, in turn,
+protecting the ensemble).
+
+A peer is designated as read or write when it joins the ensemble by the keeper
+admitting the peer to the ensemble. These details are part of the joining
+process, and any record that does not include the necessary parts is incomplete
+and rejected by the ensemble. The necessary parts of the record:
+
+- The peer ID of the joining member
+- The permission level of the joining peer
+- The peer ID of the peer used to approve the join
+- The prior membership record for the peer used to approve the join
+  - This is used to create a DAG and enforce history.
+  - The prior record could be the record of its own joining to the ensemble
+  - The first record presents a circular loop, since there is no parent record.
+    As a result, the first record will be a designated bootstrapping record for
+    the ensemble. If a peer tries to join an ensemble and has its own
+    bootstrapping record for that ensemble already, the peer will be rejected.
+  - A new attack vector (and [open
+    question](#what-about-conflicting-bootstrapping-records)) comes from this.
+
+Blind peers can also use this mechanism to protect themselves. Using it, they
+can reject writes from read-only peers as well as reject any connections (and
+any edits from those connections) from non-peers.
+
+### A blind peer can validate membership
+
+A blind peer can validate that incoming connections and edits are from valid
+writing peers. See [membership listing](#membership-listings) and [read-only
+membership](#read-only-membership).
+
+What remains is how to have a blind peer reject a harmful actions from a
+malicious currnt peer, such as over-sized edits, flooding the ensemble, etc.
+That is an [open question](#attacks-on-a-blind-peer).
 
 ### Edit histories and other records
 
@@ -807,6 +881,53 @@ harmful edit". This rule is almost absolute. To clarify it:
 Places are named by section and quoted text rather than line number, so the
 references survive edits. Remove an item once it is addressed.
 
+### Reference: trust models and methods
+
+Two separate lists, kept here for filling in the tables. They answer different
+questions: the models say who is trusted and how much, and the methods are the
+tools applied to each model.
+
+**Trust models** (who is trusted, and how much). The doc combines these; the
+names are the standard ones, not terms it has defined.
+
+- **Trusted endpoint.** Reading and writing peers on a keeper's own hardware.
+  Anyone with the keeper's account is out of scope; attacks on BrainFrame
+  itself, such as privilege escalation, are in scope. See the first bullet of
+  [Who is out of scope?](#who-is-out-of-scope).
+- **Untrusted server.** Blind peers and the service, at two strengths:
+  - *Honest-but-curious* (or semi-honest): follows the protocol, but tries to
+    learn what it can. "What about metadata on blind peers?" is written
+    against this.
+  - *Malicious*: also deletes, delays, or withholds. "What about history
+    attacks against blind peers?" is written against this.
+
+  The design goal for this model is usually called end-to-end encryption, or
+  "zero-knowledge" storage.
+- **Insider, or Byzantine.** A legitimate member that behaves arbitrarily: a
+  stolen device, a compromised writing peer, a hostile keeper. Most of
+  *Settled in review* is about this model.
+- **Network attacker** (arguably a fourth, and still thin in the doc). Described
+  in RFC 3552's terms. N25, local-network discovery, belongs here.
+
+**Methods** (the tools, listed in the README's "How the threat model is
+built").
+
+- **The Four Questions** give the document its structure: *What are we working
+  on? What can go wrong? What are we going to do about it? Did we do a good
+  enough job?* This document answers the first two.
+- **STRIDE** is the checklist for security threats: Spoofing, Tampering,
+  Repudiation, Information disclosure, Denial of service, Elevation of
+  privilege.
+- **LINDDUN** is the checklist for privacy threats: Linking, Identifying,
+  Non-repudiation, Detecting, Data disclosure, Unawareness, Non-compliance.
+- **RFC 3552's attacker terms** describe what each adversary can do: passive or
+  active, on-path or off-path.
+
+**How they meet in the tables.** The models supply the rows of the Adversaries
+table. Running STRIDE and LINDDUN against each adversary supplies the Threats
+table: for example, the service against Information disclosure and Linking, or
+a stolen writing peer against Tampering and Elevation of privilege.
+
 ### Contradictions
 
 - [ ] **A29. The duplicate-edit-ID rule lets a removed peer flood the
@@ -899,7 +1020,9 @@ references survive edits. Remove an item once it is addressed.
   detached peer reconnects or is removed. A phone left in a drawer for six
   months therefore stops every peer from discarding history for six months.
   On the smallest device, about 448 MB for the whole app, that history can
-  outgrow what the device can hold. Decide whether a long-detached member is
+  outgrow what the device can hold. A member that deliberately never reaches
+  the snapshot point has the same effect on every peer, blind ones included.
+  Decide whether a long-detached member is
   flagged to a keeper for removal after some period, whether history is
   bounded some other way, or whether the growth is accepted as residual risk.
 - [ ] **N27. How does a new peer trust what it receives when it joins?** A
@@ -919,6 +1042,29 @@ references survive edits. Remove an item once it is addressed.
   downgrade, by the same signed set). State that kind changes follow the same
   rules as membership changes, and that a downgrade commits to the set of
   writing edits it accepts.
+- [ ] **N29. The join record is missing what makes it checkable.** "Read Only
+  Membership" lists "the necessary parts of the record", and chaining each
+  record to its approver's prior record is a strong design: a peer can walk
+  the chain back to the bootstrapping record. Three things are missing:
+  - **The joining peer's public key.** Without it, nothing the new peer signs
+    can ever be verified.
+  - **The approving peer's signature over the record.** Naming the approver's
+    peer ID proves nothing, since anyone can type an ID.
+  - **The other membership records.** The chain covers joins. Removals, kind
+    changes (N28), and rejoins have to be links in the same chain, or a peer
+    walking it would see a removed peer as still a member.
+- [ ] **N30. "The last one(s) to join" cannot decide a bootstrapping conflict.**
+  "What about conflicting bootstrapping records?" says that with several
+  bootstrapping records, "the last one(s) to join the ensemble are rejected".
+  Deciding who was last needs a clock, or an order the peers do not share, and
+  "Clocks cannot be trusted" rules out the first. Two peers cut off from each
+  other would each see the other as last. One direction for the question: make
+  the ensemble's identity the **hash of its bootstrapping record**, the way a
+  git repository's history is anchored by its first commit. Two bootstrapping
+  records are then two different ensembles by definition, and there is no
+  conflict to resolve inside one. Joining means naming that hash, which pairing
+  has to convey anyway. What remains is the fork case: two ensembles for the
+  same folder, which is the outcome "Removed peers" already accepts.
 
 ### Glossary (README)
 
@@ -926,72 +1072,42 @@ references survive edits. Remove an item once it is addressed.
 
 ### Overlapping open questions
 
-Brought up to date on 2026-11-03 against the questions and settled sections as
-they now stand.
+Brought up to date on 2026-11-04, after E1, E2, E3, and E5 were closed.
 
-- [ ] **E1. Physical presence and stolen-peer takeover are one question.**
-  "Should some actions require a person to be physically present?" and "How to
-  protect against stolen peers taking over?" still ask the same thing. Since
-  they were written, "Membership listings" settled that only a writing UI peer
-  changes membership, and its note names the gap that remains ("A compromise
-  writing peer can still submit a membership record"), linking to the first
-  question. So what is left is a single question: whether membership changes
-  (adding, removing, and readmitting a peer) need something only a person
-  holds. Merge the second into the first, and keep the first's heading, since
-  the "known gap" link already points at it. N20 (who may ask the service to
-  delete an engram) belongs in the same discussion.
-- [ ] **E2. "A blind peer outside snapshotting keeps history longer" is now
-  part of the purging question.** It asks for "a safe mechanism… to allow the
-  blind peer to discard edit history after new snapshots get made", which is
-  exactly what "What about purging history on blind peers?" now asks in more
-  detail. Fold it into that question and remove it. (This replaces the earlier
-  advice to move it under "How to validate snapshots?", which predates the
-  purging question.)
-- [ ] **E3. Superseded by E5.** Its overlap disappears once "What about
-  reading members?" moves to *Settled in review*. It can be removed.
-- [ ] **E4. Three questions now cover forced snapshots, and settled rules
-  answer part of each.** "How to validate snapshots?", "How to deal with a
-  malicious actor forcing snapshots across the ensemble?", and the second half
-  of "What about purging history on blind peers?" (the stolen writing peer
-  sending a blind peer an empty snapshot) all describe a peer forcing
-  destruction through a snapshot. Since they were written, the doc settled:
+- [ ] **E4. Three questions cover forced snapshots, and settled rules answer
+  part of each.** "How to validate snapshots?", "How to deal with a malicious
+  actor forcing snapshots across the ensemble?", and part of "A blind peer
+  outside snapshotting keeps history longer" (the stolen writing peer sending a
+  blind peer an empty snapshot) all describe a peer forcing destruction through
+  a snapshot. The doc has since settled:
   - snapshots must come from a peer that was a writing peer at the time
     ("Edit histories and other records");
+  - everything a peer sends is signed, and unsigned items are rejected ("Read
+    Only Membership");
   - a snapshot is a point "as seen across the ensemble" (README *Snapshot*),
     so every member must have reached it;
   - a removed peer can never cause a snapshot after its removal ("Removed
     peers").
 
-  So a *forged* snapshot is already refused. What remains is narrower, and
-  worth one merged question: a stolen peer that is still a writing member
-  makes ordinary vandalising edits (emptying or encrypting notes), the
-  ensemble then agrees a legitimate snapshot, and the vandalism becomes
-  permanent before any keeper notices and reverts it. That is a question of
-  how long history is kept before a snapshot may discard it, so a keeper has
-  time to catch damage, and of what a blind peer must see to purge safely.
-  Merge the first two into one question on that, and leave the purging
-  question to cover only what a blind peer needs to know.
-- [ ] **E5. "What about reading members?" is answered.** It still says "A
-  blind peer can't enforce reading membership, and will carry forged edits".
-  The README's *Signature* and *Membership list* entries make that untrue: a
-  blind peer cannot read content, but it can check the signature against the
-  membership list, so it refuses an edit signed by a reading peer. Move the
-  question to *Settled in review* with that as its answer.
-- [ ] **E6. "A blind peer that can't read the data can't validate it
-  either" is half answered.** With signatures, a blind peer validates *who*
-  sent a record, but still not *what* it contains, such as a malformed or
-  oversized edit. The settled rule "Peers must defend against pathological
-  edit history" already says a blind peer "cannot provide defense for the
-  other peers". Narrow the question to that content half, or close it by
-  pointing at that settled rule and at "How to define a harmful edit?".
-- [ ] **E7. Harmful edits and size limits are two halves of one rule.**
-  "How to define a harmful edit?" and "How to define useful file size
-  limits, record size limits, etc?" both require that the limit be "applied
-  to *all* peers" and be "a constant across all peers", for the same reason
-  (anything else diverges). They are not duplicates: one is about edits that
-  are expensive to apply, the other about records and files that are too big
-  or too many. A sentence in each pointing at the other keeps whoever answers
-  them from setting two inconsistent limits.
+  So a *forged* snapshot is already refused, and "How to validate snapshots?"
+  still opens by saying "the attacker can force a new snapshot", which is no
+  longer the whole picture. What remains is narrower, and worth one merged
+  question: a stolen peer that is still a writing member makes ordinary
+  vandalising edits (emptying or encrypting notes), the ensemble then agrees a
+  legitimate snapshot, and the vandalism becomes permanent before any keeper
+  notices and reverts it. That is a question of how long history is kept before
+  a snapshot may discard it, so a keeper has time to catch damage. Merge the
+  first two into one question on that, and leave "A blind peer outside
+  snapshotting keeps history longer" to cover only what a blind peer must see
+  to purge safely.
+- [ ] **E8. Bootstrapping and joining are one trust question.** "What about
+  conflicting bootstrapping records?" asks how an ensemble's first record is
+  established. N27 asks what a new peer must verify when it joins, and N30 asks
+  how a conflict between first records is decided. All three end at the same
+  place: the membership chain in "Read Only Membership" can be walked back to
+  the bootstrapping record, so a new peer's only leap of faith is that record.
+  Fold N27 and N30 into the bootstrapping question, so one answer covers what
+  anchors an ensemble and how a new peer learns it.
 
 ### Housekeeping
 
@@ -1038,3 +1154,28 @@ quoted text is the reliable way to find each spot.
   about metadata on blind peers?" and "What about history attacks against
   blind peers?" now cover it; linking to them says where the mitigation is
   being worked out.
+- [ ] **F14. The merged physical-presence question has one stale phrase.** Its
+  second paragraph says "any writing peer can remove any other peer".
+  "Membership listings" and "Removed peers" limit that to a writing *UI* peer.
+  The real gap is narrower: a compromised writing peer can still submit a
+  membership record, because a receiver cannot tell a UI peer from a headless
+  one.
+- [ ] **F15. "Read Only Membership" wording.**
+  - The heading and text say "read only" and "read or write". The glossary's
+    terms are **reading peer** and **writing peer**.
+  - "Read only members, whether UI, headless, or blind": a blind peer is its
+    own kind, since it cannot read at all. The membership list records
+    reading, writing, or blind, so the section's rule covers all three.
+  - Lint: the bullet starting "As a result, the first record" is one 220-column
+    line (MD013) and will block a commit.
+- [ ] **F17. "Attacks on a blind peer" needs two touches.** It opens "Blind
+  peers are susceptible to attacks that other peers are not", but only two on
+  its list are unique to them: undecryptable garbage and forced divergence,
+  which follow from being unable to read. The others hit any peer and are worse
+  on a blind one, because it is always on and reachable or shared. "Blind peers
+  are more exposed to these attacks, and two are unique to them" is exact. It
+  also has no closing condition, which the other recent questions do: for
+  example, closed once each listed attack has a defence, or is accepted as
+  residual risk.
+- [ ] **F18.** Two typos in "A blind peer can validate membership": "a harmful
+  actions" and "currnt".

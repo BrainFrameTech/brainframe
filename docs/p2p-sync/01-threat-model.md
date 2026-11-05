@@ -90,7 +90,7 @@ Dropbox, Syncthing, git), and BrainFrame notices the files that change. Sync
 built into BrainFrame replaces that tool for the people who want it, and it
 exchanges the edit history, which a file-sync tool cannot do.
 
-To do that, sync has to move between peers:
+To accomplish the goals, sync has to move between peers:
 
 - the **notes** themselves, as CRDT operations;
 - the **documents** a person reads, as files;
@@ -99,6 +99,32 @@ To do that, sync has to move between peers:
   links to what;
 - the **identity map**: the id of each note, and the name of each peer.
 - the **public key**: the public key of each peer in the engram
+
+#### File synchronization tools
+
+Keepers will need to choose one mechanism or another, not both. If BrainFrame
+can detect that a second sync method is in use, it must warn the keeper of the
+potential problems, including the following:
+
+- A lost or stolen device must be disabled in multiple places: the file sync
+  service *and* BrainFrame.
+  - The file sync service will provide a new copy of the file, BrainFrame will
+    see the edits and treat them as local edits, and the edits will duplicate
+    across the ensemble.
+  - A removed peer can edit the document, and the file sync service will copy
+    the results to another peer. That peer then will add and sign the edits and
+    distribute them to the ensemble.
+- The file sync service will carry the contents of the `.brainframe` folder in
+  whole, potentially leaving artifacts like a sqlite journal file in place to
+  create conflicts on other peers.
+
+BrainFrame will attempt to detect file synchronization happening in this
+fashion, and provide the warnings. It will not disable it, since it is also
+possible to use this technique for providing a backup outside the ensemble. But
+making the keeper aware of the pitfalls when using it to keep the ensemble in
+sync is important. As such, when the keeper turns on sync, a warning will appear
+stating that only one sync method should be used, and automatic file sync tools
+should be turned off for this engram.
 
 ### Why it is worth protecting
 
@@ -261,6 +287,7 @@ A summary table, then one subsection per threat with the details.
 
 | ID | Non-goal | Why not |
 | --- | --- | --- |
+| NG1 | Do not protect against file-sync tools | Keepers may use this as a backup mechanism |
 
 ## Open questions
 
@@ -425,6 +452,7 @@ peers to function. A partial list of all metadata includes the following:
 
 - membership list
 - peer count
+- device count
 - peerIDs
 - document IDs
 - links between edits and snapshots
@@ -530,6 +558,37 @@ that only one peer in the ensemble can actually claim it.
 This question can be closed once the mechanism for guaranteeing the
 bootstrapping record will only exist once per ensemble has been defined.
 
+### What about metadata on a local network?
+
+In ["Where does sync reach?"](#where-does-sync-reach),the use of the local
+network as the first location for syncing is brought up.
+
+This invites an information discovery attack: the local network will typically
+use mDNS or a broadcast. Any listeners on the same network will find, at barest
+minimum, a service that listens. Depending on the local network broadcast
+method, this can then include that this is BrainFrame, the version of
+BrainFrame, the peer ID, and even the device name.
+
+We need to have the mechanisms known and mitigated as much as possible.
+
+This question can be closed when the complete list of metadata that must be made
+visible is known, along with the justifications for why that metadata must be
+broadcast, and how it gets broadcast.
+
+#### What about attacks after the broadcast?
+
+A stable entity being announced (such as an engram ID, or a peer ID) allows an
+attacker to track this device across networks. If any such information is
+included in the broadcast, it must be strongly justified.
+
+Anybody on that network can answer, claiming to be a peer. The public key
+signatures and membership lists will deny access, but that still will use up
+compute resources that should go to a legitimate peer.
+
+This question can be closed when either mitigations have been defined, *or* when
+the risks have been accepted as un-mitigatable (with stated reasons why they
+can't be mitigated).
+
 ## Settled in review
 
 Decisions made in review, with the reasoning, so they are not argued again.
@@ -625,8 +684,8 @@ A blind peer can validate that incoming connections and edits are from valid
 writing peers. See [membership listing](#membership-listings) and [read-only
 membership](#read-only-membership).
 
-What remains is how to have a blind peer reject a harmful actions from a
-malicious currnt peer, such as over-sized edits, flooding the ensemble, etc.
+What remains is how to have a blind peer reject a harmful action from a
+malicious current peer, such as over-sized edits, flooding the ensemble, etc.
 That is an [open question](#attacks-on-a-blind-peer).
 
 ### Edit histories and other records
@@ -928,6 +987,61 @@ harmful edit". To clarify it:
   that allows it to discard edit history. It cannot provide defense for the
   other peers.
 
+### Backup restoration
+
+From the keeper's perspective, the only files that matter are the notes and
+documents the keeper is maintaining. The `.brainframe` folder does not matter to
+them. When a backup is performed, the `.brainframe` folder gets included
+normally, and a restore of that folder will also include the `.brainframe`
+folder. Depending on the scope of the restore, it could also include the third
+data location, which includes the global edit history.
+
+This introduces all of the same risks as in [file
+synchronization](#file-synchronization-tools). If BrainFrame is able to detect
+that such a file restore has occurred, it should warn the keeper, and offer to
+rejoin the ensemble as a new peer.
+
+If the keeper chooses to have the restore rejoin the ensemble as a new peer,
+then an additional offer should be made to remove the old peer ID from the
+ensemble *if* the new peer is able to issue that removal (i.e.: the new peer is
+a writing UI peer). If the offer is declined, then the keeper should be informed
+that the removal should happen, or the edit history can never be cleaned up,
+resulting in infinite growth of the storage for the engram on *every* peer.
+
+### Long Term Detached Peers
+
+When a peer is detached for a long time, it prevents other peers from performing
+snapshots. This consumes resources, both in storage and in RAM usage when
+rendering a document from the current edit history. This cost is unbounded
+without constraints.
+
+The keeper must be informed that a detached peer is causing problems under any
+of three conditions:
+
+- A peer has been detached for more than 30 days. At this point, the peer should
+  be brought online, or removed from the ensemble. The 30 days is an arbitrary
+  time limit, and can be adjusted up or down as data eventually reveals.
+- A peer has been detached and the local edit history of a given document is
+  consuming more than 16 megabytes of storage space in the local engram. At this
+  point, it could easily be affecting the smallest peers and making it hard for
+  them to render a note. The 16 megabytes is an arbitrary number and can be
+  adjusted as experiments show.
+- A peer has been detached and the local edit history across the engram is
+  consuming more than 1 gigabyte of storage space. This could now be causing all
+  peers in the engram issues with keeping data longer than it should. The 1
+  gigabyte is an arbitrary number and can be adjusted as experiments show.
+
+With those constraints in place, the keeper can perform the maintenance that
+prevents a given peer (or even the whole ensemble) from becoming unusable. If
+the keeper chooses *not* to do anything, this will be accepted, but with
+reminders occurring every time a document is opened (for the 16 megabyte
+trigger), or the engram is opened (for the 1 gigabyte trigger or the 30 days
+trigger).
+
+This does use a clock to register how long it has been since a peer was last
+seen, but no decisions are made by the program based on this clock. This is
+strictly informational for the keeper, and is therefore a safe clock to use.
+
 ## Open Issues Identified by Claude
 
 Places are named by section and quoted text rather than line number, so the
@@ -984,54 +1098,6 @@ a stolen writing peer against Tampering and Elevation of privilege.
 
 ### Decisions still to make
 
-- [ ] **N23. Device count and peer count are separate leaks.** The list in
-  "What about metadata on blind peers?" changed "device count" to "peer
-  count". Within one ensemble a blind peer sees peers, but a service hosting
-  several engrams for the same keeper can also tell which peers sit on the
-  same *device*, from shared IP addresses and timing, and so link that
-  keeper's engrams together (linkability, in LINDDUN terms). Keep both items
-  in the list.
-- [ ] **N24. A file-sync tool running alongside BrainFrame sync bypasses
-  every membership rule.** "What sync does" says built-in sync "replaces that
-  tool for the people who want it", but nothing says the two may not run at
-  once. If a keeper leaves the engram in Dropbox, iCloud Drive, or Syncthing
-  *and* turns on BrainFrame sync, the file-sync tool becomes a second channel
-  that no membership list, signature, or removal governs:
-  - **It launders a removed peer's edits.** A stolen laptop that is still
-    signed in to Dropbox writes changed files into the shared folder. On each
-    honest device, BrainFrame sees a file change on disk, treats it as a local
-    edit, and signs it as that device's own. The removed peer's edit is now a
-    valid edit from a current member, past every rule in "Edit histories and
-    other records".
-  - **It duplicates edits.** One change, delivered both by BrainFrame sync and
-    by the file-sync tool, can be turned into CRDT operations twice, once on
-    each device that sees the file change.
-  - **It carries `.brainframe/`.** The membership list and device names travel
-    to wherever the file-sync tool copies the folder ("What BrainFrame Is":
-    "it will travel with the engram wherever the rest of the files go").
-
-  Decide whether BrainFrame detects a file-sync tool and refuses to turn sync
-  on, warns and lets the keeper accept the risk, or treats file changes it did
-  not see being made as untrusted.
-- [ ] **N25. Local-network discovery is a metadata leak with no question.**
-  [Where does sync reach?](#where-does-sync-reach) says sync works "for local
-  network first". Finding peers on a local network usually means announcing
-  them (mDNS or a broadcast), and anyone on the same café or hotel Wi-Fi then
-  sees that a BrainFrame peer is present, and possibly its device name (the
-  identity map already publishes device names) and peerID. That is
-  identifiability and detectability in LINDDUN terms. "What about metadata on
-  blind peers?" covers only what a blind peer sees, so nothing covers what the
-  network sees. Add it there, or as its own question.
-- [ ] **N26. Nothing bounds history growth while a member is detached.** By
-  the README's *Detached peer* entry, "no snapshots are possible" until a
-  detached peer reconnects or is removed. A phone left in a drawer for six
-  months therefore stops every peer from discarding history for six months.
-  On the smallest device, about 448 MB for the whole app, that history can
-  outgrow what the device can hold. A member that deliberately never reaches
-  the snapshot point has the same effect on every peer, blind ones included.
-  Decide whether a long-detached member is
-  flagged to a keeper for removal after some period, whether history is
-  bounded some other way, or whether the growth is accepted as residual risk.
 - [ ] **N27. How does a new peer trust what it receives when it joins?** A
   new peer starts from a snapshot and a membership list handed to it by the
   peer that admits it. It cannot check the history before that snapshot, and
@@ -1188,14 +1254,3 @@ quoted text is the reliable way to find each spot.
   also has no closing condition, which the other recent questions do: for
   example, closed once each listed attack has a defence, or is accepted as
   residual risk.
-- [ ] **F18.** Two typos in "A blind peer can validate membership" (`:607–608`):
-  "a harmful actions" and "currnt".
-- [ ] **F22. The two links cannot both be hashes.** The document edit records
-  carry "a link to the membership removal record", and the removal record gets
-  "a signed set of links to the document removal records". If both are hashes,
-  each record's hash depends on the other, and neither can be computed. N36
-  suggested a hash in both directions; that was wrong. One direction has to be
-  an identifier: give the removal a unique ID first, have each document record
-  name that ID, and have the removal record list the document records' hashes.
-  The text also calls them both "document edit records" and "document removal
-  records"; one name is enough.

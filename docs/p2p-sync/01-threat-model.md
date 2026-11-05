@@ -555,8 +555,27 @@ ensemble.
 The question here is how to establish that bootstrapping record properly, so
 that only one peer in the ensemble can actually claim it.
 
+A consequence of this is needing to answer what a new peer *can* trust vs what
+it has to simply accept. A compromised writing peer can send over a false
+bootstrapping record, and then false signature records based on that record.
+Should that happen, the joining peer is not *actually* joining the ensemble, but
+rather a fake ensemble, that the compromised peer has built and claims to exist.
+The ensemble must be fake, since the compromised peer will be unable to sign the
+membership records on behalf of the other peers that are actually in the
+ensemble.
+
+The mitigation for this will be having both the writing/admitting peer and the
+joining peer confirm something, similar to Signal's safety numbers, or Matrix's
+emoji, or even Bitcoin's wallet words. The authentication must work in *both*
+directions: The admitting peer needs to display something to the admitting
+keeper, and the joining peer must display something to the joining keeper. At
+that point, both keepers are able to visually confirm they are joining the
+engram and ensemble they think they are joining.
+
 This question can be closed once the mechanism for guaranteeing the
-bootstrapping record will only exist once per ensemble has been defined.
+bootstrapping record will only exist once per ensemble has been defined, as well
+as defining what the joining member can verify (and how), along with what it
+must take on trust.
 
 ### What about metadata on a local network?
 
@@ -588,6 +607,16 @@ compute resources that should go to a legitimate peer.
 This question can be closed when either mitigations have been defined, *or* when
 the risks have been accepted as un-mitigatable (with stated reasons why they
 can't be mitigated).
+
+### What about very remote peers and joining an ensemble?
+
+If a keeper is invited to participate in an engram, there needs to be a
+mechanism that allows that keeper to join, even if they are hundreds of miles
+away and can only communicate with a blind peer (or the service) on the open
+internet. This may involve a different record type for the membership list, an
+invitation, but that is not settled.
+
+This question can be closed when this mechanism is fully defined.
 
 ## Settled in review
 
@@ -663,7 +692,10 @@ and rejected by the ensemble. The necessary parts of the record:
 
 - The peer ID of the joining member
 - The permission level of the joining peer
+- The public key of the joining peer
 - The peer ID of the peer used to approve the join
+- The approving peer's signature over the contents of the joining record
+- The type of the record: a join, a removal, permission change
 - The prior membership record for the peer used to approve the join
   - This is used to create a DAG and enforce history.
   - The prior record could be the record of its own joining to the ensemble
@@ -1042,6 +1074,42 @@ This does use a clock to register how long it has been since a peer was last
 seen, but no decisions are made by the program based on this clock. This is
 strictly informational for the keeper, and is therefore a safe clock to use.
 
+### A fake ensemble is a fork
+
+A compromised writing peer can create a fake membership list, with fake
+signatures, and present those to a peer trying to join an ensemble. The joining
+peer will be able to be tricked by this because a single peer controls the
+joining, and making a joining peer talk to multiple peers just to join an
+ensemble will result in the sync feature being unused, which means it will
+protect nothing.
+
+This scenario is, simply put, a fork. The admitting peer has created a new
+ensemble that will simply not bring the new peer into the actual ensemble. The
+attacker who has compromised the admitting peer will gain nothing more than the
+ability to work with the joining peer just like any other peer in any other
+ensemble.
+
+Furthermore, the joining peer will quickly learn that it is not able to
+communicate with the actual ensemble, just as the members of the actual ensemble
+are unable to communicate with that joining peer. Edits will simply not be
+transmitted, causing all involved keepers to figure out that something is wrong.
+
+With all of this in mind, we accept this risk as a real attack, but with no
+practical value.
+
+### Changing membership type for a peer
+
+This operation is similar to a remove and a join, and may even be implemented
+that way. Simply put, the end result of this process is that a writing UI peer
+appends a record to the membership list that states the new role for the peer.
+
+When changing a peer from writing to reading, a set of records must be created
+that matches the same type of data used for removing a peer. Doing so determines
+what edits will still be accepted by the ensemble.
+
+No peer may change its own role, and only a writing UI peer may change the role
+of another peer.
+
 ## Open Issues Identified by Claude
 
 Places are named by section and quoted text rather than line number, so the
@@ -1098,37 +1166,6 @@ a stolen writing peer against Tampering and Elevation of privilege.
 
 ### Decisions still to make
 
-- [ ] **N27. How does a new peer trust what it receives when it joins?** A
-  new peer starts from a snapshot and a membership list handed to it by the
-  peer that admits it. It cannot check the history before that snapshot, and
-  it has no earlier membership list to check signatures against. So a
-  compromised admitting peer could give it a false snapshot or a false list.
-  This is trust on first use, usually settled at pairing (a code or QR
-  compared by a person, as with Signal's safety numbers). State what a new
-  peer must verify at join, and what it must take on trust. "Read Only
-  Membership" now answers part of this: a new peer can walk the membership
-  chain back to the bootstrapping record, so what is left to trust is that
-  record (see E8).
-- [ ] **N28. Changing a peer's kind is not covered.** "Membership listings"
-  covers adding and removing a peer, but not changing what kind a member is:
-  promoting a reading peer to writing, or demoting a writing peer to reading.
-  The first is as sensitive as adding a writer; the second is like a removal
-  of writing rights, and under "Edit histories and other records" it needs the
-  same two bounds (edits signed as a writer are valid only up to the
-  downgrade, by the same signed set). State that kind changes follow the same
-  rules as membership changes, and that a downgrade commits to the set of
-  writing edits it accepts.
-- [ ] **N29. The join record is missing what makes it checkable.** "Read Only
-  Membership" lists "the necessary parts of the record", and chaining each
-  record to its approver's prior record is a strong design: a peer can walk
-  the chain back to the bootstrapping record. Three things are missing:
-  - **The joining peer's public key.** Without it, nothing the new peer signs
-    can ever be verified.
-  - **The approving peer's signature over the record.** Naming the approver's
-    peer ID proves nothing, since anyone can type an ID.
-  - **The other membership records.** The chain covers joins. Removals, kind
-    changes (N28), and rejoins have to be links in the same chain, or a peer
-    walking it would see a removed peer as still a member.
 - [ ] **N30. "The last one(s) to join" cannot decide a bootstrapping conflict.**
   "What about conflicting bootstrapping records?" says that with several
   bootstrapping records, "the last one(s) to join the ensemble are rejected".
@@ -1156,6 +1193,10 @@ a stolen writing peer against Tampering and Elevation of privilege.
     talks support into believing they own it, can have the engram deleted from
     the service. The keepers' local copies survive, so the harm is limited,
     but it belongs in the Adversaries table with the service operator.
+- [ ] **N43. A blind peer rejects non-peers, but an invitee is one.** "What about
+  very remote peers" needs an invited peer to reach a blind peer, and "Read Only
+  Membership" has blind peers reject "connections… from non-peers". The
+  invitation has to be what gets it through.
 
 ### Overlapping open questions
 

@@ -576,73 +576,6 @@ This question can be closed when either mitigations have been defined, *or* when
 the risks have been accepted as un-mitigatable (with stated reasons why they
 can't be mitigated).
 
-### What about very remote peers and joining an ensemble?
-
-If a keeper is invited to participate in an engram, there needs to be a
-mechanism that allows that keeper to join, even if they are hundreds of miles
-away and can only communicate with a blind peer (or the service) on the open
-internet. This may involve a different record type for the membership list, an
-invitation, but that is not settled.
-
-This question can be closed when this mechanism is fully defined.
-
-#### Possible answer
-
-Peers sometimes *must* use the open internet to communicate, even for joining an
-ensemble. The following process works with both remote and local peers.
-
-When joining an ensemble, the admitting keeper extends an invitation (note:
-never the opposite; a joining keeper never requests an invitation via BrainFrame
-itself) which propagates to the peers.
-
-This occurs in the form of an invitation record on the membership list.
-
-- The admitting keeper and the joining keeper have to exchange some information
-  before the technical process begins.
-  - Public key fingerprints
-  - Peer IDs
-  - Ensemble ID
-  - Where to connect: This can be a direct local connection, or a blind peer (or
-    the service), determined by the keepers at the time of the exchange.
-  - Note that this exchange can be condensed into a single QR code exchange from
-    each side.
-- The invitation includes the ID and fingerprint of the joining peer and the
-  admitting peer, as well as the full public key and signature of the admitting
-  peer.
-- The joining keeper accepts the invitation, which propagates an invitation
-  acceptance record. The acceptance record includes the ID and full public key
-  of the joining peer and the ID and fingerprint of admitting peer, as well as
-  the signature of the joining peer. This record is *only* accepted when the
-  peer ID and key fingerprint and signature match an existing invitation record.
-- Once the invitation has been accepted, the membership list record is created
-  that tells the ensemble the peer is allowed and with what permissions.
-- The decryption keys are then distributed to the joining peer.
-
-Using these two record types provides the necessary signatures to the ensemble
-to prove the following:
-
-- The joining peer has been invited, and its identifying characteristics are
-  known by the admitter: The public key fingerprint and peer ID are established.
-- The joining peer has confirmed the characteristics about the ensemble: the ID
-  of the ensemble, the public key and fingerprints of the admitting peer are
-  known by the joining peer.
-- The admitting peer has confirmed acceptance and assigned permissions.
-
-In the event of a failure (joiner does not accept, machine failure before
-acceptance, etc), the admitting keeper can issue an invitation withdrawal
-record. It will include all of the information from the actual invitation
-record, but the record type will indicate a withdrawal. Any peer which has a
-withdrawal record must not accept an invitation from the peer identified by the
-withdrawal record.
-
-An attack vector does exist: A peer which becomes detached after an invitation
-is issued but before it is withdrawn could incorrectly admit the peer identified
-by the withdrawal record. All peers in the ensemble have to guard against this,
-and reject any edit records from a withdrawn peer, similar to rejecting any edit
-records from a removed peer. The mechanism will be the same, but the list of
-edits that will be accepted from the peer that had its invitation withdrawn will
-simply be empty.
-
 ## Settled in review
 
 Decisions made in review, with the reasoning, so they are not argued again.
@@ -1221,6 +1154,63 @@ during implementation:
         ensemble, unreconcilable notes or documents) become conflict records
         that the joining peer's keeper must decide what happens.
   - The keeper must decide if this is acceptable and make an informed choice.
+
+### Joining an ensemble, even for peers separated by hundreds of miles
+
+Peers sometimes *must* use the open internet to communicate, even for joining an
+ensemble. The following process works with both remote and local peers.
+
+When joining an ensemble, the admitting keeper extends an invitation (note:
+never the opposite; a joining keeper never requests an invitation via BrainFrame
+itself) which propagates to the peers.
+
+This occurs in the form of an invitation record on the membership list.
+
+- The admitting keeper and the joining keeper have to exchange some information
+  before the technical process begins.
+  - Public key fingerprints
+  - Peer IDs
+  - Ensemble ID
+  - Where to connect: This can be a direct local connection, or a blind peer (or
+    the service), determined by the keepers at the time of the exchange.
+  - Note that this exchange can be condensed into a single QR code exchange from
+    each side.
+- The invitation includes the ID and fingerprint of the joining peer and the
+  admitting peer, as well as the full public key and signature of the admitting
+  peer.
+- The joining keeper accepts the invitation, which propagates an invitation
+  acceptance record. The acceptance record includes the ID and full public key
+  of the joining peer and the ID and fingerprint of admitting peer, as well as
+  the signature of the joining peer. This record is *only* accepted when the
+  peer ID and key fingerprint and signature match an existing invitation record.
+- Once the invitation has been accepted, the membership list record is created
+  that tells the ensemble the peer is allowed and with what permissions.
+- The decryption keys are then distributed to the joining peer.
+
+Using these two record types provides the necessary signatures to the ensemble
+to prove the following:
+
+- The joining peer has been invited, and its identifying characteristics are
+  known by the admitter: The public key fingerprint and peer ID are established.
+- The joining peer has confirmed the characteristics about the ensemble: the ID
+  of the ensemble, the public key and fingerprints of the admitting peer are
+  known by the joining peer.
+- The admitting peer has confirmed acceptance and assigned permissions.
+
+In the event of a failure (joiner does not accept, machine failure before
+acceptance, etc), the admitting keeper can issue an invitation withdrawal
+record. It will include all of the information from the actual invitation
+record, but the record type will indicate a withdrawal. Any peer which has a
+withdrawal record must not accept an invitation from the peer identified by the
+withdrawal record.
+
+An attack vector does exist: A peer which becomes detached after an invitation
+is issued but before it is withdrawn could incorrectly admit the peer identified
+by the withdrawal record. All peers in the ensemble have to guard against this,
+and reject any edit records from a withdrawn peer, similar to rejecting any edit
+records from a removed peer. The mechanism will be the same, but the list of
+edits that will be accepted from the peer that had its invitation withdrawn will
+simply be empty.
 
 ## Open Issues Identified by Claude
 

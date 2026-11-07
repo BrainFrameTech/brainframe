@@ -1374,7 +1374,11 @@ None found in the sweep of 2026-11-07.
 
 - [ ] **N59. How is a snapshot agreed?** Nothing says who proposes a snapshot,
   how members confirm they have reached it, or what record carries it. Purging
-  on blind peers and E4 both depend on the answer.
+  on blind peers and E4 both depend on the answer. crdt_lf's `importSnapshot`
+  trusts a snapshot's contents and prunes history up to it, so a received
+  snapshot must never be imported as is. Direction from review: a peer accepts
+  one only after building its own at the same version and getting the same
+  bytes.
 - [ ] **N60. The first key.** "Bootstrapping an ensemble" creates no key. Say
   that the bootstrapping peer generates the first key.
 - [ ] **N61. Conflict records are used but not defined.** Add them to the record

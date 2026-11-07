@@ -288,6 +288,7 @@ A summary table, then one subsection per threat with the details.
 | ID | Non-goal | Why not |
 | --- | --- | --- |
 | NG1 | Do not protect against file-sync tools | Keepers may use this as a backup mechanism |
+| NG2 | Do not protect the whole device and OS from attacks | This is impractical, and likely to conflict with keeper desires for how they manage their security |
 
 ## Open questions
 
@@ -643,18 +644,22 @@ signed before it gets sent to another peer. Any unsigned items are rejected
 during the synchronization process, protecting the receiving peer (and, in turn,
 protecting the ensemble).
 
-A peer is designated as read or write when it joins the ensemble by the keeper
-admitting the peer to the ensemble. These details are part of the joining
-process, and any record that does not include the necessary parts is incomplete
-and rejected by the ensemble. The necessary parts of the record:
+A peer is designated as reading, writing, or blind when it joins the ensemble by
+the keeper admitting the peer to the ensemble. These details are part of the
+joining process, and any record that does not include the necessary parts is
+incomplete and rejected by the ensemble. The necessary parts of the record:
 
+- A hybrid logical clock entry, consisting of the peer ID of the admitting peer,
+  a UTC based timestamp for the record, and a counter. This is identical to the
+  CRDT hybrid logical clock
 - The peer ID of the joining member
-- The permission level of the joining peer
+- The permission level of the joining peer (reading, writing, or blind)
 - The public key of the joining peer
 - The peer ID of the peer used to approve the join
 - The approving peer's signature over the contents of the joining record
 - The type of the record: a join, a removal, permission change, bootstrapping,
-  invitation, invitation acceptance, invitation withdrawal
+  invitation, invitation acceptance, invitation withdrawal, symmetric key
+  message
 - The prior membership record for the peer used to approve the join
   - This is used to create a DAG and enforce history.
   - The prior record could be the record of its own joining to the ensemble
@@ -692,6 +697,10 @@ exception to this is an invitation acceptance record, which comes from a current
 non-peer. As long as the acceptance is attached to a current (valid) invitation
 record, the acceptance record is allowed to propagate. The two boundaries for a
 given peer are when it joined the ensemble, and when it left the ensemble.
+
+Edit histories, when encrypted, *must* include the UUID of the key that was used
+to encrypt the record. Without it, it will be impossible for receiving peers to
+determine which key to use to decrypt the record.
 
 Note that the public key of a peer must remain with that peer's membership
 records, both admission and removal. It is required to validate incoming records
@@ -834,10 +843,10 @@ notification arrives. Some consequences of this decision:
     circumstances, reuse of the peer ID may not be possible, such as a
     reformat). Edit history is then possible to bring in from the rejoining
     peer, minimizing data loss/new document scenarios where possible.
-    Permissions (reading vs writing) have to be re-established at the time of
-    joining, and the current keys have to be given to the rejoining peer.
-    Finally, a rejoining peer must present its edit history to a keeper on a UI
-    peer with writing permission. This process occurs outside of the normal
+    Permissions (reading, writing, or blind) have to be re-established at the
+    time of joining, and the current keys have to be given to the rejoining
+    peer. Finally, a rejoining peer must present its edit history to a keeper on
+    a UI peer with writing permission. This process occurs outside of the normal
     process, to prevent potentially invalid or malicious data making it out to
     the ensemble. That keeper then gets the option to either accept or revert
     the edit history *before* the rejoining peer returns to the ensemble. Doing
@@ -967,6 +976,74 @@ An attacker who gains OS level access to a blind peer (or the service) will be
 unable to read the data, but will still be able to review (and possibly modify)
 the metadata. This specific attack area must be mitigated.
 
+### What a decryption key is and where it is stored
+
+A decryption key is a symmetric encryption key. It is used to handle both
+encryption and decryption operations. The cipher used for this must be at least
+as good as AES256. The key itself will be a randomly generated key, never
+directly exposed to any keeper.
+
+Each key consists of two components: a UUID to identify the key, and 256 bits
+(32 bytes) of random data, and stored in the third data location, beside the
+local edit history for the engram.
+
+It is not encrypted when stored, because doing so simply creates an infinite
+loop of "to get this key, we have to decrypt it using this other key, which must
+also be encrypted, so we use yet another key to decrypt that key, etc). This
+does open an attack vector, but it is one we have already been forced to accept
+as NG2.
+
+The key is distributed to other peers by encrypting a message to them using
+their public key. These messages are distributed as part of the membership
+record list, and therefore may only be generated by writing UI peers.
+
+### Key rotation process
+
+Whenever the encryption keys need to be rotated, this method is to be followed.
+
+- The writing UI peer has determined that a key rotation is needed for one of
+  the following reasons:
+  - Removal of a peer
+  - Changing a peer to a blind peer
+  - Manually initiated, for instance in the case of a suspected compromise
+    (which is *usually* accompanied by a peer removal)
+  - After an invitation is withdrawn
+  - A scheduled rotation will *not* be offered by BrainFrame. It was considered
+    and rejected as adding complexity unnecessarily when most of the data that
+    is managed by a BrainFrame instance is stored unencrypted.
+- The writing UI peer generates a new symmetric key and stores it. Note that the
+  old key is *not* deleted, allowing the writing UI peer to decrypt messages
+  from the ensemble that use the old key.
+- The writing UI peer generates a new membership message for each reading and
+  writing peer it knows about that is a current member (never a blind peer or a
+  removed peer), sending the new message to the ensemble as a membership record
+  with the new symmetric key encrypted exclusively to that peer.
+- Each peer, on receiving the new key, stores the new symmetric key beside the
+  old key. This ensures that each peer continues to be able to decrypt older
+  messages.
+
+It is possible for two peers to issue key rotation records while detached from
+each other, producing a conflict. To resolve this, we take a page from CRDTs,
+and use a last writer wins methodology. Whichever key occurs later in the
+membership list DAG will be treated as the canonical decryption key by the
+ensemble. Note that this does *not* mean discarding the losing key: that key
+still needs to be kept so that records can be decrypted that were encrypted
+using that key.
+
+In the event that two key rotations appear at the same level in the membership
+list DAG, we again take from the CRDT methodology, and use the hybrid logical
+clock attached to the record, sort it lexicographically, and use the last writer
+wins still. Once the decision is made, a new key rotation occurs. This new
+rotation must be issued by the peer that won the decision, and no other. The new
+key rotation will follow this same process. This mitigates the effect of a
+detached peer giving the current symmetric key to a removed peer that the
+detached peer did not know about yet.
+
+This would seem to contradict [clocks can't be
+trusted](#clocks-cannot-be-trusted), but this is another low-consequence
+decision: One of the keys has to win, one has to be retired, and CRDTs with HLCs
+have been using this for decades already.
+
 ### Peers must defend against pathological edit history
 
 Any individual peer must have a way to reject edits that are harmful to peers
@@ -1064,9 +1141,10 @@ This operation is similar to a remove and a join, and may even be implemented
 that way. Simply put, the end result of this process is that a writing UI peer
 appends a record to the membership list that states the new role for the peer.
 
-When changing a peer from writing to reading, a set of records must be created
-that matches the same type of data used for removing a peer. Doing so determines
-what edits will still be accepted by the ensemble.
+When changing a peer from writing to reading (or blind), a set of records must
+be created that matches the same type of data used for removing a peer. Doing so
+determines what edits will still be accepted by the ensemble. If a peer is being
+converted to a blind peer, then a key rotation must happen.
 
 No peer may change its own role, and only a writing UI peer may change the role
 of another peer.
@@ -1185,7 +1263,8 @@ This occurs in the form of an invitation record on the membership list.
   peer ID and key fingerprint and signature match an existing invitation record.
 - Once the invitation has been accepted, the membership list record is created
   that tells the ensemble the peer is allowed and with what permissions.
-- The decryption keys are then distributed to the joining peer.
+- The decryption keys are then distributed to the joining peer, *unless* the
+  joining peer is a blind peer.
 
 Using these two record types provides the necessary signatures to the ensemble
 to prove the following:
@@ -1283,10 +1362,6 @@ a stolen writing peer against Tampering and Elevation of privilege.
     talks support into believing they own it, can have the engram deleted from
     the service. The keepers' local copies survive, so the harm is limited,
     but it belongs in the Adversaries table with the service operator.
-- [ ] **N53. Key distribution is required but never defined.** "Key management"
-  says who holds keys and when they change, not how. Open: who generates a new
-  key, how it reaches each peer (including detached ones), which key wins when
-  two removals rotate at once, and how old keys stay available to read history.
 
 ### Overlapping open questions
 

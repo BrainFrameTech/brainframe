@@ -545,38 +545,6 @@ Other options may exist, and should be explored before closing this question.
 This question can be closed when a mechanism for handling this scenario has been
 solidified and does *not* produce divergence amongst the ensemble.
 
-### What about conflicting bootstrapping records?
-
-An ensemble needs a bootstrapping record for the first peer in an ensemble. If
-multiple peers claim to bootstrap the ensemble, then the last one(s) to join the
-ensemble are rejected, and must drop their bootstrapping record to join the
-ensemble.
-
-The question here is how to establish that bootstrapping record properly, so
-that only one peer in the ensemble can actually claim it.
-
-A consequence of this is needing to answer what a new peer *can* trust vs what
-it has to simply accept. A compromised writing peer can send over a false
-bootstrapping record, and then false signature records based on that record.
-Should that happen, the joining peer is not *actually* joining the ensemble, but
-rather a fake ensemble, that the compromised peer has built and claims to exist.
-The ensemble must be fake, since the compromised peer will be unable to sign the
-membership records on behalf of the other peers that are actually in the
-ensemble.
-
-The mitigation for this will be having both the writing/admitting peer and the
-joining peer confirm something, similar to Signal's safety numbers, or Matrix's
-emoji, or even Bitcoin's wallet words. The authentication must work in *both*
-directions: The admitting peer needs to display something to the admitting
-keeper, and the joining peer must display something to the joining keeper. At
-that point, both keepers are able to visually confirm they are joining the
-engram and ensemble they think they are joining.
-
-This question can be closed once the mechanism for guaranteeing the
-bootstrapping record will only exist once per ensemble has been defined, as well
-as defining what the joining member can verify (and how), along with what it
-must take on trust.
-
 ### What about metadata on a local network?
 
 In ["Where does sync reach?"](#where-does-sync-reach),the use of the local
@@ -617,6 +585,63 @@ internet. This may involve a different record type for the membership list, an
 invitation, but that is not settled.
 
 This question can be closed when this mechanism is fully defined.
+
+#### Possible answer
+
+Peers sometimes *must* use the open internet to communicate, even for joining an
+ensemble. The following process works with both remote and local peers.
+
+When joining an ensemble, the admitting keeper extends an invitation (note:
+never the opposite; a joining keeper never requests an invitation via BrainFrame
+itself) which propagates to the peers.
+
+This occurs in the form of an invitation record on the membership list.
+
+- The admitting keeper and the joining keeper have to exchange some information
+  before the technical process begins.
+  - Public key fingerprints
+  - Peer IDs
+  - Ensemble ID
+  - Where to connect: This can be a direct local connection, or a blind peer (or
+    the service), determined by the keepers at the time of the exchange.
+  - Note that this exchange can be condensed into a single QR code exchange from
+    each side.
+- The invitation includes the ID and fingerprint of the joining peer and the
+  admitting peer, as well as the full public key and signature of the admitting
+  peer.
+- The joining keeper accepts the invitation, which propagates an invitation
+  acceptance record. The acceptance record includes the ID and full public key
+  of the joining peer and the ID and fingerprint of admitting peer, as well as
+  the signature of the joining peer. This record is *only* accepted when the
+  peer ID and key fingerprint and signature match an existing invitation record.
+- Once the invitation has been accepted, the membership list record is created
+  that tells the ensemble the peer is allowed and with what permissions.
+- The decryption keys are then distributed to the joining peer.
+
+Using these two record types provides the necessary signatures to the ensemble
+to prove the following:
+
+- The joining peer has been invited, and its identifying characteristics are
+  known by the admitter: The public key fingerprint and peer ID are established.
+- The joining peer has confirmed the characteristics about the ensemble: the ID
+  of the ensemble, the public key and fingerprints of the admitting peer are
+  known by the joining peer.
+- The admitting peer has confirmed acceptance and assigned permissions.
+
+In the event of a failure (joiner does not accept, machine failure before
+acceptance, etc), the admitting keeper can issue an invitation withdrawal
+record. It will include all of the information from the actual invitation
+record, but the record type will indicate a withdrawal. Any peer which has a
+withdrawal record must not accept an invitation from the peer identified by the
+withdrawal record.
+
+An attack vector does exist: A peer which becomes detached after an invitation
+is issued but before it is withdrawn could incorrectly admit the peer identified
+by the withdrawal record. All peers in the ensemble have to guard against this,
+and reject any edit records from a withdrawn peer, similar to rejecting any edit
+records from a removed peer. The mechanism will be the same, but the list of
+edits that will be accepted from the peer that had its invitation withdrawn will
+simply be empty.
 
 ## Settled in review
 
@@ -695,7 +720,8 @@ and rejected by the ensemble. The necessary parts of the record:
 - The public key of the joining peer
 - The peer ID of the peer used to approve the join
 - The approving peer's signature over the contents of the joining record
-- The type of the record: a join, a removal, permission change
+- The type of the record: a join, a removal, permission change, bootstrapping,
+  invitation, invitation acceptance, invitation withdrawal
 - The prior membership record for the peer used to approve the join
   - This is used to create a DAG and enforce history.
   - The prior record could be the record of its own joining to the ensemble
@@ -703,12 +729,12 @@ and rejected by the ensemble. The necessary parts of the record:
     As a result, the first record will be a designated bootstrapping record for
     the ensemble. If a peer tries to join an ensemble and has its own
     bootstrapping record for that ensemble already, the peer will be rejected.
-  - A new attack vector (and [open
-    question](#what-about-conflicting-bootstrapping-records)) comes from this.
 
 Blind peers can also use this mechanism to protect themselves. Using it, they
 can reject writes from read-only peers as well as reject any connections (and
-any edits from those connections) from non-peers.
+any edits from those connections) from non-peers. One exception to the rejection
+exists: When an invitation exists for a current non-peer, that connection is
+allowed to propagate an invitation acceptance record.
 
 ### A blind peer can validate membership
 
@@ -728,9 +754,11 @@ anything else that can possibly travel between peers. If an edit or membership
 change or a snapshot was not generated by a writing peer that was considered a
 writing peer at the time of the record generation, then it must be rejected and
 never stored on the receiving peer. It is not stored, and not examined beyond
-that check. Other records are accepted from any current member. The two
-boundaries for a given peer are when it joined the ensemble, and when it left
-the ensemble.
+that check. Other records are accepted from any current member. The only
+exception to this is an invitation acceptance record, which comes from a current
+non-peer. As long as the acceptance is attached to a current (valid) invitation
+record, the acceptance record is allowed to propagate. The two boundaries for a
+given peer are when it joined the ensemble, and when it left the ensemble.
 
 Note that the public key of a peer must remain with that peer's membership
 records, both admission and removal. It is required to validate incoming records
@@ -1110,6 +1138,90 @@ what edits will still be accepted by the ensemble.
 No peer may change its own role, and only a writing UI peer may change the role
 of another peer.
 
+### Bootstrapping an ensemble
+
+The bootstrapping record for an engram (and, therefore, the ensemble), is both
+incredibly important, and is also a membership record, consisting of the
+following fields:
+
+- Peer ID
+- Public key of the peer ID
+- The permission level of the peer (for bootstrapping, this will *always* be
+  writing)
+- The type of the record (always bootstrapping for this step)
+- The signature of this peer over the contents of this record
+
+The other fields that are listed in [read only
+membership](#read-only-membership) will all be null. A special consequence of
+this is that the bootstrapping record is, essentially, the origin of the
+ensemble, making this record into the identity of the ensemble.
+
+The primary problem for this bootstrapping record is verification: A joining
+peer must be able to verify that this root record actually represents the
+ensemble the joining peer is attempting to join. Using solutions like [Bitcoin
+Improvement Proposal
+39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki) (BIP-39)
+will provide a mechanism, usable by humans, to communicate the fingerprint of
+the bootstrapping record. Note that this fingerprint must always be at least 128
+bits, though longer is acceptable. If BIP-39 is used, then that would mean 12
+words.
+
+The same mechanism can be used to provide the same security to the admitting
+keeper that the peer joining is the intended joining peer.
+
+Once a given peer joins the ensemble, it must reject any new bootstrapping
+records at the time of receiving them. Once the record type identifies it as a
+bootstrap, it is rejected, and any records that build from that new bootstrap
+record are also rejected as invalid. If a peer wishes to establish a new
+bootstrap record, it must delete the `.brainframe` folder for the engram, and
+create a new ensemble.
+
+Because of the special nature of the bootstrapping record, a conflict can arise
+during implementation:
+
+- A peer ID exists per engram, and no peer ID exists until an engram has been
+  defined.
+- A bootstrapping record *may* be created right away on the peer, before it has
+  joined an ensemble.
+- Following the rules above, the joining peer would always reject the
+  bootstrapping record from the admitting peer.
+- The exception:
+  - If a joining peer has only itself in the membership list for the ensemble,
+    it should discard its own bootstrapping record and accept the admitting
+    peer's bootstrapping record. This action must be accepted by the keeper, and
+    not performed automatically. The alternative allows an attacker to send
+    bootstrapping records to any peer not currently in an ensemble, and take
+    over the ensemble from there, potentially even leaving the joining peer as a
+    read only member of its own engrams.
+    - All existing notes and documents will maintain their current status.
+      - After receiving the state of the engram from the new ensemble, the
+        engram adoption process will occur. BrainFrame will scan over the
+        contents of the engram, comparing the desired state of the engram with
+        the current state from incoming edit history. The joining peer will make
+        safe edits where it can.
+      - Any conflicts (notes or documents that would be overwritten by the new
+        ensemble, unreconcilable notes or documents) become conflict records
+        that the joining peer's keeper must decide what happens.
+  - If a joining peer already lists multiple peers, the keeper of the joining
+    peer must be informed that they are about to change the ensemble for the
+    engram. Consequences of this choice:
+    - All other peers currently part of this engram will be removed.
+      - The old ensemble will still be intact, but will now have a detached peer
+        that they must remove.
+      - Only the local copy of the engram gets affected, as it must forget about
+        the old ensemble.
+    - All outstanding edits from those peers will be invalidated.
+    - All existing notes and documents will maintain their current status.
+      - After receiving the state of the engram from the new ensemble, the
+        engram adoption process will occur. BrainFrame will scan over the
+        contents of the engram, comparing the desired state of the engram with
+        the current state from incoming edit history. The joining peer will make
+        safe edits where it can.
+      - Any conflicts (notes or documents that would be overwritten by the new
+        ensemble, unreconcilable notes or documents) become conflict records
+        that the joining peer's keeper must decide what happens.
+  - The keeper must decide if this is acceptable and make an informed choice.
+
 ## Open Issues Identified by Claude
 
 Places are named by section and quoted text rather than line number, so the
@@ -1166,18 +1278,6 @@ a stolen writing peer against Tampering and Elevation of privilege.
 
 ### Decisions still to make
 
-- [ ] **N30. "The last one(s) to join" cannot decide a bootstrapping conflict.**
-  "What about conflicting bootstrapping records?" says that with several
-  bootstrapping records, "the last one(s) to join the ensemble are rejected".
-  Deciding who was last needs a clock, or an order the peers do not share, and
-  "Clocks cannot be trusted" rules out the first. Two peers cut off from each
-  other would each see the other as last. One direction for the question: make
-  the ensemble's identity the **hash of its bootstrapping record**, the way a
-  git repository's history is anchored by its first commit. Two bootstrapping
-  records are then two different ensembles by definition, and there is no
-  conflict to resolve inside one. Joining means naming that hash, which pairing
-  has to convey anyway. What remains is the fork case: two ensembles for the
-  same folder, which is the outcome "Removed peers" already accepts.
 - [ ] **N32. The service account links a real identity to an engram.** [Who is
   out of scope?](#who-is-out-of-scope) now defines ownership on the service by
   "an account identifier, such as a GMail account or billing information". Two
@@ -1193,10 +1293,10 @@ a stolen writing peer against Tampering and Elevation of privilege.
     talks support into believing they own it, can have the engram deleted from
     the service. The keepers' local copies survive, so the harm is limited,
     but it belongs in the Adversaries table with the service operator.
-- [ ] **N43. A blind peer rejects non-peers, but an invitee is one.** "What about
-  very remote peers" needs an invited peer to reach a blind peer, and "Read Only
-  Membership" has blind peers reject "connections… from non-peers". The
-  invitation has to be what gets it through.
+- [ ] **N53. Key distribution is required but never defined.** "Key management"
+  says who holds keys and when they change, not how. Open: who generates a new
+  key, how it reaches each peer (including detached ones), which key wins when
+  two removals rotate at once, and how old keys stay available to read history.
 
 ### Overlapping open questions
 
@@ -1228,14 +1328,6 @@ Brought up to date on 2026-11-04, after E1, E2, E3, and E5 were closed.
   first two into one question on that, and leave "A blind peer outside
   snapshotting keeps history longer" to cover only what a blind peer must see
   to purge safely.
-- [ ] **E8. Bootstrapping and joining are one trust question.** "What about
-  conflicting bootstrapping records?" asks how an ensemble's first record is
-  established. N27 asks what a new peer must verify when it joins, and N30 asks
-  how a conflict between first records is decided. All three end at the same
-  place: the membership chain in "Read Only Membership" can be walked back to
-  the bootstrapping record, so a new peer's only leap of faith is that record.
-  Fold N27 and N30 into the bootstrapping question, so one answer covers what
-  anchors an ensemble and how a new peer learns it.
 
 ### Housekeeping
 

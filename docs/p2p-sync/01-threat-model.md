@@ -263,11 +263,23 @@ connections between them, with trust boundaries drawn as subgraphs.
 
 | ID | Adversary | Can | Cannot |
 | --- | --- | --- | --- |
+| ADV1 | Remote Account Attackers | Can take over accounts (such as GMail); request the service to delete the engram | Decrypt data held on blind peer or the service |
+| ADV2 | BrainFrame Service Account Attackers | Social engineer service administrators | Decrypt data held on the service |
+| ADV3 | Service Administrators | Can delete any data | Decrypt data held on the service |
+| ADV4 | Thief with a stolen device | Read what's on it, act as that writing peer until removed | Forge other peers' signatures; read anything after key rotation |
+| ADV5 | Compromised writing peer | Make valid but malicious edits; submit membership records | Sign as other peers; escape removal |
+| ADV6 | Hostile keeper | Remove other keepers; fork the engram | Delete anyone's local copy |
+| ADV7 | Removed peer | Read what it already holds; sign with its old key | Get new keys; get edits outside the removal accepted |
+| ADV8 | Compromised blind peer (host access) | See metadata; withhold, delay, or delete records | Read contents; forge records |
+| ADV9 | Network attacker, on-path | See traffic and discovery broadcasts; drop or delay packets | Read encrypted content; forge signed records |
+| ADV10 | Network attacker, off-path | Connect to peers ; flood them ; answer discovery as a fake peer | Get past signature checks |
+| ADV11 | Lower-privileged app on the same device | Try to use BrainFrame to escalate privileges | Read the keeper's files (if the OS is sound) |
 
 ### Assumptions
 
 | ID | Assumption | If it is false |
 | --- | --- | --- |
+| AS1 | The OS of a keeper's device is not compromised | Attacker has full access to all keys, and can do anything inside the engram/ensemble |
 
 ### Threats
 
@@ -451,6 +463,7 @@ leaves attack surface, specifically the area of traffic analysis.
 Related to the history, we need to list the metadata that is needed for blind
 peers to function. A partial list of all metadata includes the following:
 
+- account identifiers, such as an email address
 - membership list
 - peer count
 - device count
@@ -474,6 +487,16 @@ include:
 - Batching or delaying distribution of edits to prevent arrival times revealing
   more than required
 - Not exposing IP addresses to the blind peer for instance via relaying
+
+Additional (related) question: Can we separate billing information on the
+service somehow? While unlikely, we should explore this. We have to limit the
+amount of data and bandwidth a given customer stores, and bill them
+appropriately. The costs for storing and transmitting 50M per month are
+noticeably different from storing and transmitting 50T per month. Somehow, we
+have to track the individual customer usage, and (ideally) not expose that
+information if an attacker gets access to the data. Again, we need to minimize
+the connections and the exposed metadata as much as possible, and this paragraph
+is about trying to make sure we do so.
 
 Closing out this question requires knowing the full list of metadata, the full
 list of metadata required for the blind peer, and mitigation strategies to
@@ -1322,7 +1345,7 @@ names are the standard ones, not terms it has defined.
   stolen device, a compromised writing peer, a hostile keeper. Most of
   *Settled in review* is about this model.
 - **Network attacker** (arguably a fourth, and still thin in the doc). Described
-  in RFC 3552's terms. N25, local-network discovery, belongs here.
+  in RFC 3552's terms. "What about metadata on a local network?" belongs here.
 
 **Methods** (the tools, listed in the README's "How the threat model is
 built").
@@ -1345,110 +1368,55 @@ a stolen writing peer against Tampering and Elevation of privilege.
 
 ### Contradictions
 
+None found in the sweep of 2026-11-07.
+
 ### Decisions still to make
 
-- [ ] **N32. The service account links a real identity to an engram.** [Who is
-  out of scope?](#who-is-out-of-scope) now defines ownership on the service by
-  "an account identifier, such as a GMail account or billing information". Two
-  consequences to record:
-  - **It is metadata, and the most identifying item yet.** The next bullet sets
-    the goal of "minimal knowledge" for blind peers, and "What about metadata
-    on blind peers?" does not list account details. A service that knows whose
-    account holds an engram can tie every other item on that list (timing,
-    sizes, IP addresses) to a named person. Add it to the list, with the
-    mitigation question: how little identity can the service hold, and can
-    billing be separated from the engrams it pays for?
-  - **The account is now an attack path.** Whoever takes over that account, or
-    talks support into believing they own it, can have the engram deleted from
-    the service. The keepers' local copies survive, so the harm is limited,
-    but it belongs in the Adversaries table with the service operator.
+- [ ] **N59. How is a snapshot agreed?** Nothing says who proposes a snapshot,
+  how members confirm they have reached it, or what record carries it. Purging
+  on blind peers and E4 both depend on the answer.
+- [ ] **N60. The first key.** "Bootstrapping an ensemble" creates no key. Say
+  that the bootstrapping peer generates the first key.
+- [ ] **N61. Conflict records are used but not defined.** Add them to the record
+  types (`:683`), and say who may raise one and whether blind peers carry them.
+- [ ] **N62. Promoting a blind peer.** "Changing membership type" (`:1167`)
+  covers downgrades only. A blind peer made reading or writing needs the keys.
 
 ### Overlapping open questions
 
-Brought up to date on 2026-11-04, after E1, E2, E3, and E5 were closed.
+- [ ] **E4. Three questions cover forced snapshots.** "How to validate
+  snapshots?", "How to deal with a malicious actor forcing snapshots…", and part
+  of "A blind peer outside snapshotting keeps history longer". A forged snapshot
+  is already refused. What remains is one question: how long history is kept
+  before a legitimate snapshot makes a stolen peer's vandalism permanent.
 
-- [ ] **E4. Three questions cover forced snapshots, and settled rules answer
-  part of each.** "How to validate snapshots?", "How to deal with a malicious
-  actor forcing snapshots across the ensemble?", and part of "A blind peer
-  outside snapshotting keeps history longer" (the stolen writing peer sending a
-  blind peer an empty snapshot) all describe a peer forcing destruction through
-  a snapshot. The doc has since settled:
-  - snapshots must come from a peer that was a writing peer at the time
-    ("Edit histories and other records");
-  - everything a peer sends is signed, and unsigned items are rejected ("Read
-    Only Membership");
-  - a snapshot is a point "as seen across the ensemble" (README *Snapshot*),
-    so every member must have reached it;
-  - a removed peer can never cause a snapshot after its removal ("Removed
-    peers").
+### Before acceptance
 
-  So a *forged* snapshot is already refused, and "How to validate snapshots?"
-  still opens by saying "the attacker can force a new snapshot", which is no
-  longer the whole picture. What remains is narrower, and worth one merged
-  question: a stolen peer that is still a writing member makes ordinary
-  vandalising edits (emptying or encrypting notes), the ensemble then agrees a
-  legitimate snapshot, and the vandalism becomes permanent before any keeper
-  notices and reverts it. That is a question of how long history is kept before
-  a snapshot may discard it, so a keeper has time to catch damage. Merge the
-  first two into one question on that, and leave "A blind peer outside
-  snapshotting keeps history longer" to cover only what a blind peer must see
-  to purge safely.
+- [ ] **F26. Empty sections.** Scope, Data-flow diagram, Assets, Threats, and
+  Security goals are still empty, and later documents check against them.
 
 ### Housekeeping
 
-Brought up to date on 2026-11-04. Line numbers are as of that date, and the
-quoted text is the reliable way to find each spot.
+Line numbers are as of 2026-11-07; the quoted text finds each spot.
 
-- [ ] **F5. Scoping decisions still give answers without reasons.** [Who
-  shares an engram?](#who-shares-an-engram), [Is there a
-  server?](#is-there-a-server), [Is there a service that can handle multiple
-  keepers' engrams?](#is-there-a-service-that-can-handle-multiple-keepers-engrams),
-  and [Where does sync reach?](#where-does-sync-reach) each state a decision
-  but not why; *Settled in review* promises the reasoning so decisions are not
-  argued again. Much of it now exists elsewhere in the doc and only needs a
-  sentence each. For example, "Is there a server?" follows from the blind
-  peer and "Who is out of scope?" (a server that is just another peer, and
-  cannot read, is what makes the service safe to offer).
-- [ ] **F6. One sentence still says deleted text stays forever.** `:116`, "It
-  remembers what was deleted": "Text a person deleted… is still in that
-  history". Since the README's *Edit history* entry, history runs only back to
-  the last snapshot, so deleted text stays until the next snapshot discards
-  it. ("What sync does", "exchanges the edit history", at `:91` is accurate
-  as it is; the earlier version of this entry listed it too.)
-- [ ] **F11. Two wording points left.** `:759`, under "Removed peers": "It
-  only prevents making this edits" ("these edits"). And the heading at `:554`
-  is "Membership listings", while the glossary's term is **membership list**;
-  "Membership list" would match. ("Membership updater" is fixed.)
-- [ ] **F12. "Edits must form a DAG" says "the previous edit" again.** `:817`:
-  "a signed and hashed link back to the previous edit in the DAG". An edit in
-  a DAG can build on several edits at once, and an earlier version of this
-  sentence said "the parent edits". "To each edit it builds on" is the exact
-  form.
-- [ ] **F13. "Key management" ends on an attack with no pointer.** `:863`:
-  "This specific attack area must be mitigated". The open questions "What
-  about metadata on blind peers?" and "What about history attacks against
-  blind peers?" now cover it; linking to them says where the mitigation is
-  being worked out.
-- [ ] **F14. The merged physical-presence question has one stale phrase.** Its
-  second paragraph (`:268`) says "any writing peer can remove any other peer".
-  "Membership listings" and "Removed peers" limit that to a writing *UI* peer.
-  The real gap is narrower: a compromised writing peer can still submit a
-  membership record, because a receiver cannot tell a UI peer from a headless
-  one.
-- [ ] **F15. "Read Only Membership" wording** (`:569`).
-  - The heading and text say "read only" and "read or write". The glossary's
-    terms are **reading peer** and **writing peer**.
-  - "Read only members, whether UI, headless, or blind": a blind peer is its
-    own kind, since it cannot read at all. The membership list records
-    reading, writing, or blind, so the section's rule covers all three.
-  - Lint: the bullet starting "As a result, the first record" is one 220-column
-    line (MD013) and will block a commit.
-- [ ] **F17. "Attacks on a blind peer" needs two touches.** `:303` opens "Blind
-  peers are susceptible to attacks that other peers are not", but only two on
-  its list are unique to them: undecryptable garbage and forced divergence,
-  which follow from being unable to read. The others hit any peer and are worse
-  on a blind one, because it is always on and reachable or shared. "Blind peers
-  are more exposed to these attacks, and two are unique to them" is exact. It
-  also has no closing condition, which the other recent questions do: for
-  example, closed once each listed attack has a defence, or is accepted as
-  residual risk.
+- [ ] **F5. Scoping decisions without reasons.** Who shares an engram, Is there
+  a server, Is there a service, and Where does sync reach state no reason.
+- [ ] **F6.** `:143`: "in that history" should add "until the next
+  snapshot".
+- [ ] **F11.** `:890`: "making this edits" ("these"). `:636`: heading
+  "Membership listings" could match the glossary's **membership list**.
+- [ ] **F12.** `:954`: "link back to the previous edit" should be "to each edit
+  it builds on".
+- [ ] **F13.** `:1000`: "This specific attack area must be mitigated" could
+  link to the two blind-peer metadata and history questions.
+- [ ] **F14.** `:320`: "any writing peer can remove any other peer" is now "any
+  writing UI peer".
+- [ ] **F15. "Read only" wording.** `:660` heading, `:662`, `:694`, and `:781`
+  say "read only"; the glossary term is **reading peer**, and blind is its own
+  kind.
+- [ ] **F17.** `:355`: "Blind peers are susceptible to attacks that other peers
+  are not": only two are unique to them. The question has no closing condition.
+- [ ] **F25. Glossary gaps.** The README glossary lacks conflict record,
+  quarantine, bootstrapping record, invitation, fingerprint, and symmetric key.
+- [ ] **F27.** `:1306`: "must not accept an invitation from the peer" should be
+  "an invitation acceptance from".

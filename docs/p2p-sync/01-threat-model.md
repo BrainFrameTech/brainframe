@@ -1376,15 +1376,29 @@ None found in the sweep of 2026-11-07.
   how members confirm they have reached it, or what record carries it. Purging
   on blind peers and E4 both depend on the answer. crdt_lf's `importSnapshot`
   trusts a snapshot's contents and prunes history up to it, so a received
-  snapshot must never be imported as is. Direction from review: a peer accepts
-  one only after building its own at the same version and getting the same
-  bytes.
+  snapshot must never be imported as is. Direction from review: a snapshot
+  names the version it covers, every member signs its hash once it rebuilds the
+  same bytes, and only then is older history dropped (see N63).
 - [ ] **N60. The first key.** "Bootstrapping an ensemble" creates no key. Say
   that the bootstrapping peer generates the first key.
 - [ ] **N61. Conflict records are used but not defined.** Add them to the record
   types (`:683`), and say who may raise one and whether blind peers carry them.
 - [ ] **N62. Promoting a blind peer.** "Changing membership type" (`:1167`)
   covers downgrades only. A blind peer made reading or writing needs the keys.
+- [ ] **N63. What a blind peer stores.** Undocumented: encrypted whole files,
+  encrypted edits since the last compaction, and an encrypted snapshot for new
+  joiners, which members can each sign a hash of so a joiner can check it.
+  Snapshots are taken only at the agreed point, so honest ones are identical; a
+  mismatch flags its sender to keepers rather than raising a conflict record.
+  For binary files the CRDT holds only a content hash, so their bytes are
+  stored beside it and checked against that hash.
+- [ ] **N64. Snapshots must be hashed in a canonical form.** Tested in the
+  playground repo (commit 50f4232): `toBytes()` differs between peers holding
+  the same edits. A form sorted by peer ID and handler key matches; hash that.
+  It is specific to each handler type.
+- [ ] **N65. crdt_lf drops a peer's clock on partial pruning.** Importing a
+  snapshot older than local history under-reports that peer's version
+  (`dag/graph.dart:133`). Never import an older snapshot; report it upstream.
 
 ### Overlapping open questions
 
@@ -1424,3 +1438,6 @@ Line numbers are as of 2026-11-07; the quoted text finds each spot.
   quarantine, bootstrapping record, invitation, fingerprint, and symmetric key.
 - [ ] **F27.** `:1306`: "must not accept an invitation from the peer" should be
   "an invitation acceptance from".
+- [ ] **F28. Glossary: *Snapshot* vs the rendered file.** The README's
+  *Snapshot* entry says "complete state of a given document", which reads as
+  the file. It is the CRDT's internal state; the file is rendered from it.

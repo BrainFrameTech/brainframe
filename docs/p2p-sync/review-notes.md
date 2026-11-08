@@ -62,8 +62,6 @@ None found in the sweep of 2026-11-07.
 
 ## Decisions still to make
 
-- [ ] **N60. The first key.** "Bootstrapping an ensemble" creates no key. Say
-  that the bootstrapping peer generates the first key.
 - [ ] **N61. Conflict records are used but not defined.** Add them to the record
   types (`:683`), and say who may raise one and whether blind peers carry them.
 - [ ] **N62. Promoting a blind peer.** "Changing membership type" (`:1167`)
@@ -80,6 +78,10 @@ None found in the sweep of 2026-11-07.
   so every peer builds the same one. Also state that a received snapshot is
   never imported as is: members build their own, and a joiner checks one
   against the agreement records first.
+- [ ] **N69. Conflict records stay local, but three places send them out.**
+  `:842` ("transmitted to the ensemble"), `:865` ("distributed to the ensemble
+  as a conflict record"), and `:914` ("generate a conflict record to the
+  ensemble") predate the new rule. Each needs another record type, or a reword.
 
 ## Overlapping open questions
 

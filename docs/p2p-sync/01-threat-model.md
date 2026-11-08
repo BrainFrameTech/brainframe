@@ -788,6 +788,18 @@ these edits is as follows:
   are now rejected by the earlier rules causing such edits to be rejected as
   invalid, since they have no valid place in the DAG.
 
+### Conflict records and agreement records
+
+Conflict records exist *only* on the peer that found the conflict, and are never
+passed along to the ensemble. Their exact fields are not fully defined, but will
+include at least the following:
+
+- the peer ID of the remote peer
+- the peer ID of the current peer
+- the type of record (membership, edit, etc)
+- the contents from the remote peer, expressed as json
+- the contents from the current peer, expressed as json
+
 ### Removed peers
 
 The keeper must be able to tell BrainFrame that a peer is removed from the
@@ -1229,6 +1241,10 @@ The other fields that are listed in [read only
 membership](#read-only-membership) will all be null. A special consequence of
 this is that the bootstrapping record is, essentially, the origin of the
 ensemble, making this record into the identity of the ensemble.
+
+When an ensemble is being started, the bootstrapping peer is responsible for
+creating the first symmetric key for the ensemble and then distributing it as
+described in [key rotation](#key-rotation-process).
 
 The primary problem for this bootstrapping record is verification: A joining
 peer must be able to verify that this root record actually represents the

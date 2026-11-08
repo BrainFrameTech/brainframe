@@ -1448,6 +1448,3 @@ Line numbers are as of 2026-11-07; the quoted text finds each spot.
   quarantine, bootstrapping record, invitation, fingerprint, and symmetric key.
 - [ ] **F27.** `:1306`: "must not accept an invitation from the peer" should be
   "an invitation acceptance from".
-- [ ] **F28. Glossary: *Snapshot* vs the rendered file.** The README's
-  *Snapshot* entry says "complete state of a given document", which reads as
-  the file. It is the CRDT's internal state; the file is rendered from it.

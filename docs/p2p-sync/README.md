@@ -188,12 +188,20 @@ uses them the same way.
     managed content. It can be a reading peer or a writing peer, but it cannot
     be a *blind* peer. This is the only fixed pairing between peer types: a
     headless peer can be reading, writing, or blind.
+- **Rendered Document**: the document that is output from the edit history and
+  snapshots. From the keeper's perspective, this is the actual document that
+  needs to be protected and preserved. From BrainFrame's perspective, this is an
+  output document of the application.
 - **Service**: an application that runs many blind peers for multiple keepers'
   engrams. Every peer it runs is headless.
 - **Signature**: Every peer provides a public key to the ensemble, and signs
   every operation it performs. Using that signature, along with the membership
   list, allows each receiving peer to determine the validity of the operations
   being performed by other peers *before* accepting those operations.
-- **Snapshot**: the complete state of a given document as of a given point in
-  history as seen across the ensemble. Saved so that entries before this point
-  in history can be safely discarded locally on the current peer.
+- **Snapshot**: the complete *internal* state of a given document as of a given
+  point in history as seen across the ensemble. This includes the element IDs,
+  version vectors, and other internal data from both BrainFrame and the crdt_lf
+  library. Saved so that entries before this point in history can be safely
+  discarded locally on the current peer. Note that this is an integral part of
+  the edit history, used to remove no longer required edits, freeing up storage.
+  It is not optional.

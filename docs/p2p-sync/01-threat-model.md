@@ -1145,6 +1145,36 @@ This does use a clock to register how long it has been since a peer was last
 seen, but no decisions are made by the program based on this clock. This is
 strictly informational for the keeper, and is therefore a safe clock to use.
 
+### Snapshots require special handling
+
+A snapshot covers the internal state of a given document, and is an integral
+part of producing the output document. Especially in the case of a blind peer,
+the system is vulnerable to a malicious actor. The malicious actor would be able
+to submit a falsified snapshot that empties out a document without the handling
+described below.
+
+Every peer must follow these rules when handling snapshots:
+
+- The peer must produce a consistent ordering for the elements of the snapshot
+  (version vector, edit history, etc)
+- The peer must produce a version of the snapshot that uses that ordering. This
+  then becomes the canonical snapshot, as opposed to the snapshot produced by
+  crdt_lf.
+- The peer generates a hash from the canonical snapshot
+- The peer signs that hash and distributes the hash to the ensemble
+- Every peer (except blind peers) compares the incoming hash with its own
+  canonical snapshot hash. When the local hash agrees, the peer publishes an
+  agreement record.
+- The blind peer(s) wait until all reading and writing peers have produced their
+  agreement records. If every peer agrees, then the blind peer is able to prune
+  history without issues.
+- If any peer produces a *different* hash then a problem has occurred with that
+  peer. Possibilities include missing edit history, compromised peer, or subtle
+  hardware failure (among many others). The keepers need to be notified so they
+  can make a decision about the problematic peer.
+- If any peer does not publish an agreement record, it is considered a detached
+  peer, and the rules for handling a detached peer are followed.
+
 ### A fake ensemble is a fork
 
 A compromised writing peer can create a fake membership list, with fake
@@ -1323,128 +1353,3 @@ and reject any edit records from a withdrawn peer, similar to rejecting any edit
 records from a removed peer. The mechanism will be the same, but the list of
 edits that will be accepted from the peer that had its invitation withdrawn will
 simply be empty.
-
-## Open Issues Identified by Claude
-
-Places are named by section and quoted text rather than line number, so the
-references survive edits. Remove an item once it is addressed.
-
-### Reference: trust models and methods
-
-Two separate lists, kept here for filling in the tables. They answer different
-questions: the models say who is trusted and how much, and the methods are the
-tools applied to each model.
-
-**Trust models** (who is trusted, and how much). The doc combines these; the
-names are the standard ones, not terms it has defined.
-
-- **Trusted endpoint.** Reading and writing peers on a keeper's own hardware.
-  Anyone with the keeper's account is out of scope; attacks on BrainFrame
-  itself, such as privilege escalation, are in scope. See the first bullet of
-  [Who is out of scope?](#who-is-out-of-scope).
-- **Untrusted server.** Blind peers and the service, at two strengths:
-  - *Honest-but-curious* (or semi-honest): follows the protocol, but tries to
-    learn what it can. "What about metadata on blind peers?" is written
-    against this.
-  - *Malicious*: also deletes, delays, or withholds. "What about history
-    attacks against blind peers?" is written against this.
-
-  The design goal for this model is usually called end-to-end encryption, or
-  "zero-knowledge" storage.
-- **Insider, or Byzantine.** A legitimate member that behaves arbitrarily: a
-  stolen device, a compromised writing peer, a hostile keeper. Most of
-  *Settled in review* is about this model.
-- **Network attacker** (arguably a fourth, and still thin in the doc). Described
-  in RFC 3552's terms. "What about metadata on a local network?" belongs here.
-
-**Methods** (the tools, listed in the README's "How the threat model is
-built").
-
-- **The Four Questions** give the document its structure: *What are we working
-  on? What can go wrong? What are we going to do about it? Did we do a good
-  enough job?* This document answers the first two.
-- **STRIDE** is the checklist for security threats: Spoofing, Tampering,
-  Repudiation, Information disclosure, Denial of service, Elevation of
-  privilege.
-- **LINDDUN** is the checklist for privacy threats: Linking, Identifying,
-  Non-repudiation, Detecting, Data disclosure, Unawareness, Non-compliance.
-- **RFC 3552's attacker terms** describe what each adversary can do: passive or
-  active, on-path or off-path.
-
-**How they meet in the tables.** The models supply the rows of the Adversaries
-table. Running STRIDE and LINDDUN against each adversary supplies the Threats
-table: for example, the service against Information disclosure and Linking, or
-a stolen writing peer against Tampering and Elevation of privilege.
-
-### Contradictions
-
-None found in the sweep of 2026-11-07.
-
-### Decisions still to make
-
-- [ ] **N59. How is a snapshot agreed?** Nothing says who proposes a snapshot,
-  how members confirm they have reached it, or what record carries it. Purging
-  on blind peers and E4 both depend on the answer. crdt_lf's `importSnapshot`
-  trusts a snapshot's contents and prunes history up to it, so a received
-  snapshot must never be imported as is. Direction from review: a snapshot
-  names the version it covers, every member signs its hash once it rebuilds the
-  same bytes, and only then is older history dropped (see N63).
-- [ ] **N60. The first key.** "Bootstrapping an ensemble" creates no key. Say
-  that the bootstrapping peer generates the first key.
-- [ ] **N61. Conflict records are used but not defined.** Add them to the record
-  types (`:683`), and say who may raise one and whether blind peers carry them.
-- [ ] **N62. Promoting a blind peer.** "Changing membership type" (`:1167`)
-  covers downgrades only. A blind peer made reading or writing needs the keys.
-- [ ] **N63. What a blind peer stores.** Undocumented: encrypted whole files,
-  encrypted edits since the last compaction, and an encrypted snapshot for new
-  joiners, which members can each sign a hash of so a joiner can check it.
-  Snapshots are taken only at the agreed point, so honest ones are identical; a
-  mismatch flags its sender to keepers rather than raising a conflict record.
-  For binary files the CRDT holds only a content hash, so their bytes are
-  stored beside it and checked against that hash.
-- [ ] **N64. Snapshots must be hashed in a canonical form.** Tested in the
-  playground repo (commit 50f4232): `toBytes()` differs between peers holding
-  the same edits. A form sorted by peer ID and handler key matches; hash that.
-  It is specific to each handler type.
-- [ ] **N65. crdt_lf drops a peer's clock on partial pruning.** Importing a
-  snapshot older than local history under-reports that peer's version
-  (`dag/graph.dart:133`). Never import an older snapshot; report it upstream.
-
-### Overlapping open questions
-
-- [ ] **E4. Three questions cover forced snapshots.** "How to validate
-  snapshots?", "How to deal with a malicious actor forcing snapshots…", and part
-  of "A blind peer outside snapshotting keeps history longer". A forged snapshot
-  is already refused. What remains is one question: how long history is kept
-  before a legitimate snapshot makes a stolen peer's vandalism permanent.
-
-### Before acceptance
-
-- [ ] **F26. Empty sections.** Scope, Data-flow diagram, Assets, Threats, and
-  Security goals are still empty, and later documents check against them.
-
-### Housekeeping
-
-Line numbers are as of 2026-11-07; the quoted text finds each spot.
-
-- [ ] **F5. Scoping decisions without reasons.** Who shares an engram, Is there
-  a server, Is there a service, and Where does sync reach state no reason.
-- [ ] **F6.** `:143`: "in that history" should add "until the next
-  snapshot".
-- [ ] **F11.** `:890`: "making this edits" ("these"). `:636`: heading
-  "Membership listings" could match the glossary's **membership list**.
-- [ ] **F12.** `:954`: "link back to the previous edit" should be "to each edit
-  it builds on".
-- [ ] **F13.** `:1000`: "This specific attack area must be mitigated" could
-  link to the two blind-peer metadata and history questions.
-- [ ] **F14.** `:320`: "any writing peer can remove any other peer" is now "any
-  writing UI peer".
-- [ ] **F15. "Read only" wording.** `:660` heading, `:662`, `:694`, and `:781`
-  say "read only"; the glossary term is **reading peer**, and blind is its own
-  kind.
-- [ ] **F17.** `:355`: "Blind peers are susceptible to attacks that other peers
-  are not": only two are unique to them. The question has no closing condition.
-- [ ] **F25. Glossary gaps.** The README glossary lacks conflict record,
-  quarantine, bootstrapping record, invitation, fingerprint, and symmetric key.
-- [ ] **F27.** `:1306`: "must not accept an invitation from the peer" should be
-  "an invitation acceptance from".

@@ -1057,15 +1057,25 @@ In the event that two key rotations appear at the same level in the membership
 list DAG, we again take from the CRDT methodology, and use the hybrid logical
 clock attached to the record, sort it lexicographically, and use the last writer
 wins still. Once the decision is made, a new key rotation occurs. This new
-rotation must be issued by the peer that won the decision, and no other. The new
-key rotation will follow this same process. This mitigates the effect of a
-detached peer giving the current symmetric key to a removed peer that the
-detached peer did not know about yet.
+rotation must be issued by the peer that won the decision. The new key rotation
+will follow this same process. This mitigates the effect of a detached peer
+giving the current symmetric key to a removed peer that the detached peer did
+not know about yet.
+
+In the event that the winning peer is unable to issue the new key (for instance,
+if it was stolen), any writing UI peer *can* initiate a key rotation process.
+Any writing UI peer will notify the keeper if this situation is detected and
+unresolved for 7 days after the peer received the conflicting key. At this
+point, the key rotation process becomes a normal key rotation process, initiated
+by a keeper.
 
 This would seem to contradict [clocks can't be
 trusted](#clocks-cannot-be-trusted), but this is another low-consequence
 decision: One of the keys has to win, one has to be retired, and CRDTs with HLCs
-have been using this for decades already.
+have been using this for decades already. Add in that a keeper can initiate this
+manually, and the usage of the local clock to notify the keeper about the
+problem is a low-consequence operation, and, for this case, the use of a clock
+is justified.
 
 ### Peers must defend against pathological edit history
 

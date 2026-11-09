@@ -64,7 +64,7 @@ None found in the sweep of 2026-11-07.
 
 - [ ] **N61. Conflict records are used but not defined.** Add them to the record
   types (`:683`), and say who may raise one and whether blind peers carry them.
-- [ ] **N62. Promoting a blind peer.** "Changing membership type" (`:1167`)
+- [ ] **N62. Promoting a blind peer.** "Changing membership type" (`:1219`)
   covers downgrades only. A blind peer made reading or writing needs the keys.
 - [ ] **N65. crdt_lf drops a peer's clock on partial pruning.** Importing a
   snapshot older than local history under-reports that peer's version
@@ -82,6 +82,10 @@ None found in the sweep of 2026-11-07.
   `:842` ("transmitted to the ensemble"), `:865` ("distributed to the ensemble
   as a conflict record"), and `:914` ("generate a conflict record to the
   ensemble") predate the new rule. Each needs another record type, or a reword.
+- [ ] **N70. Only writing UI peers can resolve a conflict.** A blind peer sees
+  only ciphertext, so it can't judge content; a local-only record found by a
+  blind, headless or reading peer is never resolved. Conflict records need a
+  rethink.
 
 ## Overlapping open questions
 
@@ -98,17 +102,17 @@ None found in the sweep of 2026-11-07.
 
 ## Housekeeping
 
-Line numbers are as of 2026-11-07; the quoted text finds each spot.
+Line numbers are as of 2026-11-08; the quoted text finds each spot.
 
 - [ ] **F5. Scoping decisions without reasons.** Who shares an engram, Is there
   a server, Is there a service, and Where does sync reach state no reason.
 - [ ] **F6.** `:143`: "in that history" should add "until the next
   snapshot".
-- [ ] **F11.** `:890`: "making this edits" ("these"). `:636`: heading
+- [ ] **F11.** `:902`: "making this edits" ("these"). `:636`: heading
   "Membership listings" could match the glossary's **membership list**.
-- [ ] **F12.** `:954`: "link back to the previous edit" should be "to each edit
+- [ ] **F12.** `:966`: "link back to the previous edit" should be "to each edit
   it builds on".
-- [ ] **F13.** `:1000`: "This specific attack area must be mitigated" could
+- [ ] **F13.** `:1012`: "This specific attack area must be mitigated" could
   link to the two blind-peer metadata and history questions.
 - [ ] **F14.** `:320`: "any writing peer can remove any other peer" is now "any
   writing UI peer".
@@ -119,7 +123,7 @@ Line numbers are as of 2026-11-07; the quoted text finds each spot.
   are not": only two are unique to them. The question has no closing condition.
 - [ ] **F25. Glossary gaps.** The README glossary lacks conflict record,
   quarantine, bootstrapping record, invitation, fingerprint, and symmetric key.
-- [ ] **F27.** `:1306`: "must not accept an invitation from the peer" should be
+- [ ] **F27.** `:1362`: "must not accept an invitation from the peer" should be
   "an invitation acceptance from".
 
 ## Proposal: move the mitigations out

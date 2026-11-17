@@ -66,16 +66,14 @@ wrong, and what must hold. No contradictions were found in the sweep of
 
 ### Overlapping open questions
 
-- [ ] **E4. Three questions cover forced snapshots.** "How to validate
-  snapshots?", "How to deal with a malicious actor forcing snapshots…", and part
-  of "A blind peer outside snapshotting keeps history longer". A forged snapshot
-  is already refused. What remains is one question: how long history is kept
-  before a legitimate snapshot makes a stolen peer's vandalism permanent.
+### Decisions still to make
 
 ### Before acceptance
 
 - [ ] **F26. Empty sections.** Scope, Data-flow diagram, Assets, Threats, and
-  Security goals are still empty, and later documents check against them.
+  Security goals are still empty, and later documents check against them. The
+  removed "How to validate snapshots?" named two Threats rows worth keeping: a
+  stolen writing peer encrypting notes (ransomware) or rewriting them en masse.
 - [ ] **F32. A goal for each section that moved.** Fourteen sections now point
   to the protocol document. Each should leave a one-line security goal (`G`)
   in 01, stated as a property documents 3 and 5 can check a protocol against.
@@ -95,23 +93,16 @@ wrong, and what must hold. No contradictions were found in the sweep of
   | File synchronization tools, Backup restoration | Keepers are warned when another tool writes to the engram |
   | Removed peers: quarantine | A removed peer's edits reach the ensemble only through a keeper |
 
-### Housekeeping
+- [ ] **F34. Ten open questions remain.** You planned to answer them before
+  acceptance; none has an answer yet.
+- [ ] **F35. One assumption is thin.** The doc also relies on sound
+  cryptography and randomness, on keepers really comparing pairing codes, and
+  on crdt_lf converging correctly. Each belongs in Assumptions.
+- [ ] **F36. Accepted risks are scattered.** Clock drag, a keeper removing
+  another, a fake ensemble, and legal access to metadata are each accepted in
+  their own section. Non-goals is the place to list them together.
 
-- [ ] **F5. Scoping decisions without reasons.** Who shares an engram, Is there
-  a server, Is there a service, and Where does sync reach state no reason.
-- [ ] **F6.** `01:137`: "in that history" should add "until the next
-  snapshot".
-- [ ] **F13.** `01:803`: "This specific attack area must be mitigated" could
-  link to the two blind-peer metadata and history questions.
-- [ ] **F14.** `01:314`: "any writing peer can remove any other peer" is now
-  "any writing UI peer".
-- [ ] **F15. "Read only" wording.** `01:654` heading, `01:657`, and `01:665` say
-  "read only"; the glossary term is **reading peer**, and blind is its own kind.
-- [ ] **F17.** `01:349`: "Blind peers are susceptible to attacks that other
-  peers are not": only two are unique to them. The question has no closing
-  condition.
-- [ ] **F30.** `01:630`: heading "Membership listings" could match the
-  glossary's **membership list**.
+### Housekeeping
 
 ## Protocol design (06)
 

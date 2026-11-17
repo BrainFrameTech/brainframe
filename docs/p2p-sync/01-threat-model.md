@@ -134,7 +134,8 @@ an attacker, and its loss worse for its keeper, than most collections of files:
   their titles and links, still learns a great deal.
 - **It remembers what was deleted.** The edit history is kept so that edits can
   be merged. Text a person deleted, because they regretted writing it, is still
-  in that history, and sync carries the history to every peer.
+  in that history (until at least the next snapshot), and sync carries the
+  history to every peer.
 - **What someone reads, and what they mark, is revealing too.** The
   documents in an engram, and the passages highlighted in them, say what a
   person is studying, worried about, or planning.
@@ -268,6 +269,7 @@ connections between them, with trust boundaries drawn as subgraphs.
 | ADV9 | Network attacker, on-path | See traffic and discovery broadcasts; drop or delay packets | Read encrypted content; forge signed records |
 | ADV10 | Network attacker, off-path | Connect to peers ; flood them ; answer discovery as a fake peer | Get past signature checks |
 | ADV11 | Lower-privileged app on the same device | Try to use BrainFrame to escalate privileges | Read the keeper's files (if the OS is sound) |
+| ADV12 | Legal system | Require data held by a peer, especially the service; read all exposed metadata | Decrypt the data without decryption keys |
 
 ### Assumptions
 
@@ -311,34 +313,10 @@ question is only whether the threat model asks for the property, and for which
 actions.
 
 We need to have a mechanism to prevent a stolen peer from taking over an
-ensemble. Right now, as stated, any writing peer can remove any other peer. We
-should provide options to the keeper to manage this, including the idea of
+ensemble. Right now, as stated, any writing UI peer can remove any other peer.
+We should provide options to the keeper to manage this, including the idea of
 requiring something like a YubiKey or a passkey or a Fido2 key. Additionally,
 removal and rejoining needs to be protected somehow.
-
-### A blind peer outside snapshotting keeps history longer
-
-If the blind peer can't validate the data, then a safe mechanism must be
-provided to allow the blind peer to discard edit history after new snapshots get
-made. This mechanism is not yet defined, but must be.
-
-An attacker must not be able to read the encrypted snapshots. It also must not
-be able to read the contents of individual edits (which are also encrypted).
-
-In order for the blind peer to be able to tell what data it can purge, it *must*
-be able to read enough data to determine that an edit belongs to a specific
-document, and that a new snapshot for that document has arrived, allowing it to
-remove the edit history from before that snapshot. A consequence of this is that
-the ensemble must carry enough information about the snapshot to prove that
-every peer has actually moved to this point in the edit history. Without those
-guarantees, a malicious actor using a stolen writing peer could submit a
-snapshot to a blind peer that claims the current state of a document is empty,
-and all other peers would accept that edit as being valid even if they have
-outstanding edits against a document.
-
-This question is about the balance: How do we provide enough data for a blind
-peer to safely delete no longer relevant history without giving an attacker the
-ability to destroy the ensemble?
 
 ### Attacks on a blind peer
 
@@ -346,9 +324,9 @@ ability to destroy the ensemble?
 - Related [open
   question](#how-to-define-useful-file-size-limits-record-size-limits-etc)
 
-Blind peers are susceptible to attacks that other peers are not, and the
-consequences of those attacks can be more harmful to the ensemble. Possible
-attacks include:
+Blind peers are susceptible to attacks that can propagate to the entire
+ensemble, and the consequences of those attacks can be more harmful to the
+ensemble than to just one peer in the ensemble. Possible attacks include:
 
 - Sending in extremely large individual edits
 - Sending in millions of small edits
@@ -368,6 +346,9 @@ attacks include:
 - Free hosting - A keeper uses the encrypted storage to host illegal data (such
   as CSAM), which carries legal implications
 
+This question can be closed when each of these threats is listed, along with
+either mitigations or acceptance of the risks.
+
 ### How to define a harmful edit?
 
 Related [open
@@ -386,24 +367,33 @@ running on a server with multiple terabytes of RAM or a single Raspberry Pi Zero
 the machine running the rules, then divergent CRDT trees become possible, and
 that is an unacceptable state.
 
-### How to validate snapshots?
+### How long to keep history from before snapshots?
 
-The blind peer, with no knowledge of the data, provides an attack vector that
-has not been considered: If a device is stolen, then the attacker can force a
-new snapshot of an empty document, effectively destroying the document. Other
-variations include ransomware scenarios, as well as simply global search and
-replace across the engram. How do we prevent these bad actor edits from
-infecting the entire engram?
+The history data for a given document can be valuable in the recovery from a
+malicious actor. Multiple methods exist for keeping history *outside* of
+BrainFrame. Among them:
 
-### How to deal with a malicious actor forcing snapshots across the ensemble?
+- git (or another version control system)
+- S3 (or other cloud storage), particularly with object versioning and lifecycle
+  management
+- Offline backup
 
-A malicious actor, stealing a peer, can take over and do a number of things to
-destroy the ensemble. The most obvious is to empty out every note, force a
-snapshot, and propagate that snapshot. Other malicious edits would involve
-encrypting the data, and pushing that encrypted data out as a snapshot. The
-dominant factor here is that a snapshot is destructive of history, and a
-malicious actor could easily force that snapshot and propagation. Need to
-determine a method for dealing with those actions.
+These options provide a recovery path in the face of an attack or a mishap.
+
+This open question is different: How long, after a snapshot is made, should
+prior edit history be kept? Should a keeper be able to rewind history past a
+snapshot? Keeping all history, forever, is not a viable option. CRDTs use a
+large data structure to represent a small change (potentially as much as
+500bytes for a single character). Keepers will be unwilling to use
+multiple-terabyte storage systems to maintain gigabytes of their data, so a
+decision must be made.
+
+The reason this is a difficult decision is that, absent any other recovery
+mechanism, this ability represents how long a keeper has to notice vandalism and
+recover from it.
+
+This question can be closed when that decision is made and documented, along
+with any supporting rationale behind the decision.
 
 ### How to define useful file size limits, record size limits, etc?
 
@@ -594,6 +584,28 @@ This question can be closed when either mitigations have been defined, *or* when
 the risks have been accepted as un-mitigatable (with stated reasons why they
 can't be mitigated).
 
+### What about crafted malicious connections or payloads?
+
+It is possible for an attacker to attack the parser itself, and deliver malware
+to the entire ensemble via a blind peer. The attack looks like this:
+
+- Malicious payload running arbitrary code gets crafted
+- The payload is injected from a stolen writing peer, sent directly to a blind
+  peer
+- The blind peer propagates the payload to every other peer
+- Every receiving peer then tries to decrypt and apply the payload
+- The payload, targeting the parser itself, exploits a bug in the parser and
+  delivers malware to every peer that received it
+- Every peer in the ensemble is now infected with malware. Depending on the
+  malware, this could have infected every device, not just every peer
+
+The same attack works without a stolen device against the code that reads the
+record's envelope, since a peer must parse that envelope before it can check the
+signature. Anyone who can connect to a peer (ADV10) can target it.
+
+This question can be closed when a mitigation strategy for this attack is
+documented.
+
 ## Settled in review
 
 Decisions made in review, with the reasoning, so they are not argued again.
@@ -651,10 +663,10 @@ Because we cannot keep thousands (or more) edit IDs forever without consuming
 unreasonable amounts of storage space, we should store the public keys and
 associated peer IDs in a separate table.
 
-### Read Only Membership
+### Reading peers
 
 The membership list, coupled with key distribution and signatures, covers the
-scenarios for read only members, whether UI, headless, or blind.
+scenarios for reading or blind peers.
 
 A given peer publishes a public key to the ensemble, and everything it does is
 signed before it gets sent to another peer. Any unsigned items are rejected
@@ -662,7 +674,7 @@ during the synchronization process, protecting the receiving peer (and, in turn,
 protecting the ensemble).
 
 Blind peers can also use this mechanism to protect themselves. Using it, they
-can reject writes from read-only peers as well as reject any connections (and
+can reject writes from reading peers as well as reject any connections (and
 any edits from those connections) from non-peers. One exception to the rejection
 exists: When an invitation exists for a current non-peer, that connection is
 allowed to propagate an invitation acceptance record.
@@ -673,7 +685,7 @@ The protocol details for this section are in the [protocol document](06-brainfra
 
 A blind peer can validate that incoming connections and edits are from valid
 writing peers. See [membership listing](#membership-listings) and [read-only
-membership](#read-only-membership).
+membership](#reading-peers).
 
 What remains is how to have a blind peer reject a harmful action from a
 malicious current peer, such as over-sized edits, flooding the ensemble, etc.
@@ -800,7 +812,9 @@ removal.
 
 An attacker who gains OS level access to a blind peer (or the service) will be
 unable to read the data, but will still be able to review (and possibly modify)
-the metadata. This specific attack area must be mitigated.
+the metadata. This specific attack area must be mitigated. See [blind-peer
+metadata](#what-about-metadata-on-blind-peers) and
+[history](#what-about-history-attacks-against-blind-peers) open questions.
 
 ### What a decryption key is and where it is stored
 
@@ -908,3 +922,28 @@ The protocol details for this section are in the [protocol document](06-brainfra
 ### Joining an ensemble, even for peers separated by hundreds of miles
 
 This section has moved to the [protocol document](06-brainframe-protocol.md#joining-an-ensemble-even-for-peers-separated-by-hundreds-of-miles).
+
+### Legal demands
+
+The courts have the capability to compel the operator of the service to provide
+copies of all data and metadata stored in the service on behalf of a given
+keeper.
+
+The service will be hosted in the United States of America. The specific state
+is not yet determined, and will be subject to available hosting service
+capabilities (AWS provides different locations from GCP, for example). This is
+done to minimize conflicts for the operators of the service, who are also
+expected to reside in the USA.
+
+All legal requests will be subject to the laws of the USA, and abided by as
+such. Any international legal requests will be followed as long as they do not
+cause conflict with the laws of the USA.
+
+Negative effects: Some countries (eg Russia) require service offerings to be
+hosted within their country, and fully subject to their laws. Any such country,
+once identified, will be placed on a geo-ip block list, prohibiting their users
+from accessing the service.
+
+Additionally, the digital sovereignty movement in Europe (and other countries)
+will likely disagree and not use the service because of the dependence on
+following USA laws. While this is unfortunate, it is expected and understood.

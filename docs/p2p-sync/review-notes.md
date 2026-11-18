@@ -95,9 +95,6 @@ wrong, and what must hold. No contradictions were found in the sweep of
 
 - [ ] **F34. Ten open questions remain.** You planned to answer them before
   acceptance; none has an answer yet.
-- [ ] **F35. One assumption is thin.** The doc also relies on sound
-  cryptography and randomness, on keepers really comparing pairing codes, and
-  on crdt_lf converging correctly. Each belongs in Assumptions.
 - [ ] **F36. Accepted risks are scattered.** Clock drag, a keeper removing
   another, a fake ensemble, and legal access to metadata are each accepted in
   their own section. Non-goals is the place to list them together.

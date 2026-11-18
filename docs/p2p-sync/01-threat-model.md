@@ -240,7 +240,59 @@ of losing all of a keeper's notes, and that is an unacceptable risk.
 
 ### Scope
 
-What this threat model covers, and what it leaves to other documents.
+This threat model is a comprehensive overview of the things that BrainFrame
+needs to protect and the things it needs to protect against. It does *not*
+include details of the protocol. That is discussed in [BrainFrame
+protocol](06-brainframe-protocol.md). It does not compare how BrainFrame's
+protections and threats compare to other programs.
+
+This document does not list out the mitigations for any attacks that are
+uncovered. If any were found during the creation of the document, they are
+linked to their respective section in the [protocol](06-brainframe-protocol.md)
+document.
+
+BrainFrame is made up of many pieces, and this document does not cover all of
+them. This document is focused on the ensemble, and maintaining the security of
+the ensemble as a whole. As such, it covers the following items:
+
+- The peer to peer synchronization, along with the network based attacks that
+  can come from that
+- Membership in the ensemble, along with how to track membership and remove
+  peers from the ensemble
+- Encryption keys and decryption keys, both symmetrical and asymmetric.
+- The different types of peers participating in the ensemble, including UI
+  peers, headless peers, blind peers, reading peers, and writing peers
+- The service that will be built as a blind peer, offering internet hosting of
+  an engram for the ensemble
+
+In particular, it does not cover the following portions of the system:
+
+- The Markdown editor
+- The viewers for the different file types
+- Application updates
+- The operating system
+
+All of these components are essential for the proper functioning of BrainFrame,
+but they are outside the scope of this document. The assumption is made that
+anything that is brought in from the network is being defended by the
+synchronization layer working properly.
+
+Fully defending the markdown editor or file viewers is the sort of job that
+entire companies are built around, as the process of detecting malware is (by
+itself) a full-time job. Every attempt will be made to provide secure editors
+and viewers, but ADV6 means that a hostile keeper finding a zero-day
+vulnerability has an attack against the entire ensemble that cannot be
+adequately defended against. This is no different from a trusted user being able
+to download malware onto a fileserver, with all the same ramifications.
+
+[Any-Sync Protocol](02-any-sync-protocol.md) covers the Any-Sync protocol (used
+by AnyType), and [Any-Sync Fit](03-any-sync-fit.md) discusses how well the
+Any-Sync protocol fits BrainFrame's needs.
+
+[Syncthing Protocol](04-syncthing-protocol.md) covers the Syncthing protocol,
+and [Syncthing Fit](05-syncthing-fit.md) discusses how well the Syncthing
+protocol fits BrainFrame's needs. If Any-Sync is determined to be a good fit,
+then Syncthing will not be evaluated.
 
 ### Data-flow diagram
 
@@ -251,6 +303,15 @@ connections between them, with trust boundaries drawn as subgraphs.
 
 | ID | Asset | Why it matters |
 | --- | --- | --- |
+| A1 | Keeper notes | This is what the user creates in BrainFrame itself, and their core reason for using the application |
+| A2 | Keeper media | Data the user is storing/accessing via BrainFrame |
+| A3 | Keeper annotations | Data the user creates but not plain text (such as pen highlights) |
+| A4 | Sync data | Edit histories and membership lists and keys, things that allow sync to actually work and be useful |
+| A5 | File names | Descriptive names that reveal what is being worked on |
+| A6 | Folder names | Descriptive names that reveal the organization of a keeper's thinking |
+| A7 | Membership Identity | (Required for the service, optional without) Who is participating in the ensemble |
+| A8 | Timing Information | CRDT edit histories include Hybrid Logical Clocks that can reveal which peer was working on a document, along with how much and how long |
+| A9 | Intra-Engram Links | How different notes are connected by the keeper |
 
 ## What can go wrong
 
@@ -276,6 +337,16 @@ connections between them, with trust boundaries drawn as subgraphs.
 | ID | Assumption | If it is false |
 | --- | --- | --- |
 | AS1 | The OS of a keeper's device is not compromised | Attacker has full access to all keys, and can do anything inside the engram/ensemble |
+| AS2 | Quality cryptography | Data on the blind peers and service is easily compromised, impersonation becomes possible |
+| AS3 | Quality randomness | The keys used for the encryption will be easily found, compromising the encryption |
+| AS4 | Keepers compare pairing codes | The keepers are susceptible to man in the middle attacks, compromising their security |
+| AS5 | crdt_lf converges correctly | The data in a note can become irretrievable |
+| AS6 | BrainFrame app is not compromised | A compromised version of BrainFrame subverts all expectations |
+| AS7 | At least one honest writing UI peer remains | The ensemble is irretrievable, and must be recreated |
+| AS8 | Keepers act on warnings | Failure to act on them results in unbounded edit-history growth, quarantines of lost data, and files going out of sync |
+| AS9 | Private keys never leave their peer | Other devices/peers can impersonate one another |
+| AS10 | Each OS account belongs to one keeper | A keeper can modify another keeper's engram, and no way to differentiate keepers |
+| AS11 | Keepers keep backups outside of BrainFrame | Entire engram can be permanently lost to attacks on a device |
 
 ### Threats
 

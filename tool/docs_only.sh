@@ -15,6 +15,11 @@
 #   assets/  the built-in tutorial engram, shipped in the app
 #   test/    fixtures, including the manual-testing engram
 #   lib/     sources, and anything they may load
+# JSON under docs/ counts as documentation too: design documents keep
+# companion files there, such as the OWASP Threat Dragon model behind the sync
+# threat model's data-flow diagrams, and neither the app nor its tests read
+# docs/.
+#
 # Everything else — Dart, YAML, ARB, scripts, the markdownlint config — runs
 # the full suite.
 #
@@ -43,6 +48,7 @@ while IFS= read -r file; do
   case $file in
     assets/* | test/* | lib/*) exit 1 ;;
     *.md | *.markdown) ;;
+    docs/*.json) ;;
     *) exit 1 ;;
   esac
 done <<<"$changed"

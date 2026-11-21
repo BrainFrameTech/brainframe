@@ -237,7 +237,36 @@ void main() {
       if (folder.existsSync()) folder.deleteSync(recursive: true);
     });
 
-    Future<void> openFolder(WidgetTester tester) async {
+    // Waits under real time, pumping frames, until [done] holds. Call it
+    // inside runAsync. Real I/O takes as long as the machine needs: a fixed
+    // delay passed on an idle machine and failed under load, when the full
+    // suite's parallel workers kept the preview from finishing in time
+    // (#244). The limit only exists so a real hang fails, with [what] saying
+    // what never happened.
+    Future<void> pumpUntil(
+      WidgetTester tester,
+      bool Function() done,
+      String what,
+    ) async {
+      final clock = Stopwatch()..start();
+      while (!done()) {
+        if (clock.elapsed > const Duration(seconds: 30)) {
+          fail('$what did not happen within ${clock.elapsed.inSeconds}s');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        // A frame's worth of fake time too, so route transitions advance:
+        // a dialog that is closing stays in the tree until its exit
+        // animation ends, and a bare pump() never moves the fake clock.
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+
+    bool dialogShown() => find.text('Adopt this folder?').evaluate().isNotEmpty;
+
+    Future<void> openFolder(
+      WidgetTester tester, {
+      bool expectDialog = true,
+    }) async {
       await tester.tap(find.text('Tutorial'));
       await tester.pumpAndSettle();
       // The preview lists the folder for real, so the tap and the I/O it
@@ -247,7 +276,15 @@ void main() {
       await tester.runAsync(() async {
         await tester.tap(find.text('Open folder…'));
         await tester.pump();
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if (expectDialog) {
+          // The title appears only once the preview has finished; until then
+          // the dialog shows its "looking" state.
+          await pumpUntil(tester, dialogShown, 'The adopt dialog');
+        } else {
+          // Nothing will arrive, so there is nothing to wait for; a short
+          // real pause only gives a wrongly shown dialog the chance to show.
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
       });
       await tester.pumpAndSettle();
     }
@@ -284,7 +321,11 @@ void main() {
       // continuation runs there too.
       await tester.runAsync(() async {
         await tester.tap(find.widgetWithText(TextButton, 'Adopt'));
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await pumpUntil(
+          tester,
+          () => repo.adopted.isNotEmpty,
+          'Adopting the folder',
+        );
       });
       await tester.pumpAndSettle();
 
@@ -321,7 +362,11 @@ void main() {
       await openFolder(tester);
       await tester.runAsync(() async {
         await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await pumpUntil(
+          tester,
+          () => !dialogShown(),
+          'Closing the dialog on Cancel',
+        );
       });
       await tester.pumpAndSettle();
 
@@ -337,7 +382,7 @@ void main() {
         harness(repo, tutorial, folderPicker: () async => null),
       );
 
-      await openFolder(tester);
+      await openFolder(tester, expectDialog: false);
 
       expect(find.text('Adopt this folder?'), findsNothing);
       expect(repo.adopted, isEmpty);

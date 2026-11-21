@@ -296,8 +296,55 @@ then Syncthing will not be evaluated.
 
 ### Data-flow diagram
 
-A Mermaid diagram of the peers, any server, the data stores, and the
-connections between them, with trust boundaries drawn as subgraphs.
+```mermaid
+---
+config:
+  flowchart:
+    nodeSpacing: 20
+    rankSpacing: 30
+    padding: 8
+---
+flowchart LR
+  K1([Keeper 1])
+  K2([Keeper 2])
+  subgraph DeviceA["Keeper's Device"]
+    KOS([Keeper OS])
+    EK([Encryption Keys])
+    FST([File Sync Tools])
+    subgraph APP["BrainFrame"]
+      subgraph ENGRAM["Engram"]
+        UIP([UI Peer])
+        F(["Engram Files"])
+        subgraph BF[".brainframe"]
+          Q([Quarantine Zone])
+          ML([Membership List])
+          H([Edit History])
+        end
+      end
+    end
+  end
+  subgraph INT["Internet"]
+    subgraph SVC["Service"]
+      subgraph SOS["Service OS"]
+        BP1([Blind Peer])
+        ES([Encrypted Store])
+      end
+    end
+  end
+  Ensemble
+  MP([Member Peer])
+  HP([Headless Peer])
+  RP([Reading Peer])
+  WP([Writing Peer])
+  BP2([Blind Peer])
+  DP([Detached Peer])
+  RMP([Removed Peer])
+  JP([Joining Peer])
+  LAN([Local Network])
+  HOS([Headless OS])
+  BK([Backups])
+  LS([Legal System])
+```
 
 ### Assets
 
@@ -468,46 +515,7 @@ with any supporting rationale behind the decision.
 
 ### How to define useful file size limits, record size limits, etc?
 
-Related [open question](#how-to-define-a-harmful-edit).
-
-Also related: [attacks on blind peers](#attacks-on-a-blind-peer).
-
-Harmful edits are just one avenue of attack. An engram under attack can be asked
-to receive very large files (multiple gigabytes), that only some machines could
-actually open successfully, while the e-Ink device that is being planned might
-never be able to open them under any circumstances. A single PDF that is
-deliberately malformed and consumes several gigabytes of storage might only be
-possible to open on a high end desktop, or not at all. And an attacker could
-simply have the goal of rendering the engram useless.
-
-Fortunately, recovery from the worst part of such an attack is usually
-relatively easy (delete the `.brainframe` folder, delete the offending files if
-they got written, re-adopt the folder using the application, have the other
-peers join the new ensemble). However, that recovery should be a last resort,
-not a standard "Oops, that sucks" response.
-
-Relevancy is increased in the event of an already trusted peer being
-compromised: a UI peer with writing permission could be compromised and generate
-conflict records that could overwhelm peers with malicious edits.
-
-Limits on total quantity of records need to be implemented. A compromised peer
-could generate millions of small edits that could bring down the ensemble. A
-single document, for example, could insert the letter `a` 10,000 times (each in
-their own edit), and then delete each of them, and repeat that process
-100,000,000 times before trying to synchronize with the ensemble. This would
-likely bring down even the most powerful desktops running BrainFrame.
-
-Transmission of files as a whole must also be guarded. For example, on Linux, a
-symbolic link to /dev/zero would result in a file that has unlimited size. Files
-will need to be strictly regular files (no sockets, no symbolic links, no pipes,
-etc), with their maximum size small enough to be usable on the e-Ink device, and
-streamed rather than received whole. The maximum size must work for *all*
-platforms, from the e-Ink device all the way up to the desktop, so the maximum
-size is actually a constant across all peers.
-
-We need to define useful limits that won't prevent people from storing the files
-that they want to store in the engram, but also will not overwhelm the smallest
-devices and only be usable on the most powerful desktops.
+This question has moved to the [protocol document](06-brainframe-protocol.md#how-to-define-useful-file-size-limits-record-size-limits-etc).
 
 ### What about metadata on blind peers?
 
@@ -561,68 +569,11 @@ remain.
 
 ### What about history attacks against blind peers?
 
-A blind peer can't modify existing data, since the edit history must all be
-signed to prevent that attack. However, an attacker could otherwise attack the
-history: deleting edits, delaying edits, or refusing to pass them along. Peers
-in an ensemble with a blind peer need to have extra checks to verify that the
-blind peer is behaving correctly. The strongest of these checks will be
-communicating with more peers than the blind peer. Ideally, peers should not
-rely on a single peer in the ensemble.
-
-This check might not be sufficient, or it might not be feasible. For instance, a
-single peer kept behind a VPN may have only the blind peer accessible. Even with
-that case, this question must answer how a given peer can trust that the peers
-it is communicating with are actively giving it *all* of the updates it is
-supposed to receive on the cadence it is supposed to receive them. Once that
-mechanism is determined, this question can be closed.
-
-The worst case: An attacker could cause a blind peer to delay (or entirely
-withhold) the removal record for a peer. The result would be a peer that does
-not know about the removal of another peer, causing the removed peer to still be
-able to participate in the ensemble.
-
-A *possible* mitigation would be to use the edit IDs for the membership list.
-Using a pure CRDT implementation would likely preclude this, as the edit ID
-becomes the peerid+HLC+counter. It also would not provide protection when the
-membership updates infrequently. For example, if a peer is removed, and no other
-membership changes occur for months, then the removed peer could remain part of
-the ensemble due to detached peers. The idea makes for a good starting point
-though, and should be explored.
+This question has moved to the [protocol document](06-brainframe-protocol.md#what-about-history-attacks-against-blind-peers).
 
 ### What about wildly skewed clocks?
 
-The Hybrid Logical Clock is used for ordering edits, as discussed in [Clocks
-cannot be trusted](#clocks-cannot-be-trusted). The crdt_lf sync package encodes
-the counter portion of the HLC as a 16 bit integer.
-
-Scenario: An attacker could set their local clock to the year 3000, and then
-make a single edit in every file in the engram (adding a blank line at the end,
-for example). Getting this edit distributed to the ensemble would then pull
-every document's HLC to that timestamp, and rely on the counter portion of the
-HLC to order edits. When the HLC is encoded by crdt_lf, it encodes the counter
-as a 16 bit integer.
-
-With only a 16 bit integer, the ensemble could easily generate repeating IDs,
-resulting in documents that can no longer be rendered reliably.
-
-Two options exist for handling this:
-
-- Bound the drift. We could place a limit on how far off the edits are allowed
-  to be. This could result in detached peers being unable to synchronize with
-  the ensemble. Consider a Raspberry Pi that is unable to reach a time server
-  quickly. Any incoming edits will look like they come from the future
-  (potentially a far future), outside the drift boundary. If we go with this
-  option, then incoming edits can't be applied, but do have to be accepted and
-  stored until they can be confirmed. Quarantine might be the right answer for
-  that.
-- Don't use crdt_lf's synchronization, and instead encode the HLC ourselves.
-  This could result in us being stuck on an older version of crdt_lf, but it
-  does remove the detached peer/divergent document condition entirely.
-
-Other options may exist, and should be explored before closing this question.
-
-This question can be closed when a mechanism for handling this scenario has been
-solidified and does *not* produce divergence amongst the ensemble.
+This question has moved to the [protocol document](06-brainframe-protocol.md#what-about-wildly-skewed-clocks).
 
 ### What about metadata on a local network?
 
@@ -657,25 +608,7 @@ can't be mitigated).
 
 ### What about crafted malicious connections or payloads?
 
-It is possible for an attacker to attack the parser itself, and deliver malware
-to the entire ensemble via a blind peer. The attack looks like this:
-
-- Malicious payload running arbitrary code gets crafted
-- The payload is injected from a stolen writing peer, sent directly to a blind
-  peer
-- The blind peer propagates the payload to every other peer
-- Every receiving peer then tries to decrypt and apply the payload
-- The payload, targeting the parser itself, exploits a bug in the parser and
-  delivers malware to every peer that received it
-- Every peer in the ensemble is now infected with malware. Depending on the
-  malware, this could have infected every device, not just every peer
-
-The same attack works without a stolen device against the code that reads the
-record's envelope, since a peer must parse that envelope before it can check the
-signature. Anyone who can connect to a peer (ADV10) can target it.
-
-This question can be closed when a mitigation strategy for this attack is
-documented.
+This question has moved to the [protocol document](06-brainframe-protocol.md#what-about-crafted-malicious-connections-or-payloads).
 
 ## Settled in review
 

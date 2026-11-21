@@ -68,6 +68,30 @@ wrong, and what must hold. No contradictions were found in the sweep of
 
 ### Decisions still to make
 
+### Mixed open questions
+
+Each of these asks both *whether* to defend and *how*. In 01, name the threat
+and decide whether to defend it or accept it; hand the *how* to 06 as its own
+question.
+
+- [ ] **N74.** [Attacks on a blind
+  peer](01-threat-model.md#attacks-on-a-blind-peer): for each attack listed,
+  decide defend or accept. The mitigations go to 06.
+- [ ] **N75.** [How to define a harmful
+  edit?](01-threat-model.md#how-to-define-a-harmful-edit): keep the definition
+  of harm in 01. "Provide the actual defense" goes to 06.
+- [ ] **N76.** [What about metadata on blind
+  peers?](01-threat-model.md#what-about-metadata-on-blind-peers): keep the list
+  of what is exposed and the residual risk. Padding and relaying go to 06.
+- [ ] **N77.** [What about metadata on a local
+  network?](01-threat-model.md#what-about-metadata-on-a-local-network): keep
+  what a listener learns, and whether that is accepted. How discovery works
+  goes to 06.
+- [ ] **N78.** [What about attacks after the
+  broadcast?](01-threat-model.md#what-about-attacks-after-the-broadcast): keep
+  the tracking and spoofing threats, and defend or accept each. The mitigations
+  go to 06.
+
 ### Before acceptance
 
 - [ ] **F26. Empty sections.** Scope, Data-flow diagram, Assets, Threats, and
@@ -93,13 +117,16 @@ wrong, and what must hold. No contradictions were found in the sweep of
   | File synchronization tools, Backup restoration | Keepers are warned when another tool writes to the engram |
   | Removed peers: quarantine | A removed peer's edits reach the ensemble only through a keeper |
 
-- [ ] **F34. Ten open questions remain.** You planned to answer them before
-  acceptance; none has an answer yet.
+- [ ] **F34. Seven open questions remain in 01.** Two are pure threat-model
+  questions; the other five are N74–N78. Four protocol questions moved to 06.
 - [ ] **F36. Accepted risks are scattered.** Clock drag, a keeper removing
   another, a fake ensemble, and legal access to metadata are each accepted in
   their own section. Non-goals is the place to list them together.
 
 ### Housekeeping
+
+- [ ] **F42.** Data-flow diagram: "Read-Only Peer" (`RP`); the glossary term
+  is **reading peer**.
 
 ## Protocol design (06)
 

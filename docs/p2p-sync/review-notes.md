@@ -125,9 +125,6 @@ question.
 
 ### Housekeeping
 
-- [ ] **F42.** Data-flow diagram: "Read-Only Peer" (`RP`); the glossary term
-  is **reading peer**.
-
 ## Protocol design (06)
 
 Entries here concern [06-brainframe-protocol.md](06-brainframe-protocol.md):

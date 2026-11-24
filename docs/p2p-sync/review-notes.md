@@ -122,8 +122,15 @@ question.
 - [ ] **F36. Accepted risks are scattered.** Clock drag, a keeper removing
   another, a fake ensemble, and legal access to metadata are each accepted in
   their own section. Non-goals is the place to list them together.
+- [ ] **F44. The blind-peer metadata list mixes two needs.** The list at
+  01:529 holds what the service needs (account IDs, for billing) and what a
+  blind peer needs. Marking each item "blind peer", "service" or both answers
+  half of the question.
 
 ### Housekeeping
+
+- [ ] **F45.** Scope (01:265): "built as a blind peer". The service runs blind
+  peers (README:195); it isn't one.
 
 ## Protocol design (06)
 
